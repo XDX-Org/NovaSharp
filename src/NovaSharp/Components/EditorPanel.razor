@@ -1,0 +1,55 @@
+@using PhotinoEx.Core.Models
+
+<main class="workbench">
+    <header class="toolbar">
+        <button type="button" @onclick="OpenFileAsync">Open C# file</button>
+        <span class="file-name" title="@_filePath">@FileName</span>
+    </header>
+
+    <section class="editor-panel" aria-label="C# editor">
+        @if (_error is not null)
+        {
+            <div class="error" role="alert">@_error</div>
+        }
+        else if (_filePath is null)
+        {
+            <div class="empty-state">Open a .cs file to begin.</div>
+        }
+        else
+        {
+            <textarea aria-label="File contents" spellcheck="false" @bind="_content"></textarea>
+        }
+    </section>
+</main>
+
+@code {
+    private string? _filePath;
+    private string? _content;
+    private string? _error;
+
+    private string FileName => _filePath is null ? "No file open" : Path.GetFileName(_filePath);
+
+    private async Task OpenFileAsync()
+    {
+        var files = await Program.App.MainWindow.ShowOpenFileDialogAsync(
+            title: "Open C# file",
+            multiSelect: false,
+            filterPatterns: [new FileFilter("C# source", "*.cs")]);
+
+        if (files is not [var path])
+        {
+            return;
+        }
+
+        try
+        {
+            _content = await File.ReadAllTextAsync(path);
+            _filePath = path;
+            _error = null;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            _error = $"Could not open {Path.GetFileName(path)}: {exception.Message}";
+        }
+    }
+}
