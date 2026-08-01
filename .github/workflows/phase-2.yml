@@ -52,7 +52,7 @@ jobs:
           (1..500 | ForEach-Object { "public sealed class Fixture$_ { public string Value => `"line $_`"; }" }) | Set-Content -Encoding utf8 $fixture
           $binary = if ($IsWindows) { 'artifacts/app/NovaSharp.exe' } else { 'artifacts/app/NovaSharp' }
           $arguments = @("--phase2-smoke=$fixture", "--smoke-report=$report")
-          $process = Start-Process xvfb-run -ArgumentList (@('-a', '-s', '-screen 0 1280x1024x24', $binary) + $arguments) -PassThru
+          $process = Start-Process xvfb-run -ArgumentList (@('-a', $binary) + $arguments) -PassThru
           if (-not $process.WaitForExit(60000)) { $process.Kill($true); throw 'Native smoke timed out.' }
           if ($process.ExitCode -ne 0) { throw "Native smoke exited with $($process.ExitCode)." }
           $result = Get-Content $report | ConvertFrom-Json
