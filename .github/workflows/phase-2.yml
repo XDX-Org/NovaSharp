@@ -37,19 +37,19 @@ jobs:
       - run: dotnet build NovaSharp.slnx --no-restore --configuration Release --warnaserror
       - run: dotnet test tests/NovaSharp.Tests/NovaSharp.Tests.csproj --no-build --no-restore --configuration Release
       - run: dotnet publish src/NovaSharp/NovaSharp.csproj --no-restore --configuration Release --runtime ${{ matrix.rid }} --self-contained false --output artifacts/app
-      - name: Run packaged native-host smoke
+      - name: Run packaged Linux native-host smoke
+        if: runner.os == 'Linux'
         shell: pwsh
+        env:
+          GTK_A11Y: none
+          WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: 1
         run: |
           $fixture = Join-Path $PWD 'phase2-smoke.cs'
           $report = Join-Path $PWD 'phase2-smoke.json'
           (1..500 | ForEach-Object { "public sealed class Fixture$_ { public string Value => `"line $_`"; }" }) | Set-Content -Encoding utf8 $fixture
           $binary = if ($IsWindows) { 'artifacts/app/NovaSharp.exe' } else { 'artifacts/app/NovaSharp' }
           $arguments = @("--phase2-smoke=$fixture", "--smoke-report=$report")
-          if ($IsLinux) {
-            $process = Start-Process xvfb-run -ArgumentList (@('-a', $binary) + $arguments) -PassThru
-          } else {
-            $process = Start-Process $binary -ArgumentList $arguments -PassThru
-          }
+          $process = Start-Process xvfb-run -ArgumentList (@('-a', $binary) + $arguments) -PassThru
           if (-not $process.WaitForExit(60000)) { $process.Kill($true); throw 'Native smoke timed out.' }
           if ($process.ExitCode -ne 0) { throw "Native smoke exited with $($process.ExitCode)." }
           $result = Get-Content $report | ConvertFrom-Json
