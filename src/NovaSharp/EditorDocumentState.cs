@@ -1,32 +1,252 @@
+using System.Text;
+
 namespace NovaSharp;
+
+internal enum DocumentEncoding
+{
+    Utf8,
+    Utf8Bom,
+    Utf16LittleEndian,
+    Utf16BigEndian
+}
+
+internal enum LineEnding
+{
+    Lf,
+    CrLf,
+    Cr
+}
+
+internal readonly record struct DiskStamp(long Length, DateTime LastWriteUtc)
+{
+    internal static DiskStamp Read(string path)
+    {
+        var info = new FileInfo(path);
+        return new(info.Length, info.LastWriteTimeUtc);
+    }
+}
+
+internal sealed class SaveConflictException(string path)
+    : IOException($"'{Path.GetFileName(path)}' changed on disk. Reload it or use Save As.");
 
 internal sealed class EditorDocumentState
 {
-    internal string? FilePath { get; private set; }
-    internal string? Content { get; set; }
-    internal string? Error { get; private set; }
+    private string? _content;
+    private long _savedVersion;
+    private DiskStamp? _diskStamp;
+    private readonly Stack<string> _undo = new();
+    private readonly Stack<string> _redo = new();
 
-    internal async Task OpenAsync(
-        string? path,
-        Func<string, Task<string>>? readTextAsync = null)
+    internal string? FilePath { get; private set; }
+    internal string DisplayName => FilePath is null ? "Untitled" : Path.GetFileName(FilePath);
+    internal string? Error { get; private set; }
+    internal DocumentEncoding Encoding { get; private set; } = DocumentEncoding.Utf8;
+    internal LineEnding LineEnding { get; private set; } = LineEnding.Lf;
+    internal long Version { get; private set; }
+    internal bool IsDirty => Version != _savedVersion;
+    internal bool IsReadOnly => FilePath is not null && File.Exists(FilePath) && new FileInfo(FilePath).IsReadOnly;
+    internal bool CanUndo => _undo.Count > 0;
+    internal bool CanRedo => _redo.Count > 0;
+
+    internal string? Content
+    {
+        get => _content;
+        set => SetContent(value ?? string.Empty, recordUndo: true);
+    }
+
+    internal async Task OpenAsync(string? path, Func<string, Task<string>>? readTextAsync = null)
     {
         if (path is null)
         {
             return;
         }
 
-        readTextAsync ??= path => File.ReadAllTextAsync(path);
-
         try
         {
-            var content = await readTextAsync(path);
-            FilePath = path;
-            Content = content;
-            Error = null;
+            if (readTextAsync is not null)
+            {
+                Load(Path.GetFullPath(path), await readTextAsync(path), DocumentEncoding.Utf8,
+                    File.Exists(path) ? DiskStamp.Read(path) : null);
+            }
+            else
+            {
+                var bytes = await File.ReadAllBytesAsync(path);
+                var (text, encoding) = Decode(bytes);
+                Load(Path.GetFullPath(path), text, encoding, DiskStamp.Read(path));
+            }
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or DecoderFallbackException)
         {
             Error = $"Could not open {Path.GetFileName(path)}: {exception.Message}";
+        }
+    }
+
+    internal async Task SaveAsync(string? destination = null, bool overwriteConflict = false)
+    {
+        var path = destination is null ? FilePath : Path.GetFullPath(destination);
+        if (path is null)
+        {
+            throw new InvalidOperationException("A destination is required for an untitled document.");
+        }
+
+        if (destination is null && !overwriteConflict && HasChangedOnDisk())
+        {
+            throw new SaveConflictException(path);
+        }
+
+        if (File.Exists(path) && new FileInfo(path).IsReadOnly)
+        {
+            throw new UnauthorizedAccessException($"'{Path.GetFileName(path)}' is read-only.");
+        }
+
+        var versionToSave = Version;
+        var bytes = Encode(NormalizeLineEndings(_content ?? string.Empty, LineEnding), Encoding);
+        await AtomicFile.WriteAsync(path, bytes);
+        FilePath = path;
+        _diskStamp = DiskStamp.Read(path);
+        _savedVersion = versionToSave;
+        Error = null;
+    }
+
+    internal async Task ReloadAsync()
+    {
+        if (FilePath is not null)
+        {
+            await OpenAsync(FilePath);
+        }
+    }
+
+    internal bool HasChangedOnDisk()
+    {
+        if (FilePath is null || _diskStamp is null)
+        {
+            return false;
+        }
+
+        return !File.Exists(FilePath) || DiskStamp.Read(FilePath) != _diskStamp;
+    }
+
+    internal void Undo()
+    {
+        if (_undo.TryPop(out var value))
+        {
+            _redo.Push(_content ?? string.Empty);
+            SetContent(value, recordUndo: false);
+        }
+    }
+
+    internal void Redo()
+    {
+        if (_redo.TryPop(out var value))
+        {
+            _undo.Push(_content ?? string.Empty);
+            SetContent(value, recordUndo: false);
+        }
+    }
+
+    private void Load(string path, string content, DocumentEncoding encoding, DiskStamp? stamp)
+    {
+        FilePath = path;
+        _content = content;
+        Encoding = encoding;
+        LineEnding = DetectLineEnding(content);
+        Version++;
+        _savedVersion = Version;
+        _diskStamp = stamp;
+        _undo.Clear();
+        _redo.Clear();
+        Error = null;
+    }
+
+    private void SetContent(string value, bool recordUndo)
+    {
+        if (value == _content)
+        {
+            return;
+        }
+
+        if (recordUndo && _content is not null)
+        {
+            _undo.Push(_content);
+            _redo.Clear();
+        }
+
+        _content = value;
+        Version++;
+    }
+
+    private static (string Text, DocumentEncoding Encoding) Decode(byte[] bytes)
+    {
+        if (bytes.AsSpan().StartsWith(new byte[] { 0xEF, 0xBB, 0xBF }))
+            return (new UTF8Encoding(false, true).GetString(bytes, 3, bytes.Length - 3), DocumentEncoding.Utf8Bom);
+        if (bytes.AsSpan().StartsWith(new byte[] { 0xFF, 0xFE }))
+            return (new UnicodeEncoding(false, true, true).GetString(bytes, 2, bytes.Length - 2), DocumentEncoding.Utf16LittleEndian);
+        if (bytes.AsSpan().StartsWith(new byte[] { 0xFE, 0xFF }))
+            return (new UnicodeEncoding(true, true, true).GetString(bytes, 2, bytes.Length - 2), DocumentEncoding.Utf16BigEndian);
+        return (new UTF8Encoding(false, true).GetString(bytes), DocumentEncoding.Utf8);
+    }
+
+    private static byte[] Encode(string text, DocumentEncoding encoding)
+    {
+        Encoding codec = encoding switch
+        {
+            DocumentEncoding.Utf8 => new UTF8Encoding(false, true),
+            DocumentEncoding.Utf8Bom => new UTF8Encoding(true, true),
+            DocumentEncoding.Utf16LittleEndian => new UnicodeEncoding(false, true, true),
+            DocumentEncoding.Utf16BigEndian => new UnicodeEncoding(true, true, true),
+            _ => throw new ArgumentOutOfRangeException(nameof(encoding))
+        };
+        var body = codec.GetBytes(text);
+        if (encoding is not (DocumentEncoding.Utf8Bom or DocumentEncoding.Utf16LittleEndian or DocumentEncoding.Utf16BigEndian))
+            return body;
+        var preamble = codec.GetPreamble();
+        return [.. preamble, .. body];
+    }
+
+    private static LineEnding DetectLineEnding(string text)
+    {
+        var crlf = 0;
+        var lf = 0;
+        var cr = 0;
+        for (var i = 0; i < text.Length; i++)
+        {
+            if (text[i] == '\r')
+            {
+                if (i + 1 < text.Length && text[i + 1] == '\n') { crlf++; i++; }
+                else cr++;
+            }
+            else if (text[i] == '\n') lf++;
+        }
+        return crlf >= lf && crlf >= cr && crlf > 0 ? LineEnding.CrLf : cr > lf ? LineEnding.Cr : LineEnding.Lf;
+    }
+
+    private static string NormalizeLineEndings(string text, LineEnding ending)
+    {
+        var newline = ending switch { LineEnding.CrLf => "\r\n", LineEnding.Cr => "\r", _ => "\n" };
+        return text.Replace("\r\n", "\n").Replace('\r', '\n').Replace("\n", newline);
+    }
+}
+
+internal static class AtomicFile
+{
+    internal static async Task WriteAsync(string path, byte[] content)
+    {
+        var directory = Path.GetDirectoryName(Path.GetFullPath(path))!;
+        Directory.CreateDirectory(directory);
+        var temporary = Path.Combine(directory, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            await using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None,
+                64 * 1024, FileOptions.Asynchronous | FileOptions.WriteThrough))
+            {
+                await stream.WriteAsync(content);
+                await stream.FlushAsync();
+            }
+            File.Move(temporary, path, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temporary)) File.Delete(temporary);
         }
     }
 }

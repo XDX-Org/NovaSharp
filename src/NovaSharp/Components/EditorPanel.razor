@@ -1,9 +1,17 @@
 @using PhotinoEx.Core.Models
+@using Microsoft.AspNetCore.Components.Web
 
-<main class="workbench">
+<main class="workbench" @onkeydown="HandleKeyAsync">
     <header class="toolbar">
-        <button type="button" @onclick="OpenFileAsync">Open C# file</button>
-        <span class="file-name" title="@_document.FilePath">@FileName</span>
+        <button type="button" @onclick="OpenFileAsync" title="Ctrl+O">Open</button>
+        <button type="button" @onclick="SaveAsync" disabled="@(!_document.IsDirty)" title="Ctrl+S">Save</button>
+        <button type="button" @onclick="SaveAsAsync" disabled="@(_document.FilePath is null)" title="Ctrl+Shift+S">Save As</button>
+        <button type="button" @onclick="ReloadAsync" disabled="@(_document.FilePath is null)">Reload</button>
+        <span class="divider"></span>
+        <button type="button" @onclick="Undo" disabled="@(!_document.CanUndo)" title="Ctrl+Z">Undo</button>
+        <button type="button" @onclick="Redo" disabled="@(!_document.CanRedo)" title="Ctrl+Y">Redo</button>
+        <span class="file-name" title="@_document.FilePath">@(_document.IsDirty ? "● " : null)@_document.DisplayName</span>
+        <span class="document-info">@_document.Encoding · @LineEndingLabel · v@_document.Version</span>
     </header>
 
     <section class="editor-panel" aria-label="C# editor">
@@ -11,29 +19,99 @@
         {
             <div class="error" role="alert">@_document.Error</div>
         }
-        else if (_document.FilePath is null)
+        @if (_document.FilePath is null)
         {
             <div class="empty-state">Open a .cs file to begin.</div>
         }
         else
         {
-            <textarea aria-label="File contents" spellcheck="false" @bind="_document.Content"></textarea>
+            <div class="editor-surface">
+                <pre class="line-numbers" aria-hidden="true">@LineNumbers</pre>
+                <textarea aria-label="File contents" spellcheck="false" wrap="off"
+                    value="@_document.Content" @oninput="ContentChanged"></textarea>
+            </div>
         }
     </section>
+    <footer class="statusbar">@Status</footer>
 </main>
 
 @code {
     private readonly EditorDocumentState _document = new();
-
-    private string FileName => _document.FilePath is null ? "No file open" : Path.GetFileName(_document.FilePath);
+    private string? _status;
+    private string Status => _status ?? (_document.IsReadOnly ? "Read-only" : _document.FilePath ?? "Ready");
+    private string LineEndingLabel => _document.LineEnding == LineEnding.CrLf ? "CRLF" : _document.LineEnding.ToString().ToUpperInvariant();
+    private string LineNumbers => string.Join('\n', Enumerable.Range(1, (_document.Content?.Count(c => c == '\n') ?? 0) + 1));
 
     private async Task OpenFileAsync()
     {
+        if (_document.IsDirty)
+        {
+            _status = "Save or reload the current changes before opening another file.";
+            return;
+        }
         var files = await Program.App.MainWindow.ShowOpenFileDialogAsync(
-            title: "Open C# file",
-            multiSelect: false,
+            title: "Open C# file", multiSelect: false,
             filterPatterns: [new FileFilter("C# source", "*.cs")]);
-
         await _document.OpenAsync(files is [var path] ? path : null);
+        _status = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        try
+        {
+            await _document.SaveAsync();
+            _status = "Saved";
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            _status = exception.Message;
+        }
+    }
+
+    private async Task SaveAsAsync()
+    {
+        var path = await Program.App.MainWindow.ShowSaveFileDialogAsync(
+            title: "Save C# file", defaultPath: _document.FilePath ?? "Untitled.cs",
+            filterPatterns: [new FileFilter("C# source", "*.cs")]);
+        if (string.IsNullOrWhiteSpace(path)) return;
+        try
+        {
+            await _document.SaveAsync(path);
+            _status = "Saved";
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            _status = exception.Message;
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        await _document.ReloadAsync();
+        _status = _document.Error;
+    }
+
+    private void ContentChanged(ChangeEventArgs args)
+    {
+        _document.Content = args.Value?.ToString() ?? string.Empty;
+        _status = null;
+    }
+
+    private void Undo() { _document.Undo(); _status = null; }
+    private void Redo() { _document.Redo(); _status = null; }
+
+    private async Task HandleKeyAsync(KeyboardEventArgs args)
+    {
+        if (!(args.CtrlKey || args.MetaKey)) return;
+        switch (args.Key.ToLowerInvariant())
+        {
+            case "s" when args.ShiftKey: await SaveAsAsync(); break;
+            case "s": await SaveAsync(); break;
+            case "o": await OpenFileAsync(); break;
+            case "z" when args.ShiftKey: Redo(); break;
+            case "z": Undo(); break;
+            case "y": Redo(); break;
+        }
     }
 }

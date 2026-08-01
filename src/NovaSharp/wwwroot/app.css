@@ -9,7 +9,7 @@
 
 html, body, app, .workbench { width: 100%; height: 100%; margin: 0; }
 
-.workbench { display: grid; grid-template-rows: 44px minmax(0, 1fr); }
+.workbench { display: grid; grid-template-rows: 44px minmax(0, 1fr) 24px; }
 
 .toolbar {
     display: flex;
@@ -30,9 +30,14 @@ button {
 }
 
 button:hover { background: #3b4252; }
+button:disabled { opacity: .45; cursor: default; }
+.divider { width: 1px; height: 24px; background: #454b57; }
 
 .file-name { overflow: hidden; color: #aeb6c4; text-overflow: ellipsis; white-space: nowrap; }
+.document-info { margin-left: auto; color: #788292; font-size: 12px; }
 .editor-panel { min-height: 0; position: relative; }
+.editor-surface { display: grid; grid-template-columns: auto minmax(0, 1fr); width: 100%; height: 100%; overflow: hidden; }
+.line-numbers { min-width: 48px; height: 100%; margin: 0; padding: 16px 10px; overflow: hidden; color: #616a78; background: #1c1e23; text-align: right; user-select: none; font: 14px/1.55 "JetBrains Mono", "Cascadia Code", monospace; }
 
 textarea {
     width: 100%;
@@ -46,6 +51,7 @@ textarea {
     font: 14px/1.55 "JetBrains Mono", "Cascadia Code", monospace;
     tab-size: 4;
 }
+.statusbar { overflow: hidden; padding: 3px 10px; color: #b8c0cc; background: #262a31; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 
 .empty-state, .error { padding: 24px; color: #8f99a8; }
 .error { color: #ff8a8a; }
