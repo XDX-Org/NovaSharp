@@ -42,14 +42,17 @@ jobs:
         shell: pwsh
         env:
           GTK_A11Y: none
+          GSK_RENDERER: cairo
+          LIBGL_ALWAYS_SOFTWARE: 1
           WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: 1
+          WEBKIT_DISABLE_DMABUF_RENDERER: 1
         run: |
           $fixture = Join-Path $PWD 'phase2-smoke.cs'
           $report = Join-Path $PWD 'phase2-smoke.json'
           (1..500 | ForEach-Object { "public sealed class Fixture$_ { public string Value => `"line $_`"; }" }) | Set-Content -Encoding utf8 $fixture
           $binary = if ($IsWindows) { 'artifacts/app/NovaSharp.exe' } else { 'artifacts/app/NovaSharp' }
           $arguments = @("--phase2-smoke=$fixture", "--smoke-report=$report")
-          $process = Start-Process xvfb-run -ArgumentList (@('-a', $binary) + $arguments) -PassThru
+          $process = Start-Process xvfb-run -ArgumentList (@('-a', '-s', '-screen 0 1280x1024x24', $binary) + $arguments) -PassThru
           if (-not $process.WaitForExit(60000)) { $process.Kill($true); throw 'Native smoke timed out.' }
           if ($process.ExitCode -ne 0) { throw "Native smoke exited with $($process.ExitCode)." }
           $result = Get-Content $report | ConvertFrom-Json
