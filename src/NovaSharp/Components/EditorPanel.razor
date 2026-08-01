@@ -4,15 +4,24 @@
 
 <main class="workbench" @onkeydown="HandleKeyAsync">
     <header class="toolbar">
-        <button @onclick='() => Run("file.open")' title="Ctrl+O">Open</button>
-        <button @onclick='() => Run("file.save")' disabled="@(!_document.IsDirty)" title="Ctrl+S">Save</button>
-        <button @onclick='() => Run("file.saveAs")' disabled="@(_document.FilePath is null)" title="Ctrl+Shift+S">Save As</button>
-        <button @onclick="RequestReload" disabled="@(_document.FilePath is null)">Reload</button>
-        <span class="divider"></span>
-        <button @onclick='() => Run("edit.undo")' disabled="@(!_document.CanUndo)" title="Ctrl+Z">Undo</button>
-        <button @onclick='() => Run("edit.redo")' disabled="@(!_document.CanRedo)" title="Ctrl+Y">Redo</button>
-        <button @onclick='() => Run("edit.find")' title="Ctrl+F">Find</button>
-        <button @onclick="ToggleWrap">Wrap: @(_wordWrap ? "on" : "off")</button>
+        <div class="main-menu">
+            <button class="menu-trigger" @onclick="ToggleMenu" aria-label="Main menu" aria-expanded="@_showMenu">☰</button>
+            @if (_showMenu)
+            {
+                <div class="menu-dismiss" @onclick="CloseMenu" @oncontextmenu="CloseMenu" @oncontextmenu:preventDefault></div>
+                <div class="menu-popup" role="menu" @onclick:stopPropagation @oncontextmenu:preventDefault @oncontextmenu:stopPropagation>
+                    <button role="menuitem" @onclick='() => RunMenu("file.open")'>Open <kbd>Ctrl+O</kbd></button>
+                    <button role="menuitem" @onclick='() => RunMenu("file.save")' disabled="@(!_document.IsDirty)">Save <kbd>Ctrl+S</kbd></button>
+                    <button role="menuitem" @onclick='() => RunMenu("file.saveAs")' disabled="@(_document.FilePath is null)">Save As <kbd>Ctrl+Shift+S</kbd></button>
+                    <button role="menuitem" @onclick="ReloadMenu" disabled="@(_document.FilePath is null)">Reload</button>
+                    <hr />
+                    <button role="menuitem" @onclick='() => RunMenu("edit.undo")' disabled="@(!_document.CanUndo)">Undo <kbd>Ctrl+Z</kbd></button>
+                    <button role="menuitem" @onclick='() => RunMenu("edit.redo")' disabled="@(!_document.CanRedo)">Redo <kbd>Ctrl+Y</kbd></button>
+                    <button role="menuitem" @onclick='() => RunMenu("edit.find")'>Find <kbd>Ctrl+F</kbd></button>
+                    <button role="menuitem" @onclick="ToggleWrapMenu">Word wrap <span>@(_wordWrap ? "On" : "Off")</span></button>
+                </div>
+            }
+        </div>
         <span class="file-name" title="@_document.FilePath">@(_document.IsDirty ? "● " : null)@_document.DisplayName</span>
         <span class="document-info">@_document.Encoding · @LineEndingLabel · v@_document.Version</span>
     </header>
@@ -38,13 +47,19 @@
     }
     @if (_confirmReload)
     {
-        <div class="conflict" role="alert">
-            <span>Reloading will discard unsaved changes.</span>
-            <button @onclick="ReloadConfirmedAsync">Discard and reload</button>
-            <button @onclick="CancelReload">Cancel</button>
+        <div class="modal-backdrop" @onclick="CancelReload">
+            <div class="modal-dialog" role="alertdialog" aria-modal="true" aria-labelledby="reload-title" @onclick:stopPropagation>
+                <h2 id="reload-title">Discard unsaved changes?</h2>
+                <p>Reloading will replace the editor contents with the version on disk.</p>
+                <div class="modal-actions">
+                    <button class="danger" @onclick="ReloadConfirmedAsync">Discard and reload</button>
+                    <button @onclick="CancelReload">Cancel</button>
+                </div>
+            </div>
         </div>
     }
 
+    <div class="workbench-body">
     <section class="editor-panel" aria-label="C# editor">
         @if (_document.Error is not null) { <div class="error" role="alert">@_document.Error</div> }
         @if (_document.FilePath is null) { <div class="empty-state">Open a .cs file to begin.</div> }
@@ -54,15 +69,23 @@
         }
         else { <CodeEditor Value="@(_document.Content ?? string.Empty)" ValueChanged="ContentChanged" WordWrap="_wordWrap" @key="_wordWrap" /> }
     </section>
+    <WorkspaceExplorer @ref="_explorer" Document="_document" FileOpened="OpenWorkspaceFileAsync" OpenChanged="ExplorerOpenChanged" />
+    <nav class="activity-bar" aria-label="Tool windows">
+        <button class="@(_explorerOpen ? "active" : null)" @onclick="ToggleExplorerAsync" aria-label="Explorer" title="Explorer" aria-pressed="@_explorerOpen">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 5.5h6l2 2h10v11H3z" /></svg>
+        </button>
+    </nav>
+    </div>
     <footer class="statusbar">@Status</footer>
 </main>
 
 @code {
     private readonly EditorDocumentState _document = new();
     private readonly CommandRegistry _commands = new();
+    private WorkspaceExplorer? _explorer;
     private string? _status, _compareText;
     private string _query = "", _replacement = "";
-    private bool _showFind, _externalChange, _confirmReload;
+    private bool _showFind, _externalChange, _confirmReload, _showMenu, _explorerOpen = true;
     private bool _wordWrap;
     private string Status => _status ?? (_document.IsReadOnly ? "Read-only" : _document.FilePath ?? "Ready");
     private string LineEndingLabel => _document.LineEnding == LineEnding.CrLf ? "CRLF" : _document.LineEnding.ToString().ToUpperInvariant();
@@ -84,6 +107,13 @@
             title: "Open C# file", multiSelect: false, filterPatterns: [new FileFilter("C# source", "*.cs")]);
         await _document.OpenAsync(files is [var path] ? path : null);
         _status = null;
+    }
+
+    private async Task OpenWorkspaceFileAsync(string path)
+    {
+        if (_document.IsDirty) { _status = "Save or reload the current changes before opening another file."; return; }
+        await _document.OpenAsync(path);
+        _status = _document.Error;
     }
 
     private async Task SaveAsync()
@@ -118,6 +148,13 @@
     }
     private void OnExternalChange() { _externalChange = true; _ = InvokeAsync(StateHasChanged); }
     private Task Run(string id) => _commands.ExecuteAsync(id);
+    private void ToggleMenu() => _showMenu = !_showMenu;
+    private void CloseMenu() => _showMenu = false;
+    private async Task RunMenu(string id) { _showMenu = false; await Run(id); }
+    private void ReloadMenu() { _showMenu = false; RequestReload(); }
+    private async Task ToggleWrapMenu() { _showMenu = false; await ToggleWrap(); }
+    private Task ToggleExplorerAsync() => _explorer?.ToggleCollapsedAsync() ?? Task.CompletedTask;
+    private void ExplorerOpenChanged(bool open) { _explorerOpen = open; StateHasChanged(); }
 
     private void RegisterCommands()
     {

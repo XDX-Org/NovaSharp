@@ -31,7 +31,7 @@ internal readonly record struct DiskStamp(long Length, DateTime LastWriteUtc, st
 internal sealed class SaveConflictException(string path)
     : IOException($"'{Path.GetFileName(path)}' changed on disk. Reload it or use Save As.");
 
-internal sealed class EditorDocumentState : IDisposable
+public sealed class EditorDocumentState : IDisposable
 {
     private string? _content;
     private long _savedVersion;
@@ -143,6 +143,15 @@ internal sealed class EditorDocumentState : IDisposable
     internal void KeepBuffer()
     {
         _diskStamp = FilePath is not null && File.Exists(FilePath) ? DiskStamp.Read(FilePath) : null;
+    }
+
+    internal void Relocate(string oldPath, string newPath)
+    {
+        if (FilePath is null || !string.Equals(Path.GetFullPath(oldPath), FilePath,
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)) return;
+        FilePath = Path.GetFullPath(newPath);
+        _diskStamp = File.Exists(FilePath) ? DiskStamp.Read(FilePath) : null;
+        StartWatching(FilePath);
     }
 
     internal void Undo()

@@ -1,0 +1,329 @@
+@implements IAsyncDisposable
+@using Microsoft.AspNetCore.Components.Web
+@inject IJSRuntime JS
+
+@if (!_state.SidebarCollapsed)
+{
+<aside @ref="_explorer" class="explorer" style="width:@_state.SidebarWidth.ToString(System.Globalization.CultureInfo.InvariantCulture)px" aria-label="Explorer" @onclick="HideContextMenu">
+    <header class="explorer-header">
+        <strong>Explorer</strong>
+        <span class="explorer-actions">
+            <button @onclick="OpenFolderAsync" title="Open folder" aria-label="Open folder">＋</button>
+            <button @onclick="RefreshAsync" disabled="@(_workspace.RootPath is null)" title="Refresh" aria-label="Refresh">↻</button>
+            <button @onclick="RevealAsync" disabled="@(Document.FilePath is null || !_workspace.Contains(Document.FilePath))" title="Reveal active file" aria-label="Reveal active file">◎</button>
+        </span>
+    </header>
+        @if (_workspace.RootPath is null)
+        {
+            <div class="explorer-empty"><button @onclick="OpenFolderAsync">Open Folder</button></div>
+        }
+        else
+        {
+            <div class="workspace-title" title="@_workspace.RootPath">@_workspace.RootPath</div>
+            @if (_editMode is not null)
+            {
+                <div class="modal-backdrop" @onclick="CancelEdit">
+                    <form class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="edit-title"
+                          @onclick:stopPropagation @onsubmit="CommitEditAsync" @onsubmit:preventDefault>
+                        <h2 id="edit-title">@EditTitle</h2>
+                        <label class="modal-field">
+                            <span>Name</span>
+                            <input aria-label="@_editMode" @bind="_editName" autofocus />
+                        </label>
+                        <div class="modal-actions">
+                            <button type="submit">@EditAction</button>
+                            <button type="button" @onclick="CancelEdit">Cancel</button>
+                        </div>
+                    </form>
+                </div>
+            }
+            @if (_deletePending is not null)
+            {
+                <div class="modal-backdrop" @onclick="CancelDelete">
+                    <div class="modal-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-title" @onclick:stopPropagation>
+                        <h2 id="delete-title">Delete @_deletePending.Name?</h2>
+                        <p>This action cannot be undone.</p>
+                        <div class="modal-actions">
+                            <button class="danger" @onclick="ConfirmDeleteAsync">Delete</button>
+                            <button @onclick="CancelDelete">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            }
+            @if (_error is not null) { <div class="explorer-error" role="alert">@_error <button @onclick="ClearError">×</button></div> }
+            <div class="tree" role="tree" aria-label="Workspace files" @onkeydown="HandleKeyAsync"
+                 @oncontextmenu="ShowRootContextMenu" @oncontextmenu:preventDefault>
+                <Virtualize Items="_visible" Context="row" ItemSize="26" OverscanCount="8">
+                    <div class="tree-row @(IsSelected(row.Entry) ? "selected" : null)" role="treeitem"
+                         aria-level="@(row.Depth + 1)" aria-expanded="@(row.Entry.IsDirectory ? _expanded.Contains(row.Entry.Path) : null)"
+                         tabindex="@(IsSelected(row.Entry) ? 0 : -1)" style="padding-left:@(8 + row.Depth * 16)px"
+                         @onclick="() => Select(row.Entry)" @ondblclick="() => ActivateAsync(row.Entry)"
+                         @oncontextmenu="args => ShowContextMenu(args, row.Entry)" @oncontextmenu:preventDefault @oncontextmenu:stopPropagation>
+                        @if (row.Entry.IsDirectory)
+                        {
+                            <button class="tree-toggle" tabindex="-1" @onclick="() => ToggleAsync(row.Entry)" @onclick:stopPropagation>@(_expanded.Contains(row.Entry.Path) ? "▾" : "▸")</button>
+                        }
+                        else { <span class="tree-toggle">@Icon(row.Entry)</span> }
+                        <span class="tree-name" title="@row.Entry.Path">@row.Entry.Name</span>
+                    </div>
+                </Virtualize>
+            </div>
+            @if (_showContextMenu)
+            {
+                <div class="context-menu-dismiss" @onclick="HideContextMenu"
+                     @oncontextmenu="HideContextMenu" @oncontextmenu:preventDefault></div>
+                <div @ref="_contextMenu" class="explorer-context-menu" role="menu" @onclick:stopPropagation
+                     @oncontextmenu:preventDefault @oncontextmenu:stopPropagation>
+                    <button role="menuitem" @onclick='() => BeginCreate(false)'>New file</button>
+                    <button role="menuitem" @onclick='() => BeginCreate(true)'>New folder</button>
+                    <hr />
+                    <button role="menuitem" @onclick="BeginRename" disabled="@(_selected is null || IsRoot(_selected.Path))">Rename <kbd>F2</kbd></button>
+                    <button role="menuitem" @onclick="BeginDelete" disabled="@(_selected is null || IsRoot(_selected.Path))">Delete <kbd>Del</kbd></button>
+                    <hr />
+                    <button role="menuitem" @onclick="CloseWorkspaceAsync">Close workspace</button>
+                </div>
+            }
+        }
+    <div class="explorer-resizer" role="separator" aria-label="Resize Explorer" aria-orientation="vertical" title="Drag to resize Explorer"></div>
+</aside>
+}
+
+@code {
+    [Parameter, EditorRequired] public EditorDocumentState Document { get; set; } = null!;
+    [Parameter] public EventCallback<string> FileOpened { get; set; }
+    [Parameter] public EventCallback<bool> OpenChanged { get; set; }
+    private readonly WorkspaceService _workspace = new();
+    private readonly Dictionary<string, IReadOnlyList<WorkspaceEntry>> _children = new();
+    private readonly HashSet<string> _expanded = new(StringComparer.Ordinal);
+    private readonly List<TreeRow> _visible = [];
+    private ElementReference _explorer;
+    private ElementReference _contextMenu;
+    private DotNetObjectReference<WorkspaceExplorer>? _self;
+    private WorkspacePersistence _persistence = null!;
+    private WorkspaceRestoreState _state = new();
+    private WorkspaceEntry? _selected, _deletePending;
+    private string? _editMode, _error;
+    private string _editName = "";
+    private string EditTitle => _editMode switch { "New file name" => "New file", "New folder name" => "New folder", _ => "Rename item" };
+    private string EditAction => _editMode == "New name" ? "Rename" : "Create";
+    private bool _showContextMenu;
+    private bool _positionContextMenu;
+    private double _contextX, _contextY;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NovaSharp", "workspace-state.json");
+        _persistence = new(path);
+        _state = await _persistence.LoadAsync();
+        await OpenChanged.InvokeAsync(!_state.SidebarCollapsed);
+        _workspace.Changed += OnWorkspaceChanged;
+        _workspace.Error += OnWorkspaceError;
+        if (_state.WorkspacePath is not null && Directory.Exists(_state.WorkspacePath))
+        {
+            try { _workspace.Open(_state.WorkspacePath); await RestoreAsync(); }
+            catch (Exception ex) { _error = ex.Message; }
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_state.SidebarCollapsed)
+        {
+            _self ??= DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("novaSharp.initExplorerResize", _explorer, _self);
+        }
+        if (_showContextMenu && _positionContextMenu)
+        {
+            _positionContextMenu = false;
+            await JS.InvokeVoidAsync("novaSharp.positionContextMenu", _contextMenu, _contextX, _contextY);
+        }
+    }
+
+    private async Task OpenFolderAsync()
+    {
+        var folders = await Program.App.MainWindow.ShowOpenFolderDialogAsync("Open workspace", _workspace.RootPath, false);
+        if (folders is not [var path]) return;
+        try
+        {
+            _workspace.Open(path); _children.Clear(); _expanded.Clear();
+            await LoadAsync(_workspace.RootPath!); Rebuild(); await SaveStateAsync();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException) { _error = ex.Message; }
+    }
+
+    private async Task RestoreAsync()
+    {
+        await LoadAsync(_workspace.RootPath!);
+        foreach (var path in _state.ExpandedPaths ?? [])
+            if (_workspace.Contains(path) && Directory.Exists(path)) { _expanded.Add(path); await LoadAsync(path); }
+        Rebuild();
+    }
+
+    private async Task LoadAsync(string path)
+    {
+        try { _children[path] = await _workspace.GetChildrenAsync(path); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { _error = ex.Message; }
+    }
+
+    private async Task ToggleAsync(WorkspaceEntry entry)
+    {
+        if (!_expanded.Remove(entry.Path)) { await LoadAsync(entry.Path); _expanded.Add(entry.Path); }
+        Rebuild(); await SaveStateAsync();
+    }
+
+    private async Task ActivateAsync(WorkspaceEntry entry)
+    {
+        Select(entry);
+        if (entry.IsDirectory) await ToggleAsync(entry);
+        else if (entry.Kind != WorkspaceEntryKind.SymbolicLink) await FileOpened.InvokeAsync(entry.Path);
+    }
+
+    private async Task RefreshAsync()
+    {
+        if (_workspace.RootPath is null) return;
+        foreach (var path in _children.Keys.ToArray()) if (Directory.Exists(path)) await LoadAsync(path); else _children.Remove(path);
+        Rebuild();
+    }
+
+    private async Task RevealAsync()
+    {
+        if (Document.FilePath is null || !_workspace.Contains(Document.FilePath)) return;
+        var directory = Path.GetDirectoryName(Document.FilePath);
+        while (directory is not null && _workspace.Contains(directory))
+        {
+            await LoadAsync(directory); _expanded.Add(directory);
+            if (string.Equals(directory, _workspace.RootPath, StringComparison.Ordinal)) break;
+            directory = Path.GetDirectoryName(directory);
+        }
+        Rebuild();
+        _selected = _visible.Select(row => row.Entry).FirstOrDefault(entry => string.Equals(entry.Path, Document.FilePath, StringComparison.Ordinal));
+        await SaveStateAsync();
+    }
+
+    private void Rebuild()
+    {
+        _visible.Clear();
+        if (_workspace.RootPath is null) return;
+        var root = new WorkspaceEntry(_workspace.RootPath, Path.GetFileName(_workspace.RootPath), _workspace.RootPath, WorkspaceEntryKind.Folder);
+        _selected ??= root;
+        AddVisible(root, 0);
+    }
+
+    private void AddVisible(WorkspaceEntry entry, int depth)
+    {
+        _visible.Add(new(entry, depth));
+        if (!_expanded.Contains(entry.Path) || !_children.TryGetValue(entry.Path, out var children)) return;
+        foreach (var child in children) AddVisible(child, depth + 1);
+    }
+
+    private void Select(WorkspaceEntry entry) { _selected = entry; _showContextMenu = false; }
+    private bool IsSelected(WorkspaceEntry entry) => _selected?.Id == entry.Id;
+    private bool IsRoot(string path) => string.Equals(path, _workspace.RootPath, StringComparison.Ordinal);
+    private string ParentForCreate() => _selected?.IsDirectory == true ? _selected.Path : Path.GetDirectoryName(_selected?.Path ?? _workspace.RootPath!)!;
+    private void BeginCreate(bool folder) { _showContextMenu = false; _editMode = folder ? "New folder name" : "New file name"; _editName = ""; _deletePending = null; }
+    private void BeginRename() { _showContextMenu = false; if (_selected is null || IsRoot(_selected.Path)) return; _editMode = "New name"; _editName = _selected.Name; _deletePending = null; }
+    private void CancelEdit() { _editMode = null; _editName = ""; }
+    private void BeginDelete() { _showContextMenu = false; if (_selected is not null && !IsRoot(_selected.Path)) _deletePending = _selected; _editMode = null; }
+    private void CancelDelete() => _deletePending = null;
+    private void ClearError() => _error = null;
+    private void HideContextMenu() => _showContextMenu = false;
+
+    private void ShowContextMenu(MouseEventArgs args, WorkspaceEntry entry)
+    {
+        _selected = entry;
+        ShowContextMenu(args.ClientX, args.ClientY);
+    }
+
+    private void ShowRootContextMenu(MouseEventArgs args)
+    {
+        if (_workspace.RootPath is null) return;
+        _selected = _visible.FirstOrDefault()?.Entry;
+        ShowContextMenu(args.ClientX, args.ClientY);
+    }
+
+    private void ShowContextMenu(double x, double y)
+    {
+        _contextX = x;
+        _contextY = y;
+        _showContextMenu = true;
+        _positionContextMenu = true;
+        _editMode = null;
+        _deletePending = null;
+    }
+
+    private async Task CommitEditAsync()
+    {
+        try
+        {
+            if (_editMode == "New file name") _selected = EntryFor(_workspace.CreateFile(ParentForCreate(), _editName));
+            else if (_editMode == "New folder name") _selected = EntryFor(_workspace.CreateFolder(ParentForCreate(), _editName), true);
+            else if (_selected is not null)
+            {
+                var oldPath = _selected.Path;
+                var newPath = _workspace.Move(oldPath, Path.GetDirectoryName(oldPath)!, _editName);
+                Document.Relocate(oldPath, newPath); _selected = EntryFor(newPath, _selected.IsDirectory);
+            }
+            CancelEdit(); await RefreshAsync();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException) { _error = ex.Message; }
+    }
+
+    private async Task ConfirmDeleteAsync()
+    {
+        try { _workspace.Delete(_deletePending!.Path); _deletePending = null; _selected = null; await RefreshAsync(); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException) { _error = ex.Message; }
+    }
+
+    private WorkspaceEntry EntryFor(string path, bool folder = false) => new(path, Path.GetFileName(path), path,
+        folder ? WorkspaceEntryKind.Folder : WorkspaceEntryKind.SupportedFile);
+
+    private async Task HandleKeyAsync(KeyboardEventArgs args)
+    {
+        if (_visible.Count == 0) return;
+        var index = Math.Max(0, _visible.FindIndex(row => IsSelected(row.Entry)));
+        switch (args.Key)
+        {
+            case "ArrowDown": _selected = _visible[Math.Min(_visible.Count - 1, index + 1)].Entry; break;
+            case "ArrowUp": _selected = _visible[Math.Max(0, index - 1)].Entry; break;
+            case "ArrowRight" when _selected?.IsDirectory == true && !_expanded.Contains(_selected.Path): await ToggleAsync(_selected); break;
+            case "ArrowLeft" when _selected?.IsDirectory == true && _expanded.Contains(_selected.Path): await ToggleAsync(_selected); break;
+            case "Enter" when _selected is not null: await ActivateAsync(_selected); break;
+            case "F2": BeginRename(); break;
+            case "Delete": BeginDelete(); break;
+            case "ContextMenu": ShowContextMenu(WidthForKeyboardMenu(), 72); break;
+            case "F10" when args.ShiftKey: ShowContextMenu(WidthForKeyboardMenu(), 72); break;
+        }
+    }
+
+    private double WidthForKeyboardMenu() => Math.Max(200, _state.SidebarWidth + 44);
+
+    private async void OnWorkspaceChanged(string? parent)
+    {
+        if (parent is null || !_children.ContainsKey(parent)) return;
+        await InvokeAsync(async () => { await LoadAsync(parent); Rebuild(); StateHasChanged(); });
+    }
+
+    private void OnWorkspaceError(string message) => _ = InvokeAsync(() => { _error = message; StateHasChanged(); });
+    private async Task CloseWorkspaceAsync() { _workspace.Close(); _children.Clear(); _expanded.Clear(); _visible.Clear(); _selected = null; await SaveStateAsync(); }
+    public async Task ToggleCollapsedAsync()
+    {
+        _state = _state with { SidebarCollapsed = !_state.SidebarCollapsed };
+        await SaveStateAsync();
+        await OpenChanged.InvokeAsync(!_state.SidebarCollapsed);
+    }
+    [JSInvokable]
+    public async Task ExplorerResized(double width)
+    {
+        _state = _state with { SidebarWidth = Math.Clamp(width, 180, 800) };
+        await SaveStateAsync();
+    }
+    private Task SaveStateAsync() => _persistence.SaveAsync(_state with { WorkspacePath = _workspace.RootPath, ExpandedPaths = _expanded.ToArray() });
+    private static string Icon(WorkspaceEntry entry) => entry.Kind switch { WorkspaceEntryKind.SymbolicLink => "↗", WorkspaceEntryKind.UnknownFile => "?", _ => "·" };
+    private sealed record TreeRow(WorkspaceEntry Entry, int Depth);
+
+    public async ValueTask DisposeAsync()
+    {
+        _workspace.Changed -= OnWorkspaceChanged; _workspace.Error -= OnWorkspaceError;
+        await SaveStateAsync(); _workspace.Dispose(); _self?.Dispose();
+    }
+}
