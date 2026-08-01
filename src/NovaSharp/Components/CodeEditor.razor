@@ -1,11 +1,18 @@
 @inject IJSRuntime JS
 @implements IAsyncDisposable
 
-<div class="code-editor" @ref="_root">
+<div class="code-editor @(WordWrap ? "word-wrap" : null)" @ref="_root">
     <div class="presentation" aria-hidden="true">
-        <Virtualize TItem="EditorLine" Items="@Lines" Context="line" OverscanCount="8">
-            <SourceLineView Line="line" />
-        </Virtualize>
+        @if (WordWrap)
+        {
+            @foreach (var line in Lines) { <SourceLineView Line="line" @key="line.Number" /> }
+        }
+        else
+        {
+            <Virtualize TItem="EditorLine" Items="@Lines" Context="line" ItemSize="20" OverscanCount="8">
+                <SourceLineView Line="line" />
+            </Virtualize>
+        }
     </div>
     <textarea class="editor-input" aria-label="File contents" spellcheck="false" wrap="off"
         value="@Value" @oninput="OnInput"></textarea>
