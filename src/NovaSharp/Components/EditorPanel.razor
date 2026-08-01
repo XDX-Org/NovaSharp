@@ -3,31 +3,29 @@
 <main class="workbench">
     <header class="toolbar">
         <button type="button" @onclick="OpenFileAsync">Open C# file</button>
-        <span class="file-name" title="@_filePath">@FileName</span>
+        <span class="file-name" title="@_document.FilePath">@FileName</span>
     </header>
 
     <section class="editor-panel" aria-label="C# editor">
-        @if (_error is not null)
+        @if (_document.Error is not null)
         {
-            <div class="error" role="alert">@_error</div>
+            <div class="error" role="alert">@_document.Error</div>
         }
-        else if (_filePath is null)
+        else if (_document.FilePath is null)
         {
             <div class="empty-state">Open a .cs file to begin.</div>
         }
         else
         {
-            <textarea aria-label="File contents" spellcheck="false" @bind="_content"></textarea>
+            <textarea aria-label="File contents" spellcheck="false" @bind="_document.Content"></textarea>
         }
     </section>
 </main>
 
 @code {
-    private string? _filePath;
-    private string? _content;
-    private string? _error;
+    private readonly EditorDocumentState _document = new();
 
-    private string FileName => _filePath is null ? "No file open" : Path.GetFileName(_filePath);
+    private string FileName => _document.FilePath is null ? "No file open" : Path.GetFileName(_document.FilePath);
 
     private async Task OpenFileAsync()
     {
@@ -36,20 +34,6 @@
             multiSelect: false,
             filterPatterns: [new FileFilter("C# source", "*.cs")]);
 
-        if (files is not [var path])
-        {
-            return;
-        }
-
-        try
-        {
-            _content = await File.ReadAllTextAsync(path);
-            _filePath = path;
-            _error = null;
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-        {
-            _error = $"Could not open {Path.GetFileName(path)}: {exception.Message}";
-        }
+        await _document.OpenAsync(files is [var path] ? path : null);
     }
 }
