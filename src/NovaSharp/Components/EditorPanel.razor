@@ -68,12 +68,13 @@
     private string LineEndingLabel => _document.LineEnding == LineEnding.CrLf ? "CRLF" : _document.LineEnding.ToString().ToUpperInvariant();
     private int FindCount => _document.Find(_query).Count;
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         Program.ActiveDocument = _document;
         _document.ExternalChangeDetected += OnExternalChange;
         _wordWrap = Program.Configuration.Current.WordWrap;
         RegisterCommands();
+        if (Program.SmokeFile is not null) await _document.OpenAsync(Program.SmokeFile);
     }
 
     private async Task OpenFileAsync()

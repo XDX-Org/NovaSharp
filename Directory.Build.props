@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <!-- PhotinoXDX preview.6 exposes a Windows-only WebView2 WPF reference to all target platforms. -->
+    <NoWarn>$(NoWarn);MSB3277</NoWarn>
+  </PropertyGroup>
+</Project>

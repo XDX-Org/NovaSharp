@@ -31,6 +31,11 @@
         if (!firstRender) return;
         _module = await JS.InvokeAsync<IJSObjectReference>("import", "./editor.js");
         await _module.InvokeVoidAsync("createEditor", _root, WordWrap);
+        if (Program.SmokeFile is not null)
+        {
+            var result = await _module.InvokeAsync<EditorSmokeResult>("runSmokeChecks", _root);
+            await Program.CompleteSmokeAsync(result);
+        }
     }
 
     private Task OnInput(ChangeEventArgs args) => ValueChanged.InvokeAsync(args.Value?.ToString() ?? string.Empty);

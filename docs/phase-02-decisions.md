@@ -28,4 +28,6 @@ Measured budgets use a release build, a 100,000-line C# fixture, and a 4-core/8 
 - large-file working set: 350 MB;
 - rendered source rows: visible rows plus at most 16 overscan rows.
 
-Automated unit coverage verifies document state, Unicode edits, encoding and line endings, atomic configuration, conflict rejection, search/replace, tokenization, command enablement, cancellation, and bounded logging. Native IME, clipboard, DOM-row, close-dialog, and platform smoke checks remain part of the release matrix because they require a packaged native host.
+Automated unit coverage verifies document state, Unicode edits, encoding and line endings, atomic configuration and document writes, conflict rejection, watcher debouncing, search/replace, tokenization, command enablement, cancellation, and bounded logging. The `Phase 2 verification` workflow publishes and launches the native host on every supported target, then verifies browser input, selection replacement, bracket and Tab edits, IME commit grouping, bounded DOM rows, and document loading. Native system-clipboard shortcuts and the unsaved-close dialog remain manual release checks because operating-system security requires trusted user input.
+
+`MSB3277` is suppressed through phase 3 because PhotinoXDX `0.1.0-preview.6` exposes its Windows-only WebView2 WPF reference on non-Windows builds. Remove the suppression when upgrading PhotinoXDX; all other warnings remain errors in the verification workflow.

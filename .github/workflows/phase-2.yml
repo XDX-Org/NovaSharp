@@ -1,0 +1,64 @@
+name: Phase 2 verification
+
+on:
+  push:
+    branches: [main, phase-2]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            rid: win-x64
+          - os: ubuntu-24.04
+            rid: linux-x64
+          - os: macos-14
+            rid: osx-arm64
+          - os: macos-15-intel
+            rid: osx-x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Install Linux native host dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libgtk-4-1 libwebkitgtk-6.0-4 xvfb
+      - run: dotnet restore NovaSharp.slnx -r ${{ matrix.rid }}
+      - run: dotnet build NovaSharp.slnx --no-restore --configuration Release --warnaserror
+      - run: dotnet test tests/NovaSharp.Tests/NovaSharp.Tests.csproj --no-build --no-restore --configuration Release
+      - run: dotnet publish src/NovaSharp/NovaSharp.csproj --no-restore --configuration Release --runtime ${{ matrix.rid }} --self-contained false --output artifacts/app
+      - name: Run packaged native-host smoke
+        shell: pwsh
+        run: |
+          $fixture = Join-Path $PWD 'phase2-smoke.cs'
+          $report = Join-Path $PWD 'phase2-smoke.json'
+          (1..500 | ForEach-Object { "public sealed class Fixture$_ { public string Value => `"line $_`"; }" }) | Set-Content -Encoding utf8 $fixture
+          $binary = if ($IsWindows) { 'artifacts/app/NovaSharp.exe' } else { 'artifacts/app/NovaSharp' }
+          $arguments = @("--phase2-smoke=$fixture", "--smoke-report=$report")
+          if ($IsLinux) {
+            $process = Start-Process xvfb-run -ArgumentList (@('-a', $binary) + $arguments) -PassThru
+          } else {
+            $process = Start-Process $binary -ArgumentList $arguments -PassThru
+          }
+          if (-not $process.WaitForExit(60000)) { $process.Kill($true); throw 'Native smoke timed out.' }
+          if ($process.ExitCode -ne 0) { throw "Native smoke exited with $($process.ExitCode)." }
+          $result = Get-Content $report | ConvertFrom-Json
+          $required = 'InputPresent', 'SelectionReplacement', 'BracketPairing', 'TabInsertion', 'CompositionCommittedOnce', 'RowsBounded', 'DocumentLoaded', 'DocumentClean'
+          foreach ($name in $required) { if (-not $result.$name) { throw "Smoke assertion failed: $name" } }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase-2-${{ matrix.rid }}
+          path: |
+            phase2-smoke.json
+            artifacts/app

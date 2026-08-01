@@ -40,6 +40,7 @@ internal sealed class EditorDocumentState : IDisposable
     private readonly Stack<string> _redo = new();
     private FileSystemWatcher? _watcher;
     private bool _saving;
+    private CancellationTokenSource? _watcherDebounce;
 
     internal event Action? ExternalChangeDetected;
 
@@ -272,11 +273,30 @@ internal sealed class EditorDocumentState : IDisposable
 
     private void OnDiskChanged(object sender, FileSystemEventArgs args)
     {
-        if (!_saving) ExternalChangeDetected?.Invoke();
+        if (_saving) return;
+        _watcherDebounce?.Cancel();
+        _watcherDebounce?.Dispose();
+        _watcherDebounce = new();
+        _ = NotifyExternalChangeAsync(_watcherDebounce.Token);
+    }
+
+    private async Task NotifyExternalChangeAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(100, cancellationToken);
+            if (!_saving && HasChangedOnDisk()) ExternalChangeDetected?.Invoke();
+        }
+        catch (OperationCanceledException) { }
+        catch (IOException) { ExternalChangeDetected?.Invoke(); }
+        catch (UnauthorizedAccessException) { ExternalChangeDetected?.Invoke(); }
     }
 
     public void Dispose()
     {
+        _watcherDebounce?.Cancel();
+        _watcherDebounce?.Dispose();
+        _watcherDebounce = null;
         _watcher?.Dispose();
         _watcher = null;
         ExternalChangeDetected = null;

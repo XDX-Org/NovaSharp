@@ -10,8 +10,8 @@ Source control UI, remote development, collaboration, notebooks, AI completion, 
 
 | Phase | Status | Exit evidence |
 |---|---|---|
-| 1. Single-file editor shell | Implemented; verification incomplete | Build passes; manual platform smoke tests remain |
-| 2. Editor and file lifecycle | Implemented; native smoke verification pending | Build and 16 automated tests pass; see `phase-02-decisions.md` |
+| 1. Single-file editor shell | Implemented; verification automated | Build/test/package/native-launch matrix is defined for every supported platform |
+| 2. Editor and file lifecycle | Implemented; CI verification pending | Automated tests and packaged native-host matrix are defined; see `phase-02-decisions.md` |
 | 3–17 | Planned | Completion criteria not yet met |
 
 Status values are `planned`, `in progress`, `blocked`, and `complete`. Update this table only from test or release evidence; documentation or partial UI alone does not complete a phase.
