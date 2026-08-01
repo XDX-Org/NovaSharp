@@ -13,6 +13,7 @@ Open a folder and navigate its contents through a resizable Explorer panel.
 - Open files by mouse or keyboard; distinguish folders, supported files, unknown files, and symlinks.
 - Ignore configurable paths plus `.git`, `bin`, and `obj` by default without hiding explicitly opened files.
 - Filesystem watcher updates that preserve selection and expansion where possible.
+- Introduce versioned persistence for workspace identity, expansion, sidebar, and restore state.
 
 Solution/project semantics and source-control decorations are deferred. The tree represents the filesystem in this phase.
 

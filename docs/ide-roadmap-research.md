@@ -74,4 +74,4 @@ Discard stale results after further edits. Completion and hover should not block
 
 ## Deferred features
 
-Extensions, source control UI, remote workspaces, notebooks, collaboration, AI completion, visual designers, profiling, and multiple native windows remain outside phases 1–10. The internal command, language-provider, document, and workbench boundaries should allow them later without defining speculative public APIs now.
+Source control UI, remote workspaces, notebooks, collaboration, AI completion, visual designers, profiling, and multiple native windows remain outside the preview roadmap. Razor/HTML/CSS services and extensions are planned after the C# workbench is stable in phases 15 and 16. The internal command, language-provider, document, and workbench boundaries should allow deferred features later without defining speculative public APIs now.

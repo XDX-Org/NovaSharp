@@ -82,18 +82,19 @@ See the [phase documentation](docs/README.md) for the current scope and verifica
 
 ## Roadmap
 
-Development is currently focused on:
+Development follows the detailed [phase roadmap](docs/README.md) and [delivery gates](docs/delivery-plan.md). The preview roadmap covers:
 
 * Improving the code editor
 * Expanding C# language services
 * Implementing reliable project and solution loading
-* Improving Razor and Blazor support
+* Adding project-aware Razor, Blazor, HTML, and CSS support after the C# workbench
 * Integrating build and run workflows
 * Expanding debugger functionality
 * Correctly resolving source locations and symbols
 * Improving local variable and call stack information
-* Building a stable extension architecture
+* Building a versioned, permission-aware extension architecture
 * Improving performance and reliability
+* Producing signed, tested, recoverable preview packages for supported platforms
 
 The roadmap will evolve as the foundations of the IDE mature.
 

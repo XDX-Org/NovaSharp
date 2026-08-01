@@ -12,6 +12,7 @@ Provide responsive, project-aware C# editing assistance from Roslyn through Nova
 - Semantic tokens layered over baseline C# syntax colorization.
 - Automatic indentation, paired delimiters, comment toggling, and formatting selection/document.
 - Configurable suggestion behavior and a visible busy/degraded state while projects load.
+- Capability-based internal language-provider contracts suitable for later Razor/HTML/CSS and extension providers without exposing Roslyn types to the editor.
 
 AI/inline prediction, Razor projection, and third-party language servers are deferred.
 

@@ -34,4 +34,4 @@ Turn language analysis into an IDE workflow for finding, understanding, and fixi
 
 ## Next phase
 
-Connect editing to workspace-wide discovery and executable developer workflows.
+Connect editing to [workspace-wide search and replacement](phase-09-search-replace.md).

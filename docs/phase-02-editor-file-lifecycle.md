@@ -13,6 +13,7 @@ Replace the prototype text area with a production editor and make opening, editi
 - Write through a temporary sibling file followed by replacement when the platform permits.
 - Detect external modification, deletion, read-only files, decoding failures, and save conflicts.
 - Prompt before closing the application with unsaved changes.
+- Introduce the command registry, typed configuration, structured notifications/logging, and cancellable task/lifetime coordinator defined by the delivery plan.
 
 Not included: multiple documents, workspace trees, semantic C# features, or settings UI.
 
@@ -37,6 +38,8 @@ native input/selection layer -> versioned edit operations
 - A browser-native input layer handles caret, selection, clipboard, keyboard composition, and IME. Interop reports edit/selection/scroll operations; it does not tokenize, render source markup, resolve symbols, or own document policy.
 - C# owns text, file I/O, versions, undo history, find results, classifications, and view-state policy.
 - A monotonically increasing document version accompanies editor changes and async responses.
+- Editor buttons and shortcuts invoke registered commands; components do not duplicate command behavior.
+- Store settings atomically with user/workspace scope and schema version. Redact source text and sensitive paths from logs by default.
 - File watching is advisory. A dirty buffer wins until the user explicitly reloads or resolves a conflict.
 - Start with fixed-height, non-wrapped lines. Enable wrapping only after input, selection, hit testing, and variable-height virtualization pass their own acceptance tests.
 
