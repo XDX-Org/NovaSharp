@@ -1,0 +1,22 @@
+<div class="source-line" @key="Line.Number"><span class="line-number">@Line.Number</span><code>@RenderLine()</code></div>
+
+@code {
+    [Parameter, EditorRequired] public EditorLine Line { get; set; }
+
+    private RenderFragment RenderLine() => builder =>
+    {
+        var position = 0;
+        var sequence = 0;
+        foreach (var span in Line.Spans)
+        {
+            if (span.Start > position) builder.AddContent(sequence++, Line.Text[position..span.Start]);
+            builder.OpenElement(sequence++, "span");
+            builder.AddAttribute(sequence++, "class", $"token-{span.Kind.ToString().ToLowerInvariant()}");
+            builder.AddContent(sequence++, Line.Text.Substring(span.Start, span.Length));
+            builder.CloseElement();
+            position = span.Start + span.Length;
+        }
+        if (position < Line.Text.Length) builder.AddContent(sequence, Line.Text[position..]);
+        if (Line.Text.Length == 0) builder.AddContent(sequence, " ");
+    };
+}

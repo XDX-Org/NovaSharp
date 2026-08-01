@@ -1,4 +1,5 @@
 using System.Text;
+using System.Security.Cryptography;
 
 namespace NovaSharp;
 
@@ -17,25 +18,30 @@ internal enum LineEnding
     Cr
 }
 
-internal readonly record struct DiskStamp(long Length, DateTime LastWriteUtc)
+internal readonly record struct DiskStamp(long Length, DateTime LastWriteUtc, string ContentHash)
 {
     internal static DiskStamp Read(string path)
     {
         var info = new FileInfo(path);
-        return new(info.Length, info.LastWriteTimeUtc);
+        using var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        return new(info.Length, info.LastWriteTimeUtc, Convert.ToHexString(SHA256.HashData(stream)));
     }
 }
 
 internal sealed class SaveConflictException(string path)
     : IOException($"'{Path.GetFileName(path)}' changed on disk. Reload it or use Save As.");
 
-internal sealed class EditorDocumentState
+internal sealed class EditorDocumentState : IDisposable
 {
     private string? _content;
     private long _savedVersion;
     private DiskStamp? _diskStamp;
     private readonly Stack<string> _undo = new();
     private readonly Stack<string> _redo = new();
+    private FileSystemWatcher? _watcher;
+    private bool _saving;
+
+    internal event Action? ExternalChangeDetected;
 
     internal string? FilePath { get; private set; }
     internal string DisplayName => FilePath is null ? "Untitled" : Path.GetFileName(FilePath);
@@ -47,6 +53,7 @@ internal sealed class EditorDocumentState
     internal bool IsReadOnly => FilePath is not null && File.Exists(FilePath) && new FileInfo(FilePath).IsReadOnly;
     internal bool CanUndo => _undo.Count > 0;
     internal bool CanRedo => _redo.Count > 0;
+    internal bool IsDeletedOnDisk => FilePath is not null && !File.Exists(FilePath);
 
     internal string? Content
     {
@@ -101,11 +108,17 @@ internal sealed class EditorDocumentState
 
         var versionToSave = Version;
         var bytes = Encode(NormalizeLineEndings(_content ?? string.Empty, LineEnding), Encoding);
-        await AtomicFile.WriteAsync(path, bytes);
-        FilePath = path;
-        _diskStamp = DiskStamp.Read(path);
-        _savedVersion = versionToSave;
-        Error = null;
+        _saving = true;
+        try
+        {
+            await AtomicFile.WriteAsync(path, bytes);
+            FilePath = path;
+            _diskStamp = DiskStamp.Read(path);
+            _savedVersion = versionToSave;
+            Error = null;
+            StartWatching(path);
+        }
+        finally { _saving = false; }
     }
 
     internal async Task ReloadAsync()
@@ -126,6 +139,11 @@ internal sealed class EditorDocumentState
         return !File.Exists(FilePath) || DiskStamp.Read(FilePath) != _diskStamp;
     }
 
+    internal void KeepBuffer()
+    {
+        _diskStamp = FilePath is not null && File.Exists(FilePath) ? DiskStamp.Read(FilePath) : null;
+    }
+
     internal void Undo()
     {
         if (_undo.TryPop(out var value))
@@ -144,6 +162,16 @@ internal sealed class EditorDocumentState
         }
     }
 
+    internal void ApplyEdit(TextEdit edit) => SetContent(edit.Apply(_content ?? string.Empty), recordUndo: true);
+
+    internal void ReplaceAll(string query, string replacement, bool matchCase = false) =>
+        SetContent(TextSearch.ReplaceAll(_content ?? string.Empty, query, replacement, matchCase), recordUndo: true);
+
+    internal IReadOnlyList<TextRange> Find(string query, bool matchCase = false) =>
+        TextSearch.Find(_content ?? string.Empty, query, matchCase);
+
+    internal IReadOnlyList<EditorLine> CreatePresentationSnapshot() => CSharpTokenizer.Tokenize(_content ?? string.Empty);
+
     private void Load(string path, string content, DocumentEncoding encoding, DiskStamp? stamp)
     {
         FilePath = path;
@@ -156,6 +184,7 @@ internal sealed class EditorDocumentState
         _undo.Clear();
         _redo.Clear();
         Error = null;
+        StartWatching(path);
     }
 
     private void SetContent(string value, bool recordUndo)
@@ -225,11 +254,38 @@ internal sealed class EditorDocumentState
         var newline = ending switch { LineEnding.CrLf => "\r\n", LineEnding.Cr => "\r", _ => "\n" };
         return text.Replace("\r\n", "\n").Replace('\r', '\n').Replace("\n", newline);
     }
+
+    private void StartWatching(string path)
+    {
+        _watcher?.Dispose();
+        var directory = Path.GetDirectoryName(path);
+        if (directory is null || !Directory.Exists(directory)) return;
+        _watcher = new FileSystemWatcher(directory, Path.GetFileName(path))
+        {
+            NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size
+        };
+        _watcher.Changed += OnDiskChanged;
+        _watcher.Deleted += OnDiskChanged;
+        _watcher.Renamed += OnDiskChanged;
+        _watcher.EnableRaisingEvents = true;
+    }
+
+    private void OnDiskChanged(object sender, FileSystemEventArgs args)
+    {
+        if (!_saving) ExternalChangeDetected?.Invoke();
+    }
+
+    public void Dispose()
+    {
+        _watcher?.Dispose();
+        _watcher = null;
+        ExternalChangeDetected = null;
+    }
 }
 
 internal static class AtomicFile
 {
-    internal static async Task WriteAsync(string path, byte[] content)
+    internal static async Task WriteAsync(string path, byte[] content, CancellationToken cancellationToken = default)
     {
         var directory = Path.GetDirectoryName(Path.GetFullPath(path))!;
         Directory.CreateDirectory(directory);
@@ -239,8 +295,8 @@ internal static class AtomicFile
             await using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None,
                 64 * 1024, FileOptions.Asynchronous | FileOptions.WriteThrough))
             {
-                await stream.WriteAsync(content);
-                await stream.FlushAsync();
+                await stream.WriteAsync(content, cancellationToken);
+                await stream.FlushAsync(cancellationToken);
             }
             File.Move(temporary, path, overwrite: true);
         }

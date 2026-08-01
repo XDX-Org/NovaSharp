@@ -9,7 +9,7 @@
 
 html, body, app, .workbench { width: 100%; height: 100%; margin: 0; }
 
-.workbench { display: grid; grid-template-rows: 44px minmax(0, 1fr) 24px; }
+.workbench { display: flex; flex-direction: column; }
 
 .toolbar {
     display: flex;
@@ -36,21 +36,39 @@ button:disabled { opacity: .45; cursor: default; }
 .file-name { overflow: hidden; color: #aeb6c4; text-overflow: ellipsis; white-space: nowrap; }
 .document-info { margin-left: auto; color: #788292; font-size: 12px; }
 .editor-panel { min-height: 0; position: relative; }
-.editor-surface { display: grid; grid-template-columns: auto minmax(0, 1fr); width: 100%; height: 100%; overflow: hidden; }
-.line-numbers { min-width: 48px; height: 100%; margin: 0; padding: 16px 10px; overflow: hidden; color: #616a78; background: #1c1e23; text-align: right; user-select: none; font: 14px/1.55 "JetBrains Mono", "Cascadia Code", monospace; }
+.editor-panel { flex: 1; overflow: hidden; }
+.code-editor { position: relative; width: 100%; height: 100%; overflow: hidden; background: #181a1f; }
+.presentation, .editor-input { position: absolute; inset: 0; overflow: auto; }
+.presentation { pointer-events: none; font: 14px/21.7px "JetBrains Mono", "Cascadia Code", monospace; }
+.source-line { display: grid; grid-template-columns: 54px max-content; min-width: max-content; height: 21.7px; white-space: pre; }
+.source-line .line-number { position: sticky; left: 0; padding-right: 12px; color: #616a78; background: #1c1e23; text-align: right; user-select: none; }
+.source-line code { padding-left: 12px; color: #d8dee9; font: inherit; }
+.token-keyword { color: #c586c0; }
+.token-type { color: #4ec9b0; }
+.token-string { color: #ce9178; }
+.token-comment { color: #6a9955; }
+.token-number { color: #b5cea8; }
 
-textarea {
+.editor-input {
     width: 100%;
     height: 100%;
     padding: 16px;
     resize: none;
     border: 0;
     outline: none;
-    color: #d8dee9;
-    background: #181a1f;
+    padding-left: 66px;
+    color: transparent;
+    caret-color: #f0f0f0;
+    background: transparent;
     font: 14px/1.55 "JetBrains Mono", "Cascadia Code", monospace;
     tab-size: 4;
 }
+.editor-input::selection { color: transparent; background: rgba(75, 110, 175, .55); }
+.findbar, .conflict { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid #454b57; background: #292d35; }
+.findbar input { width: 190px; padding: 6px 8px; border: 1px solid #4c566a; color: inherit; background: #181a1f; }
+.conflict { background: #493b20; }
+.compare { display: grid; grid-template-columns: 1fr 1fr; height: 100%; overflow: hidden; }
+.compare pre { margin: 0; padding: 12px; overflow: auto; border-right: 1px solid #454b57; white-space: pre; font: 13px/1.5 monospace; }
 .statusbar { overflow: hidden; padding: 3px 10px; color: #b8c0cc; background: #262a31; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 
 .empty-state, .error { padding: 24px; color: #8f99a8; }
