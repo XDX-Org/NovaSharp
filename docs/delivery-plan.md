@@ -15,7 +15,7 @@ Source control UI, remote development, collaboration, notebooks, AI completion, 
 | 3. Workspace explorer | In progress | Automated gates pass in run 30742324717; Windows/macOS interactive native checks pending |
 | 4. Documents and movable tabs | Complete | Four-platform build/test/package and Linux interaction gates pass in run 30750653723 |
 | 5. Editor groups and split views | Complete | Four-platform build/test/package and Linux Phase 2–5 interaction gates pass in run 30760456811 |
-| 6. Solution model and Roslyn | In progress | Linux build and 54 tests pass locally; supported-platform native/package gates pending |
+| 6. Solution model and Roslyn | Complete | Four-platform build/test/package and Linux Phase 2–6 interaction gates pass in run 30764773602 |
 | 7–17 | Planned | Completion criteria not yet met |
 
 Status values are `planned`, `in progress`, `blocked`, and `complete`. Update this table only from test or release evidence; documentation or partial UI alone does not complete a phase.

@@ -47,7 +47,7 @@ Build execution and IntelliSense presentation are deferred; this phase establish
 
 ## Verification
 
-On 2026-08-02, the Linux local gate passed a warning-free `net10.0` build and all 54 tests. Phase 6 fixtures cover library, console, ASP.NET Core/Razor, multi-project, multi-target, project references, compiler settings, analyzers, linked files, dirty snapshots, reload preservation, and the named 500-document load budget. Supported-platform native interaction and packaging gates remain required before the delivery-plan status can become complete.
+On 2026-08-02, run 30764773602 passed warning-free builds, all 54 tests, and packaging on Windows x64, Linux x64, macOS arm64, and macOS x64, plus the Linux Phase 2–6 packaged native interactions. Phase 6 fixtures cover library, console, ASP.NET Core/Razor, multi-project, multi-target, project references, compiler settings, analyzers, linked files, dirty snapshots, reload preservation, and the named 500-document load budget.
 
 ## Known limitations
 
