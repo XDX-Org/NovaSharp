@@ -135,6 +135,7 @@
         var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NovaSharp", "workspace-state.json");
         _persistence = new(path);
         _state = await _persistence.LoadAsync();
+        if (Program.Phase6Solution is not null) _state = _state with { SidebarCollapsed = false };
         await OpenChanged.InvokeAsync(!_state.SidebarCollapsed);
         _workspace.Changed += OnWorkspaceChanged;
         _workspace.Error += OnWorkspaceError;
