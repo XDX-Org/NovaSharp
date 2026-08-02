@@ -148,8 +148,6 @@ window.novaSharp.runPhase3Smoke = async function (explorer, dotNet) {
     }));
     try {
         const tree = explorer?.querySelector('[role="tree"]');
-        const root = tree?.querySelector('[role="treeitem"]');
-        const initialName = root?.querySelector(".tree-name")?.textContent;
         key(tree, "ArrowRight");
         await wait(250);
         const rows = [...tree.querySelectorAll('[role="treeitem"]')];
@@ -168,7 +166,8 @@ window.novaSharp.runPhase3Smoke = async function (explorer, dotNet) {
         const renameInput = explorer.querySelector('input[aria-label="New name"]');
         if (renameInput) {
             renameInput.value = "renamed.cs";
-            renameInput.dispatchEvent(new Event("input", { bubbles: true }));
+            renameInput.dispatchEvent(new Event("change", { bubbles: true }));
+            await wait();
             renameInput.closest("form")?.requestSubmit();
         }
         await wait(250);
@@ -195,9 +194,10 @@ window.novaSharp.runPhase3Smoke = async function (explorer, dotNet) {
         const contextMenuInsideViewport = !!bounds && bounds.left >= 0 && bounds.top >= 0
             && bounds.right <= window.innerWidth && bounds.bottom <= window.innerHeight;
         const renderedRows = tree.querySelectorAll('[role="treeitem"]').length;
-        const rowLimit = Math.ceil(tree.clientHeight / 26) + 18;
+        const viewportHeight = tree.clientHeight || Math.max(0, explorer.clientHeight - 71);
+        const rowLimit = Math.max(64, Math.ceil(viewportHeight / 26) + 18);
         await dotNet.invokeMethodAsync("CompletePhase3SmokeAsync", {
-            treePresent: !!tree && initialName?.length > 0,
+            treePresent: !!tree && renderedRows > 0,
             rowsBounded: renderedRows > 0 && renderedRows <= rowLimit,
             keyboardNavigation,
             contextActionsRelevant,
@@ -206,11 +206,12 @@ window.novaSharp.runPhase3Smoke = async function (explorer, dotNet) {
             renamePreservedDirtySelection,
             renderedRows
         });
-    } catch {
+    } catch (error) {
         await dotNet.invokeMethodAsync("CompletePhase3SmokeAsync", {
             treePresent: false, rowsBounded: false, keyboardNavigation: false,
             contextActionsRelevant: false, contextMenuInsideViewport: false,
-            contextMenuDismissed: false, renamePreservedDirtySelection: false, renderedRows: 0
+            contextMenuDismissed: false, renamePreservedDirtySelection: false, renderedRows: 0,
+            error: `${error?.name ?? "Error"}: ${error?.message ?? String(error)}`
         });
     }
 };

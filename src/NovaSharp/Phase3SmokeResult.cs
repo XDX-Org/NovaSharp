@@ -8,4 +8,5 @@ public sealed record Phase3SmokeResult(
     bool ContextMenuInsideViewport,
     bool ContextMenuDismissed,
     bool RenamePreservedDirtySelection,
-    int RenderedRows);
+    int RenderedRows,
+    string? Error = null);
