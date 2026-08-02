@@ -151,7 +151,13 @@
         else if (Program.Phase4Workspace is not null)
             foreach (var path in Directory.EnumerateFiles(Program.Phase4Workspace, "*.cs").Order()) await _workspace.OpenAsync(path);
         else if (Program.SmokeFile is not null) await OpenTabAsync(Program.SmokeFile);
-        else await _workspace.RestoreAsync(await _persistence.LoadAsync());
+        else
+        {
+            var state = await _persistence.LoadAsync();
+            await _workspace.RestoreAsync(state);
+            if (state.SolutionPath is { } solutionPath && File.Exists(solutionPath))
+                await _projectSystem.OpenAsync(solutionPath);
+        }
         if (Program.Phase6Solution is not null) await _projectSystem.OpenAsync(Program.Phase6Solution);
         TrackActiveDocument();
     }
@@ -190,6 +196,7 @@
         if (files is not [var path]) return;
         await _projectSystem.OpenAsync(path);
         _status = _projectSystem.State.Progress;
+        await SaveLayoutAsync();
     }
     private Task OpenWorkspaceFileAsync(string path) => OpenTabAsync(path);
     private Task PreviewWorkspaceFileAsync(string path) => OpenTabAsync(path, true);
@@ -276,7 +283,8 @@
     private void KeepBuffer() { _document.KeepBuffer(); _externalChange = false; }
     private Task ToggleExplorerAsync() => _explorer?.ToggleCollapsedAsync() ?? Task.CompletedTask;
     private void ExplorerOpenChanged(bool open) => _explorerOpen = open;
-    private Task SaveLayoutAsync() => _persistence.SaveAsync(_workspace.CaptureState());
+    private Task SaveLayoutAsync() => _persistence.SaveAsync(
+        _workspace.CaptureState() with { SolutionPath = _projectSystem.State.Path });
     private void WorkspaceChanged() => _ = InvokeAsync(StateHasChanged);
     private void OnExternalChange() => _ = InvokeAsync(() => { _externalChange = true; StateHasChanged(); });
     private void UntrackActiveDocument() => _document.ExternalChangeDetected -= OnExternalChange;

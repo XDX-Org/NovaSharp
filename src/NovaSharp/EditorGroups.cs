@@ -420,4 +420,5 @@ internal sealed record SessionViewState(Guid Id, string Path, bool IsPreview = f
 internal sealed record LayoutNodeState(string Kind, Guid Id, SplitOrientation? Orientation = null,
     double Ratio = 0.5, LayoutNodeState? First = null, LayoutNodeState? Second = null,
     SessionViewState[]? Tabs = null, Guid? ActiveViewId = null);
-internal sealed record WorkbenchLayoutState(int SchemaVersion, LayoutNodeState? Root, Guid FocusedGroupId);
+internal sealed record WorkbenchLayoutState(int SchemaVersion, LayoutNodeState? Root, Guid FocusedGroupId,
+    string? SolutionPath = null);
