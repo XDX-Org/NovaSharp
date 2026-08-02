@@ -4,14 +4,14 @@
 
 Implementation complete; verification in progress. Folder open/close and restore, lazy virtualized expansion, configurable/default ignores, create/rename/delete/move operations, active-file reveal, targeted watcher refresh, overflow rescan, keyboard/context interaction, symlink leaves, and versioned sidebar/expansion persistence are implemented.
 
-The Release build and 28 tests pass locally. The generated 20,000-file fixture completes its full lazy enumeration within the five-second budget on an AMD Ryzen 7 5800X3D with NVMe storage. The Phase 3 workflow builds, tests, publishes, and launches the packaged Explorer interaction smoke on all four supported targets; Linux uses Xvfb. Phase status remains in progress until that matrix passes.
+The Release build and 28 tests pass locally. The generated 20,000-file fixture completes its full lazy enumeration within the five-second budget on an AMD Ryzen 7 5800X3D with NVMe storage. The Phase 3 workflow builds, tests, and publishes all four supported targets and launches the packaged Explorer interaction smoke under Linux/Xvfb. Hosted macOS runners cannot launch the interactive Photino host, so macOS native interaction remains a manual release check.
 
 ## Verification budget
 
 | Scenario | Fixture hardware | Budget |
 |---|---|---:|
 | Enumerate 20 directories containing 1,000 files each | AMD Ryzen 7 5800X3D, NVMe, Linux x64 | 5 seconds |
-| Packaged Explorer keyboard/context/rename smoke | Four supported GitHub runner images; Linux uses Xvfb | 60 seconds |
+| Packaged Explorer keyboard/context/rename smoke | GitHub `ubuntu-24.04`, Xvfb | 60 seconds |
 
 ## Goal
 
@@ -54,7 +54,7 @@ Menus must remain fully inside the app viewport, close on outside click or `Esca
 
 ## Manual native verification checklist
 
-Use this checklist as a release spot-check; the same core interactions run automatically in the packaged four-platform smoke:
+Run on Windows x64, macOS arm64, and macOS x64 before marking the phase complete. Hosted macOS runners were attempted in run 30742225548 but cannot launch the interactive Photino host:
 
 - Launch the published application and open a workspace folder.
 - Expand/collapse and activate tree items with the keyboard.
