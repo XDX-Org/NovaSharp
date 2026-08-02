@@ -339,7 +339,7 @@ window.novaSharp.runPhase5Smoke = async function (workbench, dotNet) {
         splitter.value = '65';
         splitter.dispatchEvent(new Event('input', { bubbles: true }));
         await wait();
-        const splitterResized = workbench.querySelector('.editor-split')?.style.gridTemplateColumns.includes('65fr');
+        const splitterResized = workbench.querySelector('.editor-split')?.dataset.ratio === '0.65';
         const originalWidth = workbench.style.width;
         workbench.style.width = '480px';
         await wait();
@@ -358,7 +358,7 @@ window.novaSharp.runPhase5Smoke = async function (workbench, dotNet) {
         const dropZonesPresent = zones.length >= 10 && zones.every(zone => zone.getAttribute('aria-label'));
         const right = workbench.querySelectorAll('.editor-group')[1]?.querySelector('.drop-zone.right');
         if (!right) throw new Error('Drop zones did not render after drag start.');
-        right.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer }));
+        right.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer, ctrlKey: true }));
         await wait(250);
         const edgeDropSplit = workbench.querySelectorAll('.editor-group').length === 3;
         await dotNet.invokeMethodAsync('CompletePhase5SmokeAsync', {

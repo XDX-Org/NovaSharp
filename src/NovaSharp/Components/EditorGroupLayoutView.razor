@@ -2,7 +2,8 @@
 
 @if (Node is EditorSplit split)
 {
-    <div class="editor-split @OrientationClass(split)" style="@SplitStyle(split)">
+    <div class="editor-split @OrientationClass(split)" style="@SplitStyle(split)"
+         data-ratio="@split.Ratio.ToString(System.Globalization.CultureInfo.InvariantCulture)">
         <EditorGroupLayoutView Node="split.First" Workspace="Workspace" WordWrap="WordWrap"
                                ActiveChanged="ActiveChanged" ContentEdited="ContentEdited" CloseRequested="CloseRequested" />
         <input class="editor-splitter" type="range" min="10" max="90" step="2"
