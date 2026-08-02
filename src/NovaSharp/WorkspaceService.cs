@@ -197,7 +197,13 @@ internal sealed class WorkspaceService : IDisposable
 
     internal void HandleWatcherError(Exception exception)
     {
-        Error?.Invoke($"Filesystem watcher lost changes: {exception.Message}. The Explorer was rescanned.");
+        var recovery = "The Explorer was rescanned.";
+        try { if (RootPath is not null) StartWatching(); }
+        catch (Exception restartException) when (restartException is IOException or UnauthorizedAccessException)
+        {
+            recovery = $"Watcher restart failed: {restartException.Message}. Use Refresh after resolving the error.";
+        }
+        Error?.Invoke($"Filesystem watcher lost changes: {exception.Message}. {recovery}");
         RescanRequired?.Invoke();
     }
     private static string Canonical(string path) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));

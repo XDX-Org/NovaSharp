@@ -73,6 +73,29 @@ public sealed class WorkspaceServiceTests
     }
 
     [TestMethod]
+    public async Task ExternalCreateAndDeleteRefreshOnlyTheAffectedBranch()
+    {
+        using var fixture = new WorkspaceFixture();
+        var affected = Path.Combine(fixture.Root, "affected");
+        var unaffected = Path.Combine(fixture.Root, "unaffected");
+        Directory.CreateDirectory(affected);
+        Directory.CreateDirectory(unaffected);
+        using var workspace = new WorkspaceService();
+        workspace.Open(fixture.Root);
+        var changed = new ConcurrentQueue<string>();
+        workspace.Changed += path => { if (path is not null) changed.Enqueue(path); };
+
+        var external = Path.Combine(affected, "external.cs");
+        await File.WriteAllTextAsync(external, "class External;");
+        await WaitUntilAsync(() => changed.Contains(affected, PathComparer));
+        while (changed.TryDequeue(out _)) { }
+        File.Delete(external);
+        await WaitUntilAsync(() => changed.Contains(affected, PathComparer));
+
+        Assert.IsFalse(changed.Contains(unaffected, PathComparer));
+    }
+
+    [TestMethod]
     public async Task MovingFolderRelocatesDirtyDocumentAndRetainsViewSelection()
     {
         using var fixture = new WorkspaceFixture();
@@ -99,20 +122,24 @@ public sealed class WorkspaceServiceTests
     }
 
     [TestMethod]
-    public void WatcherOverflowProducesRecoverableErrorAndFullRescanRequest()
+    public async Task WatcherOverflowRestartsWatchingAndRequestsFullRescan()
     {
         using var fixture = new WorkspaceFixture();
         using var workspace = new WorkspaceService();
         string? message = null;
         var rescans = 0;
+        var subsequentChange = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         workspace.Error += value => message = value;
         workspace.RescanRequired += () => rescans++;
         workspace.Open(fixture.Root);
+        workspace.Changed += path => { if (PathComparer.Equals(path, fixture.Root)) subsequentChange.TrySetResult(); };
 
         workspace.HandleWatcherError(new InternalBufferOverflowException("buffer full"));
+        await File.WriteAllTextAsync(Path.Combine(fixture.Root, "after-overflow.cs"), "class Recovered;");
 
         Assert.IsTrue(message?.Contains("rescan", StringComparison.OrdinalIgnoreCase));
         Assert.AreEqual(1, rescans);
+        await subsequentChange.Task.WaitAsync(TimeSpan.FromSeconds(5));
     }
 
     [TestMethod]

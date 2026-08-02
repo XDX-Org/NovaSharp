@@ -158,9 +158,7 @@ window.novaSharp.runPhase3Smoke = async function (explorer, dotNet) {
         const tree = explorer?.querySelector('[role="tree"]');
         key(tree, "ArrowRight");
         await wait(250);
-        const rows = [...tree.querySelectorAll('[role="treeitem"]')];
-        const active = rows.find(row => row.querySelector(".tree-name")?.textContent === "active.cs");
-        active?.click();
+        key(tree, "ArrowDown");
         await wait();
         const keyboardNavigation = explorer.querySelector(".tree-row.selected .tree-name")?.textContent === "active.cs";
 
