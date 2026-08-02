@@ -48,8 +48,9 @@ Implemented on `phase-4`:
 - Restoration recovery tests for moved, deleted, and malformed session entries.
 - Automated UI interaction coverage for pointer reordering, overflow, middle-click, and accessible labels.
 
-Automated unit and recovery tests pass locally. The Linux/Xvfb Phase 4 interaction smoke is wired into CI;
-local execution requires the native GTK/WebKit/Xvfb dependencies and remains pending on this machine.
+Automated unit and recovery tests pass on all four supported targets. The packaged Linux/Xvfb interaction
+smoke passes pointer reordering, overflow, middle-click, accessible-label, and context-command checks in
+verification run 30750653723. Windows and macOS packages build and pass the automated test suite.
 
 ## Next phase
 
