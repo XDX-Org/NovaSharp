@@ -111,13 +111,15 @@
         {
             _phase4SmokeStarted = true;
             _self ??= DotNetObjectReference.Create(this);
-            await JS.InvokeVoidAsync("novaSharp.runPhase4Smoke", _workbenchElement, _self);
+            try { await JS.InvokeVoidAsync("novaSharp.schedulePhase4Smoke", _workbenchElement, _self); }
+            catch (Exception ex) { await Program.CompletePhase4SmokeAsync(new(false, false, false, false, false, false, ex.Message)); }
         }
         if (!_phase5SmokeStarted && Program.Phase5Workspace is not null && _workspace.Layout.Groups.Count == 2)
         {
             _phase5SmokeStarted = true;
             _self ??= DotNetObjectReference.Create(this);
-            await JS.InvokeVoidAsync("novaSharp.runPhase5Smoke", _workbenchElement, _self);
+            try { await JS.InvokeVoidAsync("novaSharp.schedulePhase5Smoke", _workbenchElement, _self); }
+            catch (Exception ex) { await Program.CompletePhase5SmokeAsync(new(false, false, false, false, false, false, false, false, ex.Message)); }
         }
     }
 

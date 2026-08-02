@@ -310,6 +310,9 @@ window.novaSharp.runPhase4Smoke = async function (workbench, dotNet) {
         });
     }
 };
+window.novaSharp.schedulePhase4Smoke = function (workbench, dotNet) {
+    setTimeout(() => window.novaSharp.runPhase4Smoke(workbench, dotNet), 0);
+};
 
 window.novaSharp.runPhase5Smoke = async function (workbench, dotNet) {
     const wait = (milliseconds = 150) => new Promise(resolve => setTimeout(resolve, milliseconds));
@@ -365,4 +368,7 @@ window.novaSharp.runPhase5Smoke = async function (workbench, dotNet) {
             error: `${error?.name ?? 'Error'}: ${error?.message ?? String(error)}`
         });
     }
+};
+window.novaSharp.schedulePhase5Smoke = function (workbench, dotNet) {
+    setTimeout(() => window.novaSharp.runPhase5Smoke(workbench, dotNet), 0);
 };
