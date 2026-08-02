@@ -278,6 +278,7 @@ public sealed class EditorGroupWorkspace : IDisposable
     {
         DraggedTab = tab;
         DragSourceGroupId = GroupContaining(tab).Id;
+        OnChanged();
     }
 
     internal void PreviewReorder(Guid targetGroupId, int index)
