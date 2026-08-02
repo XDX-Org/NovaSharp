@@ -1,7 +1,11 @@
 @if (Node.Items.Length > 0)
 {
     <details class="project-node" open="@(Node.Kind is ProjectNodeKind.Solution or ProjectNodeKind.Project)">
-        <summary title="@Node.Path"><span aria-hidden="true">@Icon</span> @Node.Name</summary>
+        <summary class="tree-row" title="@Node.Path">
+            <span class="tree-toggle @IconClass" aria-hidden="true">@Icon</span>
+            <span class="tree-name">@Node.Name</span>
+            @if (Node.Detail is not null) { <span class="project-detail">@Node.Detail</span> }
+        </summary>
         <div role="group">
             @foreach (var child in Node.Items)
             {
@@ -12,8 +16,10 @@
 }
 else
 {
-    <button class="project-leaf" title="@Node.Path" disabled="@(Node.Kind != ProjectNodeKind.File)"
-            @onclick="OpenAsync"><span aria-hidden="true">@Icon</span> @Node.Name</button>
+    <button class="tree-row project-leaf" title="@Node.Path" disabled="@(Node.Kind != ProjectNodeKind.File)" @onclick="OpenAsync">
+        <span class="tree-toggle @IconClass" aria-hidden="true">@Icon</span>
+        <span class="tree-name">@Node.Name</span>
+    </button>
 }
 
 @code {
@@ -21,9 +27,17 @@ else
     [Parameter] public EventCallback<string> FileOpened { get; set; }
     private string Icon => Node.Kind switch
     {
-        ProjectNodeKind.Solution => "◈", ProjectNodeKind.Project => "◆", ProjectNodeKind.Folder => "▾",
-        ProjectNodeKind.File => "C#", ProjectNodeKind.ProjectReference => "↗", ProjectNodeKind.Analyzer => "A",
-        _ => "◇"
+        ProjectNodeKind.Solution => "SLN", ProjectNodeKind.Project => "C#",
+        ProjectNodeKind.Folder when Node.Name == "Dependencies" => "◇", ProjectNodeKind.Folder => "📁",
+        ProjectNodeKind.File => ExplorerFileIcons.Text(Node.Name), ProjectNodeKind.ProjectReference => "↗",
+        ProjectNodeKind.Analyzer => "A", _ => "◇"
+    };
+    private string IconClass => Node.Kind switch
+    {
+        ProjectNodeKind.Solution => "file-icon solution", ProjectNodeKind.Project => "file-icon csharp",
+        ProjectNodeKind.File => $"file-icon {ExplorerFileIcons.CssClass(Node.Name)}",
+        ProjectNodeKind.Folder => "folder-icon", ProjectNodeKind.Analyzer => "file-icon props",
+        _ => "file-icon assembly"
     };
     private Task OpenAsync() => Node is { Kind: ProjectNodeKind.File, Path: { } path }
         ? FileOpened.InvokeAsync(path) : Task.CompletedTask;

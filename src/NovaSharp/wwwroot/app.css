@@ -213,15 +213,16 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
 .pointer-status { margin-left: auto; }
 .document-info { flex: 0 0 auto; margin-left: auto; color: #929cab; }
 .solution-explorer { height: calc(100% - 76px); overflow: auto; background: #202329; }
-.solution-explorer > header { position: sticky; z-index: 2; top: 0; display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; background: #252931; font-size: var(--text-small); text-transform: uppercase; }
-.solution-explorer > header button { padding: 1px 5px; border: 0; background: transparent; }
-.project-tree { padding: 4px 5px 7px; font-size: var(--text-small); }
-.project-node summary, .project-leaf { min-height: 22px; padding: 2px 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.project-node summary { cursor: pointer; list-style-position: inside; }
-.project-node [role="group"] { padding-left: 13px; }
-.project-leaf { display: block; width: 100%; border: 0; color: #c8ced8; background: transparent; text-align: left; }
-.project-leaf:not(:disabled):hover, .project-node summary:hover { background: #313640; }
-.project-leaf:disabled { opacity: .72; }
+.project-tree { padding: 4px 5px 7px; font-size: var(--text-ui); }
+.project-node > summary { cursor: pointer; list-style: none; }
+.project-node > summary::-webkit-details-marker { display: none; }
+.project-node > summary::before { content: "›"; width: 12px; flex: 0 0 12px; color: #929cab; text-align: center; }
+.project-node[open] > summary::before { transform: rotate(90deg); }
+.project-node [role="group"] { padding-left: 18px; }
+.project-tree .tree-toggle { width: 30px; flex-basis: 30px; padding-inline: 3px; }
+.project-leaf { width: 100%; padding: 0; border: 0; border-radius: 0; color: #c8ced8; background: transparent; text-align: left; }
+.project-leaf:disabled { opacity: .76; }
+.project-detail { margin-left: 5px; color: #687486; white-space: nowrap; }
 .project-progress, .project-summary, .project-diagnostics { padding: 5px 8px; color: #929cab; font-size: var(--text-small); }
 .project-diagnostics { color: #d6b875; }
 .project-diagnostics .error { padding: 3px 0; color: #ff8a8a; }

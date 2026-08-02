@@ -51,6 +51,12 @@ public sealed class ProjectSystemTests
         Assert.IsFalse(projectSystem.State.IsLoading);
         Assert.IsTrue(projectSystem.State.ProjectCount >= 3);
         Assert.IsTrue(projectSystem.State.DocumentCount >= 3);
+        Assert.HasCount(3, projectSystem.State.Root!.Items);
+        Assert.AreEqual("3 projects", projectSystem.State.Root.Detail);
+        var webNode = projectSystem.State.Root.Items.Single(node => node.Name == "Web");
+        Assert.AreEqual("Dependencies", webNode.Items[0].Name);
+        Assert.IsTrue(Descendants(webNode).Any(node => node.Name == "Component.razor"));
+        Assert.IsTrue(Descendants(webNode).Any(node => node.Name == "app.css"));
         Assert.IsTrue(projectSystem.Contexts.Any(context => context.TargetFramework == "net9.0" && context.Configuration == "Debug"));
         Assert.IsTrue(projectSystem.Contexts.Any(context => context.TargetFramework == "net10.0" && context.Configuration == "Debug"));
         var app = projectSystem.CurrentSolution!.Projects.First(project => project.Name.StartsWith("App", StringComparison.Ordinal)
@@ -124,6 +130,9 @@ public sealed class ProjectSystemTests
         while (!await condition()) await Task.Delay(25, timeout.Token);
     }
 
+    private static IEnumerable<ProjectNode> Descendants(ProjectNode node) =>
+        node.Items.SelectMany(child => new[] { child }.Concat(Descendants(child)));
+
     private sealed class ProjectFixture : IDisposable
     {
         internal string Root { get; } = Path.Combine(Path.GetTempPath(), "NovaSharp.ProjectSystem.Tests", Guid.NewGuid().ToString("N"));
@@ -144,6 +153,8 @@ public sealed class ProjectSystemTests
             File.WriteAllText(Path.Combine(Root, "Web", "Web.csproj"), Project("Microsoft.NET.Sdk.Web", "net10.0"));
             File.WriteAllText(Path.Combine(Root, "Web", "Program.cs"), "public class WebProgram { }");
             File.WriteAllText(Path.Combine(Root, "Web", "Component.razor"), "<h1>Fixture</h1>");
+            Directory.CreateDirectory(Path.Combine(Root, "Web", "wwwroot"));
+            File.WriteAllText(Path.Combine(Root, "Web", "wwwroot", "app.css"), "body { color: white; }");
             File.WriteAllText(SolutionFile,
                 "<Solution><Project Path=\"Lib/Lib.csproj\" /><Project Path=\"App/App.csproj\" /><Project Path=\"Web/Web.csproj\" /></Solution>");
         }

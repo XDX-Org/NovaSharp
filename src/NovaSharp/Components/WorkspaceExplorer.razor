@@ -8,7 +8,11 @@
     <header class="explorer-header">
         <strong>Explorer</strong>
         <span class="explorer-actions">
-            @if (!ShowSolution)
+            @if (ShowSolution)
+            {
+                <button @onclick="ReloadSolutionAsync" disabled="@(ProjectSystem?.State.IsLoading != false)" title="Reload solution" aria-label="Reload solution">↻</button>
+            }
+            else
             {
                 <button @onclick="OpenFolderAsync" title="Open folder" aria-label="Open folder">＋</button>
                 <button @onclick="RefreshAsync" disabled="@(_workspace.RootPath is null)" title="Refresh" aria-label="Refresh">↻</button>
@@ -91,7 +95,7 @@
                                 <span>@(_expanded.Contains(row.Entry.Path) ? "▾" : "▸")</span><span>📁</span>
                             </span>
                         }
-                        else { <span class="tree-toggle file-icon @IconClass(row.Entry)">@Icon(row.Entry)</span> }
+                        else { <span class="tree-toggle file-icon @ExplorerFileIcons.CssClass(row.Entry.Name)">@ExplorerFileIcons.Text(row.Entry.Name, row.Entry.Kind == WorkspaceEntryKind.SymbolicLink)</span> }
                         <span class="tree-name" title="@row.Entry.Path">@row.Entry.Name</span>
                     </div>
                 </Virtualize>
@@ -165,6 +169,8 @@
         _solutionView = false;
         await OpenFolderCoreAsync(Path.GetDirectoryName(solutionPath)!);
     }
+
+    private Task ReloadSolutionAsync() => ProjectSystem?.ReloadAsync() ?? Task.CompletedTask;
 
     protected override async Task OnInitializedAsync()
     {
@@ -430,56 +436,6 @@
         return Program.CompletePhase3SmokeAsync(verified);
     }
     private Task SaveStateAsync() => _persistence.SaveAsync(_state with { WorkspacePath = _workspace.RootPath, ExpandedPaths = _expanded.ToArray() });
-    private static string Icon(WorkspaceEntry entry) => FileKind(entry) switch
-    {
-        ".cs" => "C#",
-        ".js" => "JS",
-        ".css" => "CSS",
-        ".html" or ".htm" => "HTML",
-        ".json" => "{}",
-        ".md" or ".markdown" => "MD",
-        "git" => "GIT",
-        ".props" => "MSB",
-        ".sln" => "SLN",
-        ".slnx" => "SLNX",
-        ".razor" => "RZ",
-        ".dll" => "⚙",
-        ".exe" or ".com" => "🖥︎",
-        ".csproj" => "CSP",
-        ".xml" => "<>",
-        ".pdb" => "PDB",
-        ".yml" or ".yaml" => "YML",
-        "none" => "FILE",
-        _ => entry.Kind == WorkspaceEntryKind.SymbolicLink ? "↗" : "▧"
-    };
-    private static string IconClass(WorkspaceEntry entry) => FileKind(entry) switch
-    {
-        ".cs" => "csharp",
-        ".js" => "javascript",
-        ".css" => "stylesheet",
-        ".html" or ".htm" => "html",
-        ".json" => "json",
-        ".md" or ".markdown" => "markdown",
-        "git" => "git",
-        ".props" => "props",
-        ".sln" or ".slnx" => "solution",
-        ".razor" => "razor",
-        ".dll" => "assembly",
-        ".exe" or ".com" => "executable",
-        ".csproj" => "csproj",
-        ".xml" => "xml",
-        ".pdb" => "symbols",
-        ".yml" or ".yaml" => "yaml",
-        "none" => "extensionless",
-        _ => "generic"
-    };
-    private static string FileKind(WorkspaceEntry entry)
-    {
-        var name = entry.Name.ToLowerInvariant();
-        if (name is ".gitignore" or ".gitattributes" or ".gitmodules" or ".gitkeep") return "git";
-        var extension = Path.GetExtension(name);
-        return extension.Length == 0 ? "none" : extension;
-    }
     private sealed record TreeRow(WorkspaceEntry Entry, int Depth);
 
     public async ValueTask DisposeAsync()

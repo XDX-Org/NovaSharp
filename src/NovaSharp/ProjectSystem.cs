@@ -12,6 +12,7 @@ public sealed record ProjectNode(string Id, string Name, ProjectNodeKind Kind, s
     ImmutableArray<ProjectNode> Children = default)
 {
     internal ImmutableArray<ProjectNode> Items => Children.IsDefault ? [] : Children;
+    internal string? Detail { get; init; }
 }
 
 internal sealed record ProjectLoadState(string? Path, ProjectNode? Root, bool IsLoading, string? Progress,
@@ -237,27 +238,82 @@ public sealed class RoslynProjectSystem : IAsyncDisposable
 
     private static ProjectNode BuildTree(Solution solution, string path)
     {
-        var projects = solution.Projects.OrderBy(project => project.Name, StringComparer.OrdinalIgnoreCase).Select(project =>
+        var projectGroups = solution.Projects.Where(project => project.FilePath is not null)
+            .GroupBy(project => Path.GetFullPath(project.FilePath!), PathComparer)
+            .OrderBy(group => group.First().Name, StringComparer.OrdinalIgnoreCase).ToArray();
+        var projects = projectGroups.Select(group =>
         {
-            var files = project.Documents.Where(document => document.FilePath is not null)
-                .OrderBy(document => document.Name, StringComparer.OrdinalIgnoreCase)
-                .Select(document => new ProjectNode(document.Id.Id.ToString(), document.Name, ProjectNodeKind.File, document.FilePath)).ToImmutableArray();
-            var references = project.ProjectReferences.Select(reference => solution.GetProject(reference.ProjectId))
+            var project = group.First();
+            var files = EnumerateProjectFiles(group);
+            var references = group.SelectMany(context => context.ProjectReferences).Select(reference => solution.GetProject(reference.ProjectId))
                 .Where(reference => reference is not null).Select(reference => new ProjectNode($"p:{reference!.Id.Id}", reference.Name,
                     ProjectNodeKind.ProjectReference, reference.FilePath))
-                .Concat(project.MetadataReferences.Select(reference => new ProjectNode($"m:{reference.Display}",
+                .Concat(group.SelectMany(context => context.MetadataReferences).Select(reference => new ProjectNode($"m:{reference.Display}",
                     Path.GetFileNameWithoutExtension(reference.Display) ?? reference.Display ?? "Assembly", ProjectNodeKind.AssemblyReference, reference.Display)))
-                .Concat(project.AnalyzerReferences.Select(reference => new ProjectNode($"a:{reference.FullPath}",
+                .Concat(group.SelectMany(context => context.AnalyzerReferences).Select(reference => new ProjectNode($"a:{reference.FullPath}",
                     Path.GetFileNameWithoutExtension(reference.FullPath) ?? reference.Display ?? "Analyzer", ProjectNodeKind.Analyzer, reference.FullPath)))
+                .DistinctBy(reference => $"{reference.Kind}:{reference.Path}", PathComparer)
                 .ToImmutableArray();
-            var children = files.Add(new($"r:{project.Id.Id}", "Dependencies", ProjectNodeKind.Folder, null, references));
-            var outputDirectory = project.OutputFilePath is null ? null : Path.GetDirectoryName(project.OutputFilePath);
-            var targetFramework = outputDirectory is null ? null : Path.GetFileName(outputDirectory);
-            var displayName = targetFramework is null ? project.Name : $"{project.Name} [{targetFramework}]";
-            return new ProjectNode(project.Id.Id.ToString(), displayName, ProjectNodeKind.Project, project.FilePath, children);
+            var children = ImmutableArray.Create(new ProjectNode($"r:{project.FilePath}", "Dependencies", ProjectNodeKind.Folder, null, references))
+                .AddRange(files);
+            return new ProjectNode($"p:{project.FilePath}", project.Name, ProjectNodeKind.Project, project.FilePath, children);
         }).ToImmutableArray();
-        return new($"s:{path}", Path.GetFileName(path), ProjectNodeKind.Solution, path, projects);
+        return new($"s:{path}", Path.GetFileNameWithoutExtension(path), ProjectNodeKind.Solution, path, projects)
+            { Detail = $"{projects.Length} project{(projects.Length == 1 ? "" : "s")}" };
     }
+
+    private static ImmutableArray<ProjectNode> EnumerateProjectFiles(IEnumerable<Project> contexts)
+    {
+        var project = contexts.First();
+        var root = Path.GetDirectoryName(project.FilePath)!;
+        var paths = new HashSet<string>(PathComparer);
+        try
+        {
+            foreach (var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+            {
+                var relative = Path.GetRelativePath(root, file);
+                var segments = relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                if (segments.Any(segment => segment is "bin" or "obj" or ".git" or ".vs")
+                    || PathComparer.Equals(file, project.FilePath!)) continue;
+                paths.Add(Path.GetFullPath(file));
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
+        foreach (var file in contexts.SelectMany(context => context.Documents).Select(document => document.FilePath)
+                     .Where(file => file is not null)) paths.Add(Path.GetFullPath(file!));
+        var entries = paths.Select(file =>
+        {
+            var relative = Path.GetRelativePath(root, file);
+            return new ProjectFile(relative.StartsWith("..", StringComparison.Ordinal) ? Path.GetFileName(file) : relative, file);
+        }).ToArray();
+        return BuildFolder(entries, "");
+    }
+
+    private static ImmutableArray<ProjectNode> BuildFolder(IEnumerable<ProjectFile> entries, string prefix)
+    {
+        var children = new List<ProjectNode>();
+        foreach (var group in entries.GroupBy(entry => FirstSegment(entry.RelativePath), PathComparer)
+                     .OrderBy(group => group.Any(entry => HasDirectory(entry.RelativePath)) ? 0 : 1)
+                     .ThenBy(group => group.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            if (!group.Any(entry => HasDirectory(entry.RelativePath)))
+            {
+                var file = group.First();
+                children.Add(new($"f:{file.FullPath}", group.Key, ProjectNodeKind.File, file.FullPath));
+                continue;
+            }
+            var nested = group.Where(entry => HasDirectory(entry.RelativePath))
+                .Select(entry => entry with { RelativePath = Remainder(entry.RelativePath) });
+            var folderPath = string.IsNullOrEmpty(prefix) ? group.Key : Path.Combine(prefix, group.Key);
+            children.Add(new($"d:{folderPath}", group.Key, ProjectNodeKind.Folder, null, BuildFolder(nested, folderPath)));
+        }
+        return children.ToImmutableArray();
+    }
+
+    private static bool HasDirectory(string path) => path.IndexOfAny([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar]) >= 0;
+    private static string FirstSegment(string path) { var index = path.IndexOfAny([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar]); return index < 0 ? path : path[..index]; }
+    private static string Remainder(string path) { var index = path.IndexOfAny([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar]); return path[(index + 1)..]; }
+    private sealed record ProjectFile(string RelativePath, string FullPath);
 
     private static string ContextKey(Project project) => $"{project.FilePath}|{project.OutputFilePath}";
 

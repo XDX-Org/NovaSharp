@@ -1,9 +1,4 @@
 <section class="solution-explorer" aria-label="Solution">
-    <header>
-        <strong>Solution</strong>
-        <button @onclick="ReloadAsync" disabled="@(ProjectSystem.State.Path is null || ProjectSystem.State.IsLoading)"
-                title="Reload solution" aria-label="Reload solution">↻</button>
-    </header>
     @if (ProjectSystem.State.IsLoading)
     {
         <div class="project-progress" role="status">@ProjectSystem.State.Progress</div>
@@ -37,5 +32,4 @@
 @code {
     [Parameter, EditorRequired] public RoslynProjectSystem ProjectSystem { get; set; } = null!;
     [Parameter] public EventCallback<string> FileOpened { get; set; }
-    private Task ReloadAsync() => ProjectSystem.ReloadAsync();
 }
