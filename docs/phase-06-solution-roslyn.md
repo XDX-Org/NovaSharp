@@ -1,5 +1,9 @@
 # Phase 6: solution model and Roslyn
 
+## Status
+
+Complete — all completion criteria and the four-platform verification matrix pass.
+
 ## Goal
 
 Load a .NET solution or project accurately enough for semantic C# services.
@@ -47,7 +51,7 @@ Build execution and IntelliSense presentation are deferred; this phase establish
 
 ## Verification
 
-On 2026-08-02, run 30764773602 passed warning-free builds, all 54 tests, and packaging on Windows x64, Linux x64, macOS arm64, and macOS x64, plus the Linux Phase 2–6 packaged native interactions. Phase 6 fixtures cover library, console, ASP.NET Core/Razor, multi-project, multi-target, project references, compiler settings, analyzers, linked files, dirty snapshots, reload preservation, and the named 500-document load budget.
+On 2026-08-02, run 30771058164 passed warning-free builds, all 54 tests, and packaging on Windows x64, Linux x64, macOS arm64, and macOS x64, plus the Linux Phase 2–6 packaged native interactions. Phase 6 fixtures cover library, console, ASP.NET Core/Razor, multi-project, multi-target, project references, compiler settings, analyzers, linked files, dirty snapshots, reload preservation, and the named 500-document load budget.
 
 ## Known limitations
 
