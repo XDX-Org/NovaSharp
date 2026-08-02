@@ -98,7 +98,7 @@
             _workspace.Focus(source.Id);
         }
         else if (Program.Phase4Workspace is not null)
-            foreach (var path in Directory.EnumerateFiles(Program.Phase4Workspace, "*.cs").Order()) await OpenTabAsync(path);
+            foreach (var path in Directory.EnumerateFiles(Program.Phase4Workspace, "*.cs").Order()) await _workspace.OpenAsync(path);
         else if (Program.SmokeFile is not null) await OpenTabAsync(Program.SmokeFile);
         else await _workspace.RestoreAsync(await _persistence.LoadAsync());
         TrackActiveDocument();
@@ -117,7 +117,10 @@
         _showMenu = false;
         var files = await Program.App.MainWindow.ShowOpenFileDialogAsync(title: "Open C# file", multiSelect: true,
             filterPatterns: [new FileFilter("C# source", "*.cs")]);
-        foreach (var path in files ?? []) await OpenTabAsync(path);
+        UntrackActiveDocument();
+        foreach (var path in files ?? []) await _workspace.OpenAsync(path);
+        TrackActiveDocument();
+        await SaveLayoutAsync();
     }
     private Task OpenWorkspaceFileAsync(string path) => OpenTabAsync(path);
     private Task PreviewWorkspaceFileAsync(string path) => OpenTabAsync(path, true);
