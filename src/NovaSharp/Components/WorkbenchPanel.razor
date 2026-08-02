@@ -106,7 +106,7 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender) return;
+        if (!firstRender || Program.Phase4Workspace is null && Program.Phase5Workspace is null) return;
         _self = DotNetObjectReference.Create(this);
         await JS.InvokeVoidAsync("novaSharp.startSmokePolling", _self,
             Program.Phase4Workspace is not null, Program.Phase5Workspace is not null);
