@@ -1,7 +1,9 @@
 @if (Node.Items.Length > 0)
 {
     <details class="project-node" open="@(Node.Kind is ProjectNodeKind.Solution or ProjectNodeKind.Project)">
-        <summary class="tree-row" title="@Node.Path" @ondblclick="OpenAsync"
+        <summary class="tree-row" title="@Node.Path"
+                 data-file-path="@(Node.Kind is ProjectNodeKind.Project or ProjectNodeKind.Solution ? Node.Path : null)"
+                 @ondblclick="OpenAsync"
                  @oncontextmenu="ShowContextMenuAsync" @oncontextmenu:preventDefault @oncontextmenu:stopPropagation>
             <span class="tree-toggle @IconClass" aria-hidden="true">@Icon</span>
             <span class="tree-name">@Node.Name</span>
@@ -17,7 +19,9 @@
 }
 else
 {
-    <button class="tree-row project-leaf" title="@Node.Path" disabled="@(Node.Path is null)" @onclick="OpenAsync"
+    <button class="tree-row project-leaf" title="@Node.Path"
+            data-file-path="@(Node.Kind == ProjectNodeKind.File ? Node.Path : null)"
+            disabled="@(Node.Path is null)" @onclick="OpenAsync"
             @oncontextmenu="ShowContextMenuAsync" @oncontextmenu:preventDefault @oncontextmenu:stopPropagation>
         <span class="tree-toggle @IconClass" aria-hidden="true">@Icon</span>
         <span class="tree-name">@Node.Name</span>

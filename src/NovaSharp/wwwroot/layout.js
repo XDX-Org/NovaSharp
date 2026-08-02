@@ -661,10 +661,11 @@ window.novaSharp.runPhase6Smoke = async function (bridge) {
         const menuText = document.querySelector('.explorer-context-menu')?.textContent ?? '';
         const contextMenuPresent = ['Open', 'New file', 'New folder', 'Rename', 'Move', 'Delete']
             .every(label => menuText.includes(label));
+        const dragSourcePresent = !!document.querySelector('.solution-explorer .tree-row[data-file-path]');
         await bridge.invokeMethodAsync('CompletePhase6SmokeAsync', solutionTreePresent, projectNodes,
-            projectFileEditable, contextMenuPresent, null);
+            projectFileEditable, contextMenuPresent, dragSourcePresent, null);
     } catch (error) {
-        await bridge.invokeMethodAsync('CompletePhase6SmokeAsync', false, 0, false, false,
+        await bridge.invokeMethodAsync('CompletePhase6SmokeAsync', false, 0, false, false, false,
             `${error?.name ?? 'Error'}: ${error?.message ?? String(error)}`);
     }
 };

@@ -152,7 +152,7 @@ jobs:
           if (-not $process.WaitForExit(60000)) { $process.Kill($true); throw 'Phase 6 native smoke timed out.' }
           if ($process.ExitCode -ne 0 -and -not (Test-Path $report)) { throw "Phase 6 native smoke exited with $($process.ExitCode) before reporting." }
           $result = Get-Content $report | ConvertFrom-Json
-          $required = 'SolutionTreePresent', 'LoadCompleted', 'SemanticDocumentsMapped', 'LinkedContextsPresent', 'EvaluatedTargetContexts', 'ProjectFileEditable', 'ContextMenuPresent'
+          $required = 'SolutionTreePresent', 'LoadCompleted', 'SemanticDocumentsMapped', 'LinkedContextsPresent', 'EvaluatedTargetContexts', 'ProjectFileEditable', 'ContextMenuPresent', 'DragSourcePresent'
           foreach ($name in $required) { if (-not $result.$name) { throw "Phase 6 smoke assertion failed: $name" } }
           if ($result.ProjectNodes -lt 3) { throw 'Phase 6 project tree did not render expected nodes.' }
       - uses: actions/upload-artifact@v4
