@@ -16,18 +16,6 @@
                 <span aria-hidden="true">▾</span>
             </span>
         }
-        <span class="explorer-actions">
-            @if (ShowSolution)
-            {
-                <button @onclick="ReloadSolutionAsync" disabled="@(ProjectSystem?.State.IsLoading != false)" title="Reload solution" aria-label="Reload solution">↻</button>
-            }
-            else
-            {
-                <button @onclick="OpenFolderAsync" title="Open folder" aria-label="Open folder">＋</button>
-                <button @onclick="RefreshAsync" disabled="@(_workspace.RootPath is null)" title="Refresh" aria-label="Refresh">↻</button>
-                <button @onclick="RevealAsync" disabled="@(Document.FilePath is null || !_workspace.Contains(Document.FilePath))" title="Reveal active file" aria-label="Reveal active file">◎</button>
-            }
-        </span>
     </header>
         @if (ShowSolution)
         {
@@ -41,7 +29,6 @@
           }
           else
           {
-            <div class="workspace-title" title="@_workspace.RootPath">@_workspace.RootPath</div>
             @if (_error is not null) { <div class="explorer-error" role="alert">@_error <button @onclick="ClearError">×</button></div> }
             <div class="tree" role="tree" aria-label="Workspace files" @onkeydown="HandleKeyAsync" @onkeydown:preventDefault
                  @oncontextmenu="ShowRootContextMenu">
@@ -95,6 +82,10 @@
         <div @ref="_contextMenu" class="explorer-context-menu" role="menu" @onclick:stopPropagation
              @oncontextmenu:preventDefault @oncontextmenu:stopPropagation>
             <button role="menuitem" @onclick="OpenSelectedAsync" disabled="@(_selected?.IsDirectory != false)">Open</button>
+            @if (_reloadContext)
+            {
+                <button role="menuitem" @onclick="ReloadContextAsync" disabled="@(ShowSolution && ProjectSystem?.State.IsLoading != false)">Reload</button>
+            }
             <hr />
             <button role="menuitem" @onclick='() => BeginCreate(false)'>New file</button>
             <button role="menuitem" @onclick='() => BeginCreate(true)'>New folder</button>
@@ -135,6 +126,7 @@
     private string EditTitle => _editMode switch { "New file name" => "New file", "New folder name" => "New folder", "Move item" => "Move item", _ => "Rename item" };
     private string EditAction => _editMode switch { "New name" => "Rename", "Move item" => "Move", _ => "Create" };
     private bool _showContextMenu;
+    private bool _reloadContext;
     private bool _solutionView;
     private bool _positionContextMenu;
     private bool _phase3SmokeStarted;
@@ -159,8 +151,6 @@
         await OpenFolderCoreAsync(Path.GetDirectoryName(solutionPath)!);
     }
 
-    private Task ReloadSolutionAsync() => ProjectSystem?.ReloadAsync() ?? Task.CompletedTask;
-
     private async Task ShowProjectContextMenuAsync(ProjectNodeContextRequest request)
     {
         if (request.Node.Path is not { } path || ProjectSystem?.State.Path is not { } solutionPath) return;
@@ -172,6 +162,7 @@
         if (_workspace.RootPath is null || !string.Equals(_workspace.RootPath, root, comparison))
             await OpenFolderCoreAsync(root);
         _selected = EntryFor(target, Directory.Exists(target));
+        _reloadContext = request.Node.Kind == ProjectNodeKind.Solution;
         ShowContextMenu(request.X, request.Y);
     }
 
@@ -267,19 +258,11 @@
         Rebuild();
     }
 
-    private async Task RevealAsync()
+    private async Task ReloadContextAsync()
     {
-        if (Document.FilePath is null || !_workspace.Contains(Document.FilePath)) return;
-        var directory = Path.GetDirectoryName(Document.FilePath);
-        while (directory is not null && _workspace.Contains(directory))
-        {
-            await LoadAsync(directory); _expanded.Add(directory);
-            if (string.Equals(directory, _workspace.RootPath, StringComparison.Ordinal)) break;
-            directory = Path.GetDirectoryName(directory);
-        }
-        Rebuild();
-        _selected = _visible.Select(row => row.Entry).FirstOrDefault(entry => string.Equals(entry.Path, Document.FilePath, StringComparison.Ordinal));
-        await SaveStateAsync();
+        HideContextMenu();
+        if (ShowSolution && ProjectSystem is not null) await ProjectSystem.ReloadAsync();
+        else await RefreshAsync();
     }
 
     private void Rebuild()
@@ -332,6 +315,7 @@
     {
         if (args.ShiftKey) return;
         _selected = entry;
+        _reloadContext = !ShowSolution && IsRoot(entry.Path);
         ShowContextMenu(args.ClientX, args.ClientY);
     }
 
@@ -340,6 +324,7 @@
         if (args.ShiftKey) return;
         if (_workspace.RootPath is null) return;
         _selected = _visible.FirstOrDefault()?.Entry;
+        _reloadContext = !ShowSolution;
         ShowContextMenu(args.ClientX, args.ClientY);
     }
 
@@ -409,10 +394,16 @@
             case "F2": BeginRename(); break;
             case "m" when args.CtrlKey || args.MetaKey: BeginMove(); break;
             case "Delete": BeginDelete(); break;
-            case "ContextMenu": ShowContextMenu(WidthForKeyboardMenu(), 72); break;
-            case "F10" when args.ShiftKey: ShowContextMenu(WidthForKeyboardMenu(), 72); break;
+            case "ContextMenu": ShowKeyboardContextMenu(); break;
+            case "F10" when args.ShiftKey: ShowKeyboardContextMenu(); break;
             case "Escape": HideContextMenu(); break;
         }
+    }
+
+    private void ShowKeyboardContextMenu()
+    {
+        _reloadContext = !ShowSolution && _selected is not null && IsRoot(_selected.Path);
+        ShowContextMenu(WidthForKeyboardMenu(), 72);
     }
 
     private double WidthForKeyboardMenu() => Math.Max(200, _state.SidebarWidth + 44);

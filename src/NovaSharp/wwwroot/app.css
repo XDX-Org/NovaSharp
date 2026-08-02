@@ -101,20 +101,17 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
 .drop-zone.center { inset: 27%; }
 .explorer { position: relative; flex: 0 0 auto; min-width: 180px; max-width: 800px; overflow: hidden; border-left: 1px solid #343842; background: #202329; }
 .explorer-header { display: flex; height: 42px; align-items: center; gap: 8px; padding: 5px; text-transform: uppercase; font-size: var(--text-ui); }
-.explorer-header button, .explorer-actions button, .tree-toggle { padding: 4px 7px; border: 0; background: transparent; }
-.explorer-actions { display: flex; margin-left: auto; }
 .explorer-view-picker { position: relative; display: inline-flex; height: 26px; align-items: center; }
 .explorer-view-picker select { width: auto; field-sizing: content; height: 26px; appearance: none; padding: 0 24px 1px 8px; border: 1px solid #454b57; border-radius: 4px; color: #d8dee9; background: #292e37; font: inherit; line-height: 25px; cursor: pointer; }
 .explorer-view-picker select:hover { border-color: #626b7a; background: #303640; }
 .explorer-view-picker select:focus-visible { border-color: #7088b6; outline: 1px solid #7088b6; outline-offset: 1px; }
 .explorer-view-picker > span { position: absolute; right: 7px; top: 50%; color: #aeb6c4; font-size: 10px; line-height: 1; pointer-events: none; transform: translateY(-50%); }
-.workspace-title { overflow: hidden; padding: 6px 10px; border-block: 1px solid #343842; color: #aeb6c4; font-size: var(--text-small); text-overflow: ellipsis; white-space: nowrap; }
 .explorer-empty { padding: 18px 8px; text-align: center; }
-.tree { height: calc(100% - 71px); overflow: auto; outline: none; }
+.tree { height: calc(100% - 42px); overflow: auto; outline: none; }
 .tree-row { display: flex; height: 20px; align-items: center; overflow: hidden; cursor: pointer; user-select: none; }
 .tree-row:hover { background: #2b2f37; }
 .tree-row.selected { background: #35445e; outline: 1px solid #58709a; outline-offset: -1px; }
-.tree-toggle { display: inline-flex; width: 38px; flex: 0 0 38px; align-items: center; justify-content: center; gap: 3px; color: #aeb6c4; }
+.tree-toggle { display: inline-flex; width: 38px; flex: 0 0 38px; align-items: center; justify-content: center; gap: 3px; padding: 4px 7px; border: 0; color: #aeb6c4; background: transparent; }
 .file-icon { font-size: 10px; font-weight: 700; letter-spacing: -.2px; }
 .file-icon.csharp { color: #b88cff; }
 .file-icon.javascript { color: #e6d35a; }
