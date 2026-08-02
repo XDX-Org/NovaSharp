@@ -6,23 +6,33 @@
 {
 <aside @ref="_explorer" class="explorer" style="width:@_state.SidebarWidth.ToString(System.Globalization.CultureInfo.InvariantCulture)px" aria-label="Explorer" @onclick="HideContextMenu">
     <header class="explorer-header">
-        <strong>Explorer</strong>
+        <strong>@(ShowSolution ? "Solution" : "Files")</strong>
         <span class="explorer-actions">
-            <button @onclick="OpenFolderAsync" title="Open folder" aria-label="Open folder">＋</button>
-            <button @onclick="RefreshAsync" disabled="@(_workspace.RootPath is null)" title="Refresh" aria-label="Refresh">↻</button>
-            <button @onclick="RevealAsync" disabled="@(Document.FilePath is null || !_workspace.Contains(Document.FilePath))" title="Reveal active file" aria-label="Reveal active file">◎</button>
+            @if (ProjectSystem?.State.Path is not null)
+            {
+                <button class="@(ShowSolution ? "active" : null)" @onclick="ShowSolutionView" title="Solution view" aria-label="Solution view">S</button>
+                <button class="@(!ShowSolution ? "active" : null)" @onclick="ShowFileView" title="File view" aria-label="File view">F</button>
+            }
+            @if (!ShowSolution)
+            {
+                <button @onclick="OpenFolderAsync" title="Open folder" aria-label="Open folder">＋</button>
+                <button @onclick="RefreshAsync" disabled="@(_workspace.RootPath is null)" title="Refresh" aria-label="Refresh">↻</button>
+                <button @onclick="RevealAsync" disabled="@(Document.FilePath is null || !_workspace.Contains(Document.FilePath))" title="Reveal active file" aria-label="Reveal active file">◎</button>
+            }
         </span>
     </header>
-        @if (ProjectSystem is not null)
+        @if (ShowSolution)
         {
-            <SolutionExplorer ProjectSystem="ProjectSystem" FileOpened="FileOpened" />
-        }
-        @if (_workspace.RootPath is null)
-        {
-            <div class="explorer-empty"><button @onclick="OpenFolderAsync">Open Folder</button></div>
+            <SolutionExplorer ProjectSystem="ProjectSystem!" FileOpened="FileOpened" />
         }
         else
         {
+          @if (_workspace.RootPath is null)
+          {
+            <div class="explorer-empty"><button @onclick="OpenFolderAsync">Open Folder</button></div>
+          }
+          else
+          {
             <div class="workspace-title" title="@_workspace.RootPath">@_workspace.RootPath</div>
             @if (_editMode is not null)
             {
@@ -100,6 +110,7 @@
                     <div class="context-menu-hint">Browser options <kbd>Shift+Right-click</kbd></div>
                 </div>
             }
+          }
         }
     <div class="explorer-resizer" role="separator" aria-label="Resize Explorer" aria-orientation="vertical" title="Drag to resize Explorer"></div>
 </aside>
@@ -120,15 +131,28 @@
     private DotNetObjectReference<WorkspaceExplorer>? _self;
     private WorkspacePersistence _persistence = null!;
     private WorkspaceRestoreState _state = new();
+    private string? _presentedSolution;
     private WorkspaceEntry? _selected, _deletePending;
     private string? _editMode, _error;
     private string _editName = "", _moveDestination = "";
     private string EditTitle => _editMode switch { "New file name" => "New file", "New folder name" => "New folder", "Move item" => "Move item", _ => "Rename item" };
     private string EditAction => _editMode switch { "New name" => "Rename", "Move item" => "Move", _ => "Create" };
     private bool _showContextMenu;
+    private bool _solutionView;
     private bool _positionContextMenu;
     private bool _phase3SmokeStarted;
     private double _contextX, _contextY;
+    private bool ShowSolution => _solutionView && ProjectSystem?.State.Path is not null;
+
+    protected override void OnParametersSet()
+    {
+        if (ProjectSystem?.State.Path == _presentedSolution) return;
+        _presentedSolution = ProjectSystem?.State.Path;
+        _solutionView = _presentedSolution is not null;
+    }
+
+    private void ShowSolutionView() { _solutionView = true; HideContextMenu(); }
+    private void ShowFileView() { _solutionView = false; HideContextMenu(); }
 
     protected override async Task OnInitializedAsync()
     {
