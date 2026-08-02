@@ -6,7 +6,6 @@
 {
 <aside @ref="_explorer" class="explorer @(ProjectSystem?.State.Path is not null ? "has-view-switch" : null)" style="width:@_state.SidebarWidth.ToString(System.Globalization.CultureInfo.InvariantCulture)px" aria-label="Explorer" @onclick="HideContextMenu">
     <header class="explorer-header">
-        <strong>Explorer</strong>
         <span class="explorer-actions">
             @if (ShowSolution)
             {
