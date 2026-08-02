@@ -649,6 +649,8 @@ window.novaSharp.startSmokePolling = function (bridge, phase4, phase5) {
 
 window.novaSharp.runPhase6Smoke = async function (bridge) {
     try {
+        for (let attempt = 0; attempt < 100 && !document.querySelector('.solution-explorer .project-tree'); attempt++)
+            await new Promise(resolve => setTimeout(resolve, 100));
         const solutionTreePresent = !!document.querySelector('.solution-explorer .project-tree');
         const projectNodes = document.querySelectorAll('.solution-explorer .project-node').length;
         await bridge.invokeMethodAsync('CompletePhase6SmokeAsync', solutionTreePresent, projectNodes, null);
