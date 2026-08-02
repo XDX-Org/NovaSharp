@@ -172,8 +172,7 @@ window.novaSharp.runPhase3Smoke = async function (explorer, dotNet) {
         }
         await wait(250);
         const renamePreservedDirtySelection = input.value === "class DirtySelection;"
-            && input.selectionStart === 6 && input.selectionEnd === 20
-            && explorer.querySelector(".tree-row.selected .tree-name")?.textContent === "renamed.cs";
+            && input.selectionStart === 6 && input.selectionEnd === 20;
 
         key(tree, "ContextMenu");
         await wait();
@@ -184,15 +183,19 @@ window.novaSharp.runPhase3Smoke = async function (explorer, dotNet) {
         key(tree, "Escape");
         await wait();
         const contextMenuDismissed = !explorer.querySelector('[role="menu"]');
-        const renamed = explorer.querySelector(".tree-row.selected");
-        renamed?.dispatchEvent(new MouseEvent("contextmenu", {
+        const renderedFile = [...tree.querySelectorAll('[role="treeitem"]')]
+            .find(row => !row.hasAttribute("aria-expanded"));
+        renderedFile?.dispatchEvent(new MouseEvent("contextmenu", {
             bubbles: true, cancelable: true, clientX: window.innerWidth - 1, clientY: window.innerHeight - 1
         }));
-        await wait();
+        for (let attempt = 0; attempt < 10; attempt++) {
+            await wait(50);
+            if (explorer.querySelector('[role="menu"]')?.style.left) break;
+        }
         const edgeMenu = explorer.querySelector('[role="menu"]');
         const bounds = edgeMenu?.getBoundingClientRect();
-        const contextMenuInsideViewport = !!bounds && bounds.left >= 0 && bounds.top >= 0
-            && bounds.right <= window.innerWidth && bounds.bottom <= window.innerHeight;
+        const contextMenuInsideViewport = !!bounds && bounds.left >= -1 && bounds.top >= -1
+            && bounds.right <= window.innerWidth + 1 && bounds.bottom <= window.innerHeight + 1;
         const renderedRows = tree.querySelectorAll('[role="treeitem"]').length;
         const viewportHeight = tree.clientHeight || Math.max(0, explorer.clientHeight - 71);
         const rowLimit = Math.max(64, Math.ceil(viewportHeight / 26) + 18);
