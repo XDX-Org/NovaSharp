@@ -90,10 +90,10 @@ Started on `phase-5`:
 - Shared pointer resize handling covers fractional coordinates and window changes; Escape restores cancelled tab reorders without changing model state.
 - Empty-group controls, stable keyed recursive rendering, and axis-correct splitters prevent stale layout and drag state after tree reshaping.
 
-Verification run 30754664630 passes all four platform build/test/package jobs, 44 automated tests,
+Verification run 30760456811 passes all four platform build/test/package jobs, 49 automated tests,
 the established Phase 2–4 Linux native regressions, and the Phase 5 Linux/Xvfb interaction
-checks for shared edits, independent selections, accessible splitters, resizing, drop zones, copied edge
-splits, and narrow layouts. Windows and macOS interactive desktop checks remain part of the preview-release
+checks for shared edits, independent selections, accessible fractional-coordinate resizing during window changes,
+Escape drag cancellation, directional focus, drop zones, copied edge splits, and narrow layouts. Windows and macOS interactive desktop checks remain part of the preview-release
 manual matrix rather than the Phase 5 automated gate.
 
 ## Next phase
