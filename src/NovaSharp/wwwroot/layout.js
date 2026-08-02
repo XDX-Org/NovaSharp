@@ -339,7 +339,7 @@ window.novaSharp.runPhase5Smoke = async function (workbench, dotNet) {
         splitter.value = '0.65';
         splitter.dispatchEvent(new Event('input', { bubbles: true }));
         await wait();
-        const splitterResized = workbench.querySelector('.editor-split')?.dataset.ratio === '0.65';
+        const splitterResized = Math.abs(Number(workbench.querySelector('.editor-split')?.dataset.ratio) - 0.65) < 0.001;
         const originalWidth = workbench.style.width;
         workbench.style.width = '480px';
         await wait();
