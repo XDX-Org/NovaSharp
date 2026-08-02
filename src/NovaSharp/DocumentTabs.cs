@@ -2,6 +2,61 @@ using System.Text.Json;
 
 namespace NovaSharp;
 
+internal sealed class DocumentRegistry : IDisposable
+{
+    private readonly Dictionary<string, RegistryEntry> _documents = new(PathComparer);
+    internal string? LastError { get; private set; }
+    internal int DocumentCount => _documents.Count;
+
+    internal async Task<EditorDocumentState?> AcquireAsync(string path, bool restoreMissing = false)
+    {
+        var canonicalPath = Path.GetFullPath(path);
+        LastError = null;
+        if (_documents.TryGetValue(canonicalPath, out var existing))
+        {
+            existing.ReferenceCount++;
+            return existing.Document;
+        }
+
+        var document = new EditorDocumentState();
+        if (restoreMissing && !File.Exists(canonicalPath)) document.OpenMissing(canonicalPath);
+        else await document.OpenAsync(canonicalPath);
+        if (document.FilePath is null)
+        {
+            LastError = document.Error;
+            document.Dispose();
+            return null;
+        }
+        _documents.Add(canonicalPath, new(document));
+        return document;
+    }
+
+    internal void Release(EditorDocumentState document)
+    {
+        var pair = _documents.FirstOrDefault(candidate => ReferenceEquals(candidate.Value.Document, document));
+        if (pair.Value is null) throw new ArgumentException("The document is not owned by this registry.", nameof(document));
+        if (--pair.Value.ReferenceCount > 0) return;
+        _documents.Remove(pair.Key);
+        document.Dispose();
+    }
+
+    public void Dispose()
+    {
+        foreach (var entry in _documents.Values) entry.Document.Dispose();
+        _documents.Clear();
+    }
+
+    private sealed class RegistryEntry(EditorDocumentState document)
+    {
+        internal EditorDocumentState Document { get; } = document;
+        internal int ReferenceCount { get; set; } = 1;
+    }
+
+    private static StringComparer PathComparer => OperatingSystem.IsWindows()
+        ? StringComparer.OrdinalIgnoreCase
+        : StringComparer.Ordinal;
+}
+
 internal sealed class DocumentTab(EditorDocumentState document, bool preview)
 {
     internal Guid Id { get; } = Guid.NewGuid();
@@ -26,7 +81,14 @@ internal sealed class DocumentTab(EditorDocumentState document, bool preview)
 internal sealed class DocumentTabService : IDisposable
 {
     private readonly List<DocumentTab> _tabs = [];
-    private readonly Dictionary<string, EditorDocumentState> _documents = new(PathComparer);
+    private readonly DocumentRegistry _registry;
+    private readonly bool _ownsRegistry;
+
+    internal DocumentTabService(DocumentRegistry? registry = null)
+    {
+        _registry = registry ?? new();
+        _ownsRegistry = registry is null;
+    }
 
     internal IReadOnlyList<DocumentTab> Tabs => _tabs;
     internal DocumentTab? ActiveTab { get; private set; }
@@ -51,16 +113,13 @@ internal sealed class DocumentTabService : IDisposable
             if (reusable is not null) Close(reusable, discardDirty: true);
         }
 
-        var document = new EditorDocumentState();
-        await document.OpenAsync(canonicalPath);
-        if (document.FilePath is null)
+        var document = await _registry.AcquireAsync(canonicalPath);
+        if (document is null)
         {
-            LastError = document.Error;
-            document.Dispose();
+            LastError = _registry.LastError;
             return null;
         }
 
-        _documents.Add(canonicalPath, document);
         var tab = new DocumentTab(document, preview);
         _tabs.Add(tab);
         ActiveTab = tab;
@@ -72,10 +131,7 @@ internal sealed class DocumentTabService : IDisposable
         var canonicalPath = Path.GetFullPath(state.Path);
         var existing = _tabs.FirstOrDefault(tab => PathComparer.Equals(tab.Document.FilePath, canonicalPath));
         if (existing is not null) return existing;
-        var document = new EditorDocumentState();
-        if (File.Exists(canonicalPath)) await document.OpenAsync(canonicalPath);
-        else document.OpenMissing(canonicalPath);
-        _documents.Add(canonicalPath, document);
+        var document = (await _registry.AcquireAsync(canonicalPath, restoreMissing: true))!;
         var tab = new DocumentTab(document, state.IsPreview);
         if (!state.IsPreview) tab.Promote();
         tab.ViewState.Restore(state.SelectionStart, state.SelectionEnd, state.ScrollTop, state.ScrollLeft,
@@ -140,8 +196,7 @@ internal sealed class DocumentTabService : IDisposable
     private void ReleaseDocument(EditorDocumentState document)
     {
         if (_tabs.Any(tab => ReferenceEquals(tab.Document, document))) return;
-        if (document.FilePath is not null) _documents.Remove(document.FilePath);
-        document.Dispose();
+        _registry.Release(document);
     }
 
     private void EnsureOwned(DocumentTab tab)
@@ -151,15 +206,13 @@ internal sealed class DocumentTabService : IDisposable
 
     public void Dispose()
     {
-        foreach (var document in _documents.Values) document.Dispose();
-        _documents.Clear();
+        foreach (var document in _tabs.Select(tab => tab.Document).Distinct()) _registry.Release(document);
         _tabs.Clear();
         ActiveTab = null;
+        if (_ownsRegistry) _registry.Dispose();
     }
 
-    private static StringComparer PathComparer => OperatingSystem.IsWindows()
-        ? StringComparer.OrdinalIgnoreCase
-        : StringComparer.Ordinal;
+    private static StringComparer PathComparer => OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
 }
 
 internal sealed record SessionTabState(string Path, bool IsPreview = false, int SelectionStart = 0,

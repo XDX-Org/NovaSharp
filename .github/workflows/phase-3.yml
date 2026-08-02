@@ -1,8 +1,8 @@
-name: Phase 3 and 4 verification
+name: Workbench verification
 
 on:
   push:
-    branches: [main, phase-3, phase-4]
+    branches: [main, phase-3, phase-4, phase-5]
   pull_request:
   workflow_dispatch:
 
