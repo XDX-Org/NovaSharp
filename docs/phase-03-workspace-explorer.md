@@ -4,7 +4,7 @@
 
 Implementation complete; verification in progress. Folder open/close and restore, lazy virtualized expansion, configurable/default ignores, create/rename/delete/move operations, active-file reveal, targeted watcher refresh, overflow rescan, keyboard/context interaction, symlink leaves, and versioned sidebar/expansion persistence are implemented.
 
-The Release build and 28 tests pass locally. The generated 20,000-file fixture completes its full lazy enumeration within the five-second budget on an AMD Ryzen 7 5800X3D with NVMe storage. The Phase 3 workflow builds, tests, and publishes all four supported targets and launches the packaged Explorer interaction smoke under Linux/Xvfb. Hosted macOS runners cannot launch the interactive Photino host, so macOS native interaction remains a manual release check.
+Automated verification is complete. The Release build and 28 tests pass, including the generated 20,000-file fixture within its five-second budget on an AMD Ryzen 7 5800X3D with NVMe storage. The correctly named Phase 3 workflow builds, tests, and publishes all four supported targets and launches the packaged Explorer interaction smoke under Linux/Xvfb; see [verification run 30742324717](https://github.com/XDX-Org/NovaSharp/actions/runs/30742324717). Hosted macOS runners cannot launch the interactive Photino host, so Windows/macOS native interaction remains a manual release check.
 
 ## Verification budget
 
