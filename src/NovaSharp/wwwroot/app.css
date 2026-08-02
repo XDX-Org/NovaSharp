@@ -103,7 +103,11 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
 .explorer-header { display: flex; height: 42px; align-items: center; gap: 8px; padding: 5px; text-transform: uppercase; font-size: var(--text-ui); }
 .explorer-header button, .explorer-actions button, .tree-toggle { padding: 4px 7px; border: 0; background: transparent; }
 .explorer-actions { display: flex; margin-left: auto; }
-.explorer-view-switch { width: auto; field-sizing: content; height: 24px; padding: 1px 6px; border: 1px solid #454b57; color: #d8dee9; background: #292e37; }
+.explorer-view-picker { position: relative; display: inline-flex; height: 26px; align-items: center; }
+.explorer-view-picker select { width: auto; field-sizing: content; height: 26px; appearance: none; padding: 0 24px 1px 8px; border: 1px solid #454b57; border-radius: 4px; color: #d8dee9; background: #292e37; font: inherit; line-height: 25px; cursor: pointer; }
+.explorer-view-picker select:hover { border-color: #626b7a; background: #303640; }
+.explorer-view-picker select:focus-visible { border-color: #7088b6; outline: 1px solid #7088b6; outline-offset: 1px; }
+.explorer-view-picker > span { position: absolute; right: 7px; top: 50%; color: #aeb6c4; font-size: 10px; line-height: 1; pointer-events: none; transform: translateY(-50%); }
 .workspace-title { overflow: hidden; padding: 6px 10px; border-block: 1px solid #343842; color: #aeb6c4; font-size: var(--text-small); text-overflow: ellipsis; white-space: nowrap; }
 .explorer-empty { padding: 18px 8px; text-align: center; }
 .tree { height: calc(100% - 71px); overflow: auto; outline: none; }

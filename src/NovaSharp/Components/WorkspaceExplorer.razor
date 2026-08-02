@@ -8,10 +8,13 @@
     <header class="explorer-header">
         @if (ProjectSystem?.State.Path is not null)
         {
-            <select class="explorer-view-switch" aria-label="Explorer view" value="@SelectedView" @onchange="ChangeViewAsync">
-                <option value="solution">Solution</option>
-                <option value="files">Files</option>
-            </select>
+            <span class="explorer-view-picker">
+                <select aria-label="Explorer view" value="@SelectedView" @onchange="ChangeViewAsync">
+                    <option value="solution">Solution</option>
+                    <option value="files">Files</option>
+                </select>
+                <span aria-hidden="true">▾</span>
+            </span>
         }
         <span class="explorer-actions">
             @if (ShowSolution)
