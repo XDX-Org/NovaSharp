@@ -160,7 +160,7 @@ window.novaSharp.runPhase3Smoke = async function (explorer, dotNet) {
         key(tree, "ArrowRight");
         await wait(250);
         key(tree, "ArrowDown");
-        await wait();
+        await wait(300);
         const keyboardNavigation = explorer.querySelector(".tree-row.selected .tree-name")?.textContent === "active.cs";
 
         const input = document.querySelector(".editor-input");
@@ -318,7 +318,7 @@ window.novaSharp.runPhase5Smoke = async function (workbench, dotNet) {
     const wait = (milliseconds = 150) => new Promise(resolve => setTimeout(resolve, milliseconds));
     try {
         let groups = [...workbench.querySelectorAll('.editor-group')];
-        const groupsPresent = groups.length === 2 && !!workbench.querySelector('.editor-split.horizontal');
+        const groupsPresent = groups.length === 2 && !!workbench.querySelector('.editor-split');
         let inputs = groups.map(group => group.querySelector('.editor-input'));
         inputs[0].value = 'class SharedUpdate;';
         inputs[0].dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText' }));
@@ -350,9 +350,14 @@ window.novaSharp.runPhase5Smoke = async function (workbench, dotNet) {
         const dataTransfer = new DataTransfer();
         sourceTab.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer }));
         await wait();
-        const zones = [...workbench.querySelectorAll('.drop-zone')];
+        let zones = [];
+        for (let attempt = 0; attempt < 10 && zones.length < 10; attempt++) {
+            await wait(100);
+            zones = [...workbench.querySelectorAll('.drop-zone')];
+        }
         const dropZonesPresent = zones.length >= 10 && zones.every(zone => zone.getAttribute('aria-label'));
-        const right = workbench.querySelectorAll('.editor-group')[1].querySelector('.drop-zone.right');
+        const right = workbench.querySelectorAll('.editor-group')[1]?.querySelector('.drop-zone.right');
+        if (!right) throw new Error('Drop zones did not render after drag start.');
         right.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer }));
         await wait(250);
         const edgeDropSplit = workbench.querySelectorAll('.editor-group').length === 3;
@@ -378,7 +383,8 @@ window.novaSharp.startSmokePolling = function (bridge, phase4, phase5) {
         const workbench = document.querySelector('.workbench');
         if (!workbench) return;
         if (phase4 && workbench.querySelectorAll('.document-tab').length < 3) return;
-        if (phase5 && workbench.querySelectorAll('.editor-group').length < 2) return;
+        if (phase5 && (workbench.querySelectorAll('.editor-group').length < 2
+            || workbench.querySelectorAll('.editor-input').length < 2 || !workbench.querySelector('.editor-splitter'))) return;
         clearInterval(poll);
         if (phase4) window.novaSharp.schedulePhase4Smoke(workbench, bridge);
         else window.novaSharp.schedulePhase5Smoke(workbench, bridge);
