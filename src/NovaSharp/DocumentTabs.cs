@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace NovaSharp;
 
 internal sealed class DocumentTab(EditorDocumentState document, bool preview)
@@ -12,6 +14,12 @@ internal sealed class DocumentTab(EditorDocumentState document, bool preview)
     {
         IsPreview = false;
         IsPinned = true;
+    }
+
+    internal void SetPreview(bool preview)
+    {
+        IsPreview = preview;
+        IsPinned = !preview;
     }
 }
 
@@ -57,6 +65,29 @@ internal sealed class DocumentTabService : IDisposable
         _tabs.Add(tab);
         ActiveTab = tab;
         return tab;
+    }
+
+    internal async Task<DocumentTab> RestoreAsync(SessionTabState state)
+    {
+        var canonicalPath = Path.GetFullPath(state.Path);
+        var existing = _tabs.FirstOrDefault(tab => PathComparer.Equals(tab.Document.FilePath, canonicalPath));
+        if (existing is not null) return existing;
+        var document = new EditorDocumentState();
+        if (File.Exists(canonicalPath)) await document.OpenAsync(canonicalPath);
+        else document.OpenMissing(canonicalPath);
+        _documents.Add(canonicalPath, document);
+        var tab = new DocumentTab(document, state.IsPreview);
+        if (!state.IsPreview) tab.Promote();
+        tab.ViewState.Restore(state.SelectionStart, state.SelectionEnd, state.ScrollTop, state.ScrollLeft,
+            document.Content?.Length ?? 0);
+        _tabs.Add(tab);
+        return tab;
+    }
+
+    internal void SetActive(DocumentTab? tab)
+    {
+        if (tab is not null) EnsureOwned(tab);
+        ActiveTab = tab;
     }
 
     internal void Activate(DocumentTab tab)
@@ -129,4 +160,37 @@ internal sealed class DocumentTabService : IDisposable
     private static StringComparer PathComparer => OperatingSystem.IsWindows()
         ? StringComparer.OrdinalIgnoreCase
         : StringComparer.Ordinal;
+}
+
+internal sealed record SessionTabState(string Path, bool IsPreview = false, int SelectionStart = 0,
+    int SelectionEnd = 0, double ScrollTop = 0, double ScrollLeft = 0);
+
+internal sealed record WorkbenchSessionState(int SchemaVersion = 1, string? ActivePath = null,
+    SessionTabState[]? Tabs = null);
+
+internal sealed class WorkbenchSessionPersistence(string path)
+{
+    private readonly SemaphoreSlim _saveGate = new(1, 1);
+    internal async Task<WorkbenchSessionState> LoadAsync(CancellationToken cancellationToken = default)
+    {
+        if (!File.Exists(path)) return new();
+        try
+        {
+            await using var stream = File.OpenRead(path);
+            var state = await JsonSerializer.DeserializeAsync<WorkbenchSessionState>(stream,
+                cancellationToken: cancellationToken);
+            if (state is null || state.SchemaVersion != 1) return new();
+            var valid = (state.Tabs ?? []).Where(tab => !string.IsNullOrWhiteSpace(tab.Path)
+                && Path.IsPathFullyQualified(tab.Path)).ToArray();
+            return state with { Tabs = valid };
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { return new(); }
+    }
+
+    internal async Task SaveAsync(WorkbenchSessionState state, CancellationToken cancellationToken = default)
+    {
+        await _saveGate.WaitAsync(cancellationToken);
+        try { await AtomicFile.WriteAsync(path, JsonSerializer.SerializeToUtf8Bytes(state), cancellationToken); }
+        finally { _saveGate.Release(); }
+    }
 }

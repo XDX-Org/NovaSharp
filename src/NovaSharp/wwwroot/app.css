@@ -53,6 +53,9 @@ button:disabled { opacity: .45; cursor: default; }
 .document-tab.preview .tab-label { font-style: italic; }
 .tab-label { min-width: 0; overflow: hidden; flex: 1; text-overflow: ellipsis; white-space: nowrap; }
 .tab-dirty { color: #d9b56d; font-size: 10px; }
+.tab-pin { width: 18px; flex: 0 0 18px; padding: 0; border: 0; color: #7f8a9a; background: transparent; font-size: 9px; }
+.document-tab.preview .tab-pin { opacity: .45; }
+.tab-pin:hover { color: #d8dee9; }
 .tab-close { display: grid; width: 23px; height: 23px; place-items: center; flex: 0 0 23px; padding: 0; border: 0; color: #9ca6b5; background: transparent; font-size: 17px; line-height: 1; }
 .tab-close:hover { color: #fff; background: #3b4252; }
 .editor-panel { min-width: 0; min-height: 0; position: relative; flex: 1; overflow: hidden; }

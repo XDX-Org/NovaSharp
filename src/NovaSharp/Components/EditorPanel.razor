@@ -3,7 +3,7 @@
 @implements IDisposable
 @inject IJSRuntime JS
 
-<main class="workbench" @onkeydown="HandleKeyAsync">
+<main @ref="_workbench" class="workbench" @onkeydown="HandleKeyAsync">
     <header class="toolbar">
         <div class="main-menu">
             <button class="menu-trigger" @onclick="ToggleMenu" aria-label="Main menu" aria-expanded="@_showMenu">☰</button>
@@ -57,6 +57,21 @@
             </div>
         </div>
     }
+    @if (_showTabContextMenu && _contextTab is not null)
+    {
+        <div class="context-menu-dismiss" @onclick="HideTabContextMenu"
+             @oncontextmenu="HideTabContextMenu" @oncontextmenu:preventDefault></div>
+        <div @ref="_tabContextMenu" class="explorer-context-menu tab-context-menu" role="menu"
+             @onclick:stopPropagation @oncontextmenu:preventDefault @oncontextmenu:stopPropagation>
+            <button role="menuitem" @onclick="ToggleContextTabPin">@(_contextTab.IsPinned ? "Unpin" : "Pin")</button>
+            <hr />
+            <button role="menuitem" @onclick="() => CloseFromContextAsync(TabCloseScope.One)">Close</button>
+            <button role="menuitem" @onclick="() => CloseFromContextAsync(TabCloseScope.Others)" disabled="@(_tabs.Tabs.Count < 2)">Close others</button>
+            <button role="menuitem" @onclick="() => CloseFromContextAsync(TabCloseScope.Right)" disabled="@(!HasTabsRight)">Close to the right</button>
+            <button role="menuitem" @onclick="() => CloseFromContextAsync(TabCloseScope.Saved)" disabled="@(!_tabs.Tabs.Any(tab => !tab.Document.IsDirty))">Close saved</button>
+            <button role="menuitem" @onclick="() => CloseFromContextAsync(TabCloseScope.All)">Close all</button>
+        </div>
+    }
 
     <div class="workbench-body">
     <div class="editor-area">
@@ -67,12 +82,15 @@
             {
                 <div class="document-tab @(ReferenceEquals(tab, _tabs.ActiveTab) ? "active" : null) @(tab.IsPreview ? "preview" : null) @(ReferenceEquals(tab, _draggedTab) ? "dragging" : null)"
                      role="tab" aria-selected="@ReferenceEquals(tab, _tabs.ActiveTab)" tabindex="@(ReferenceEquals(tab, _tabs.ActiveTab) ? 0 : -1)"
-                     title="@tab.Document.FilePath" draggable="true" @onclick="() => ActivateTab(tab)"
+                     aria-label="@TabAccessibleLabel(tab)" title="@tab.Document.FilePath" draggable="true" @onclick="() => ActivateTab(tab)"
                      @onmousedown="args => HandleTabMouseDownAsync(args, tab)" @ondragstart="() => BeginTabDrag(tab)"
                      @ondragenter="() => PreviewTabDrop(tab)" @ondragover:preventDefault
-                     @ondrop="EndTabDrag" @ondragend="EndTabDrag">
+                     @ondrop="EndTabDrag" @ondragend="EndTabDrag"
+                     @oncontextmenu="args => ShowTabContextMenu(args, tab)" @oncontextmenu:preventDefault>
                     <span class="tab-label">@(_tabs.GetDisplayName(tab))</span>
                     @if (tab.Document.IsDirty) { <span class="tab-dirty" aria-label="Unsaved changes">●</span> }
+                    <button class="tab-pin" aria-label="@(tab.IsPinned ? "Unpin" : "Pin") @(_tabs.GetDisplayName(tab))"
+                            title="@(tab.IsPinned ? "Unpin" : "Pin")" @onclick="() => TogglePin(tab)" @onclick:stopPropagation>◆</button>
                     <button class="tab-close" aria-label="Close @(_tabs.GetDisplayName(tab))" title="Close"
                             @onclick="() => CloseTabAsync(tab)" @onclick:stopPropagation>×</button>
                 </div>
@@ -91,10 +109,12 @@
         {
             <div class="compare"><pre><strong>Editor</strong>\n@_document.Content</pre><pre><strong>Disk</strong>\n@_compareText</pre></div>
         }
-        else { <CodeEditor Value="@(_document.Content ?? string.Empty)" ValueChanged="ContentChanged" WordWrap="_wordWrap" ViewState="_viewState" @key="_wordWrap" /> }
+        else { <CodeEditor Value="@(_document.Content ?? string.Empty)" ValueChanged="ContentChanged" WordWrap="_wordWrap"
+                           ViewState="_viewState" ViewStateChanged="SaveSessionAsync" @key="(_tabs.ActiveTab?.Id, _wordWrap)" /> }
     </section>
     </div>
-    <WorkspaceExplorer @ref="_explorer" Document="_document" FileOpened="OpenWorkspaceFileAsync" OpenChanged="ExplorerOpenChanged" />
+    <WorkspaceExplorer @ref="_explorer" Document="_document" FileOpened="OpenWorkspaceFileAsync"
+                       FilePreviewed="PreviewWorkspaceFileAsync" OpenChanged="ExplorerOpenChanged" />
     <nav class="activity-bar" aria-label="Tool windows">
         <button class="@(_explorerOpen ? "active" : null)" @onclick="ToggleExplorerAsync" aria-label="Explorer" title="Explorer" aria-pressed="@_explorerOpen">
             <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 5.5h6l2 2h10v11H3z" /></svg>
@@ -116,13 +136,21 @@
     private readonly EditorViewState _emptyViewState = new();
     private readonly CommandRegistry _commands = new();
     private ElementReference _tabStrip;
+    private ElementReference _tabContextMenu;
+    private ElementReference _workbench;
     private EditorDocumentState _document => _tabs.ActiveTab?.Document ?? _emptyDocument;
     private EditorViewState _viewState => _tabs.ActiveTab?.ViewState ?? _emptyViewState;
     private DocumentTab? _draggedTab;
+    private DocumentTab? _contextTab;
+    private WorkbenchSessionPersistence _sessionPersistence = null!;
+    private DotNetObjectReference<EditorPanel>? _self;
+    private bool _phase4SmokeStarted;
     private WorkspaceExplorer? _explorer;
     private string? _status, _compareText;
     private string _query = "", _replacement = "";
     private bool _showFind, _externalChange, _confirmReload, _showMenu, _explorerOpen = true;
+    private bool _showTabContextMenu, _positionTabContextMenu;
+    private double _tabContextX, _tabContextY;
     private bool _wordWrap;
     private string Status => _status ?? (_document.IsReadOnly ? "Read-only" : _document.FilePath ?? "Ready");
     private string LineEndingLabel => _document.LineEnding == LineEnding.CrLf ? "CRLF" : _document.LineEnding.ToString().ToUpperInvariant();
@@ -131,9 +159,29 @@
     protected override async Task OnInitializedAsync()
     {
         _wordWrap = Program.Configuration.Current.WordWrap;
+        _sessionPersistence = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "NovaSharp", "workbench-session.json"));
         RegisterCommands();
-        if (Program.SmokeFile is not null) await OpenTabAsync(Program.SmokeFile);
-        else Program.ActiveDocument = _emptyDocument;
+        if (Program.Phase4Workspace is not null)
+            foreach (var path in Directory.EnumerateFiles(Program.Phase4Workspace, "*.cs").Order())
+                await OpenTabAsync(path);
+        else if (Program.SmokeFile is not null) await OpenTabAsync(Program.SmokeFile);
+        else await RestoreSessionAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_showTabContextMenu && _positionTabContextMenu)
+        {
+            _positionTabContextMenu = false;
+            await JS.InvokeVoidAsync("novaSharp.positionContextMenu", _tabContextMenu, _tabContextX, _tabContextY);
+        }
+        if (!_phase4SmokeStarted && Program.Phase4Workspace is not null && _tabs.Tabs.Count > 2)
+        {
+            _phase4SmokeStarted = true;
+            _self ??= DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("novaSharp.runPhase4Smoke", _workbench, _self);
+        }
     }
 
     private async Task OpenFileAsync()
@@ -148,16 +196,19 @@
         await OpenTabAsync(path);
     }
 
-    private async Task OpenTabAsync(string path)
+    private Task PreviewWorkspaceFileAsync(string path) => OpenTabAsync(path, preview: true);
+
+    private async Task OpenTabAsync(string path, bool preview = false)
     {
         var previous = _tabs.ActiveTab?.Document;
-        var tab = await _tabs.OpenAsync(path);
+        var tab = await _tabs.OpenAsync(path, preview);
         if (tab is null) { _status = _tabs.LastError; return; }
         if (previous is not null) previous.ExternalChangeDetected -= OnExternalChange;
         tab.Document.ExternalChangeDetected -= OnExternalChange;
         tab.Document.ExternalChangeDetected += OnExternalChange;
         Program.ActiveDocument = tab.Document;
         _status = null;
+        await SaveSessionAsync();
     }
 
     private void ActivateTab(DocumentTab tab)
@@ -169,33 +220,93 @@
         Program.ActiveDocument = tab.Document;
         _externalChange = _confirmReload = false;
         _compareText = null;
+        _ = SaveSessionAsync();
     }
 
     private async Task CloseTabAsync(DocumentTab tab)
     {
-        if (tab.Document.IsDirty)
+        await CloseTabsAsync([tab]);
+    }
+
+    private async Task CloseTabsAsync(IReadOnlyList<DocumentTab> targets)
+    {
+        var dirty = targets.Where(tab => tab.Document.IsDirty).ToArray();
+        if (dirty.Length > 0)
         {
+            var names = string.Join(Environment.NewLine, dirty.Select(tab => $"• {_tabs.GetDisplayName(tab)}"));
             var result = await Program.App.MainWindow.ShowMessageDialogAsync(
-                "Unsaved changes", $"Save changes to {tab.Document.DisplayName} before closing?",
+                "Unsaved changes", $"Save these files before closing?{Environment.NewLine}{Environment.NewLine}{names}",
                 DialogButtons.YesNoCancel, DialogIcon.Warning);
             if (result is not (DialogResult.Yes or DialogResult.No)) return;
             if (result == DialogResult.Yes)
             {
-                try { await tab.Document.SaveAsync(); }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
-                { _status = ex.Message; return; }
+                foreach (var tab in dirty)
+                {
+                    try { await tab.Document.SaveAsync(); }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+                    { _status = ex.Message; return; }
+                }
             }
         }
 
-        var wasActive = ReferenceEquals(tab, _tabs.ActiveTab);
-        if (wasActive) tab.Document.ExternalChangeDetected -= OnExternalChange;
-        _tabs.Close(tab, discardDirty: true);
-        if (wasActive && _tabs.ActiveTab is { } active)
+        var activeDocument = _tabs.ActiveTab?.Document;
+        activeDocument?.ExternalChangeDetected -= OnExternalChange;
+        foreach (var tab in targets) _tabs.Close(tab, discardDirty: true);
+        if (_tabs.ActiveTab is { } active)
+        {
+            active.Document.ExternalChangeDetected -= OnExternalChange;
             active.Document.ExternalChangeDetected += OnExternalChange;
+        }
         Program.ActiveDocument = _tabs.ActiveTab?.Document ?? _emptyDocument;
         _externalChange = _confirmReload = false;
         _compareText = null;
+        await SaveSessionAsync();
     }
+
+    private async Task CloseFromContextAsync(TabCloseScope scope)
+    {
+        var context = _contextTab;
+        HideTabContextMenu();
+        if (context is null) return;
+        var tabs = _tabs.Tabs.ToArray();
+        var index = Array.IndexOf(tabs, context);
+        var targets = scope switch
+        {
+            TabCloseScope.One => [context],
+            TabCloseScope.Others => tabs.Where(tab => !ReferenceEquals(tab, context)).ToArray(),
+            TabCloseScope.Right => tabs.Skip(index + 1).ToArray(),
+            TabCloseScope.Saved => tabs.Where(tab => !tab.Document.IsDirty).ToArray(),
+            _ => tabs
+        };
+        await CloseTabsAsync(targets);
+    }
+
+    private bool HasTabsRight => _contextTab is not null
+        && Array.IndexOf(_tabs.Tabs.ToArray(), _contextTab) < _tabs.Tabs.Count - 1;
+
+    private void ShowTabContextMenu(MouseEventArgs args, DocumentTab tab)
+    {
+        if (args.ShiftKey) return;
+        _contextTab = tab;
+        _tabContextX = args.ClientX;
+        _tabContextY = args.ClientY;
+        _showTabContextMenu = _positionTabContextMenu = true;
+    }
+
+    private void HideTabContextMenu() { _showTabContextMenu = false; _contextTab = null; }
+    private void ToggleContextTabPin() { if (_contextTab is { } tab) TogglePin(tab); HideTabContextMenu(); }
+    private void TogglePin(DocumentTab tab)
+    {
+        if (tab.IsPinned) tab.SetPreview(true); else _tabs.Promote(tab);
+        _ = SaveSessionAsync();
+    }
+
+    private string TabAccessibleLabel(DocumentTab tab) => string.Join(", ", new[]
+    {
+        _tabs.GetDisplayName(tab), tab.Document.IsDirty ? "unsaved" : "saved",
+        tab.IsPinned ? "pinned" : "preview", tab.Document.IsReadOnly ? "read-only" : null,
+        tab.Document.IsDeletedOnDisk ? "missing" : null
+    }.Where(value => value is not null));
 
     private async Task HandleTabMouseDownAsync(MouseEventArgs args, DocumentTab tab)
     {
@@ -208,7 +319,7 @@
         if (_draggedTab is null || ReferenceEquals(_draggedTab, destination)) return;
         _tabs.Move(_draggedTab, Array.IndexOf(_tabs.Tabs.ToArray(), destination));
     }
-    private void EndTabDrag() => _draggedTab = null;
+    private void EndTabDrag() { _draggedTab = null; _ = SaveSessionAsync(); }
 
     private async Task ReorderFromEditorAsync(DragEventArgs args)
     {
@@ -294,13 +405,53 @@
         if (_tabs.ActiveTab is not { } active) return;
         var index = Array.IndexOf(_tabs.Tabs.ToArray(), active);
         _tabs.Move(active, index + offset);
+        _ = SaveSessionAsync();
     }
+
+    private async Task RestoreSessionAsync()
+    {
+        var state = await _sessionPersistence.LoadAsync();
+        DocumentTab? active = null;
+        foreach (var entry in state.Tabs ?? [])
+        {
+            try
+            {
+                var tab = await _tabs.RestoreAsync(entry);
+                if (PathEquals(entry.Path, state.ActivePath)) active = tab;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+            { _status = $"Some editors could not be restored: {ex.Message}"; }
+        }
+        active ??= _tabs.Tabs.LastOrDefault();
+        _tabs.SetActive(active);
+        Program.ActiveDocument = active?.Document ?? _emptyDocument;
+        if (active is not null) active.Document.ExternalChangeDetected += OnExternalChange;
+    }
+
+    private Task SaveSessionAsync()
+    {
+        var tabs = _tabs.Tabs.Where(tab => tab.Document.FilePath is not null).Select(tab => new SessionTabState(
+            tab.Document.FilePath!, tab.IsPreview, tab.ViewState.SelectionStart, tab.ViewState.SelectionEnd,
+            tab.ViewState.ScrollTop, tab.ViewState.ScrollLeft)).ToArray();
+        return _sessionPersistence.SaveAsync(new(1, _tabs.ActiveTab?.Document.FilePath, tabs));
+    }
+
+    private static bool PathEquals(string? left, string? right) => left is not null && right is not null
+        && string.Equals(Path.GetFullPath(left), Path.GetFullPath(right), OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+
+    private enum TabCloseScope { One, Others, Right, Saved, All }
+
+    [JSInvokable]
+    public Task CompletePhase4SmokeAsync(Phase4SmokeResult result) => Program.CompletePhase4SmokeAsync(result);
 
     public void Dispose()
     {
+        _ = SaveSessionAsync();
         _document.ExternalChangeDetected -= OnExternalChange;
         if (ReferenceEquals(Program.ActiveDocument, _document)) Program.ActiveDocument = null;
         _tabs.Dispose();
         _emptyDocument.Dispose();
+        _self?.Dispose();
     }
 }

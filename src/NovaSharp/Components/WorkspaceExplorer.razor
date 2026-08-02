@@ -64,7 +64,7 @@
                     <div class="tree-row @(IsSelected(row.Entry) ? "selected" : null)" role="treeitem"
                          aria-level="@(row.Depth + 1)" aria-expanded="@(row.Entry.IsDirectory ? _expanded.Contains(row.Entry.Path) : null)"
                          tabindex="@(IsSelected(row.Entry) ? 0 : -1)" style="padding-left:@(8 + row.Depth * 16)px"
-                         @onclick="() => Select(row.Entry)" @ondblclick="() => ActivateAsync(row.Entry)"
+                         @onclick="() => SelectAsync(row.Entry)" @ondblclick="() => ActivateAsync(row.Entry)"
                          @oncontextmenu="args => ShowContextMenu(args, row.Entry)" @oncontextmenu:stopPropagation>
                         @if (row.Entry.IsDirectory)
                         {
@@ -101,6 +101,7 @@
 @code {
     [Parameter, EditorRequired] public EditorDocumentState Document { get; set; } = null!;
     [Parameter] public EventCallback<string> FileOpened { get; set; }
+    [Parameter] public EventCallback<string> FilePreviewed { get; set; }
     [Parameter] public EventCallback<bool> OpenChanged { get; set; }
     private readonly WorkspaceService _workspace = new(Program.Configuration.Current.ExplorerIgnoredNames);
     private readonly Dictionary<string, IReadOnlyList<WorkspaceEntry>> _children = new();
@@ -234,6 +235,12 @@
         foreach (var child in children) AddVisible(child, depth + 1);
     }
 
+    private async Task SelectAsync(WorkspaceEntry entry)
+    {
+        _selected = entry; _showContextMenu = false;
+        if (!entry.IsDirectory && entry.Kind != WorkspaceEntryKind.SymbolicLink)
+            await FilePreviewed.InvokeAsync(entry.Path);
+    }
     private void Select(WorkspaceEntry entry) { _selected = entry; _showContextMenu = false; }
     private bool IsSelected(WorkspaceEntry entry) => _selected?.Id == entry.Id;
     private bool IsRoot(string path) => string.Equals(path, _workspace.RootPath, StringComparison.Ordinal);

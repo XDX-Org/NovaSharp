@@ -77,6 +77,48 @@ public sealed class DocumentTabServiceTests
         Assert.AreEqual("same.cs — right", tabs.GetDisplayName(second!));
     }
 
+    [TestMethod]
+    public async Task SessionRestoresOrderActiveViewStateAndMissingFiles()
+    {
+        using var fixture = new TabFixture();
+        var existing = fixture.File("existing.cs");
+        var missing = Path.Combine(fixture.Root, "moved.cs");
+        using var tabs = new DocumentTabService();
+
+        var first = await tabs.RestoreAsync(new(existing, false, 2, 7, 120, 18));
+        var second = await tabs.RestoreAsync(new(missing, true, 50, 80, 40, 4));
+        tabs.SetActive(first);
+
+        CollectionAssert.AreEqual(new[] { existing, missing }, tabs.Tabs.Select(tab => tab.Document.FilePath).ToArray());
+        Assert.AreSame(first, tabs.ActiveTab);
+        Assert.AreEqual(2, first.ViewState.SelectionStart);
+        Assert.AreEqual(7, first.ViewState.SelectionEnd);
+        Assert.AreEqual(120, first.ViewState.ScrollTop);
+        Assert.IsTrue(second.Document.IsDeletedOnDisk);
+        Assert.IsNotNull(second.Document.Error);
+        Assert.IsFalse(second.Document.IsDirty);
+    }
+
+    [TestMethod]
+    public async Task SessionPersistenceRoundTripsAndRejectsMalformedState()
+    {
+        using var fixture = new TabFixture();
+        var path = Path.Combine(fixture.Root, "session.json");
+        var persistence = new WorkbenchSessionPersistence(path);
+        var file = fixture.File("one.cs");
+        var expected = new WorkbenchSessionState(1, file, [new(file, false, 1, 3, 20, 5)]);
+
+        await persistence.SaveAsync(expected);
+        var restored = await persistence.LoadAsync();
+
+        Assert.AreEqual(file, restored.ActivePath);
+        Assert.AreEqual(expected.Tabs![0], restored.Tabs![0]);
+        await System.IO.File.WriteAllTextAsync(path, "{ not json");
+        Assert.AreEqual(0, (await persistence.LoadAsync()).Tabs?.Length ?? 0);
+        await System.IO.File.WriteAllTextAsync(path, "{\"SchemaVersion\":99,\"Tabs\":[]}");
+        Assert.AreEqual(0, (await persistence.LoadAsync()).Tabs?.Length ?? 0);
+    }
+
     private sealed class TabFixture : IDisposable
     {
         internal string Root { get; } = Path.Combine(Path.GetTempPath(), "NovaSharp.Tests", Guid.NewGuid().ToString("N"));

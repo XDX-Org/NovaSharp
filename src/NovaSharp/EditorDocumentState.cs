@@ -35,11 +35,26 @@ public sealed class EditorViewState
 {
     internal int SelectionStart { get; private set; }
     internal int SelectionEnd { get; private set; }
+    internal double ScrollTop { get; private set; }
+    internal double ScrollLeft { get; private set; }
 
     internal void SetSelection(int start, int end, int textLength)
     {
         SelectionStart = Math.Clamp(start, 0, textLength);
         SelectionEnd = Math.Clamp(end, SelectionStart, textLength);
+    }
+
+    internal void Restore(int start, int end, double scrollTop, double scrollLeft, int textLength)
+    {
+        SetSelection(start, end, textLength);
+        ScrollTop = Math.Max(0, scrollTop);
+        ScrollLeft = Math.Max(0, scrollLeft);
+    }
+
+    internal void SetScroll(double top, double left)
+    {
+        ScrollTop = Math.Max(0, top);
+        ScrollLeft = Math.Max(0, left);
     }
 }
 
@@ -99,6 +114,18 @@ public sealed class EditorDocumentState : IDisposable
         {
             Error = $"Could not open {Path.GetFileName(path)}: {exception.Message}";
         }
+    }
+
+    internal void OpenMissing(string path)
+    {
+        FilePath = Path.GetFullPath(path);
+        _content = string.Empty;
+        Version++;
+        _savedVersion = Version;
+        _diskStamp = null;
+        _undo.Clear();
+        _redo.Clear();
+        Error = $"{DisplayName} is missing from disk.";
     }
 
     internal async Task SaveAsync(string? destination = null, bool overwriteConflict = false)

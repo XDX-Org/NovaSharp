@@ -1,12 +1,15 @@
-export function createEditor(root, wordWrap, dotNet, selectionStart, selectionEnd) {
+export function createEditor(root, wordWrap, dotNet, selectionStart, selectionEnd, scrollTop, scrollLeft) {
     const input = root.querySelector('.editor-input');
     const presentation = root.querySelector('.presentation');
     input.wrap = wordWrap ? 'soft' : 'off';
     input.setSelectionRange(selectionStart, selectionEnd);
+    input.scrollTop = scrollTop;
+    input.scrollLeft = scrollLeft;
 
     const sync = () => {
         presentation.scrollTop = input.scrollTop;
         presentation.scrollLeft = input.scrollLeft;
+        dotNet.invokeMethodAsync('ScrollChanged', input.scrollTop, input.scrollLeft);
     };
     const keydown = event => {
         if ((event.ctrlKey || event.metaKey) && ['s', 'o', 'f', 'z', 'y'].includes(event.key.toLowerCase())) {

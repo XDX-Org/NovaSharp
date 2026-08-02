@@ -23,6 +23,7 @@
     [Parameter, EditorRequired] public EventCallback<string> ValueChanged { get; set; }
     [Parameter] public bool WordWrap { get; set; }
     [Parameter, EditorRequired] public EditorViewState ViewState { get; set; } = null!;
+    [Parameter] public EventCallback ViewStateChanged { get; set; }
     private ElementReference _root;
     private IJSObjectReference? _module;
     private DotNetObjectReference<CodeEditor>? _self;
@@ -33,7 +34,8 @@
         if (!firstRender) return;
         _module = await JS.InvokeAsync<IJSObjectReference>("import", "./editor.js");
         _self = DotNetObjectReference.Create(this);
-        await _module.InvokeVoidAsync("createEditor", _root, WordWrap, _self, ViewState.SelectionStart, ViewState.SelectionEnd);
+        await _module.InvokeVoidAsync("createEditor", _root, WordWrap, _self, ViewState.SelectionStart,
+            ViewState.SelectionEnd, ViewState.ScrollTop, ViewState.ScrollLeft);
         if (Program.Phase2SmokeFile is not null)
         {
             var result = await _module.InvokeAsync<EditorSmokeResult>("runSmokeChecks", _root);
@@ -44,7 +46,18 @@
     private Task OnInput(ChangeEventArgs args) => ValueChanged.InvokeAsync(args.Value?.ToString() ?? string.Empty);
 
     [JSInvokable]
-    public void SelectionChanged(int start, int end) => ViewState.SetSelection(start, end, Value.Length);
+    public Task SelectionChanged(int start, int end)
+    {
+        ViewState.SetSelection(start, end, Value.Length);
+        return ViewStateChanged.InvokeAsync();
+    }
+
+    [JSInvokable]
+    public Task ScrollChanged(double top, double left)
+    {
+        ViewState.SetScroll(top, left);
+        return ViewStateChanged.InvokeAsync();
+    }
 
     public async ValueTask DisposeAsync()
     {

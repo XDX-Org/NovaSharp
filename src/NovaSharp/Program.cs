@@ -12,6 +12,7 @@ internal static class Program
     internal static string? SmokeFile { get; private set; }
     internal static string? Phase2SmokeFile { get; private set; }
     internal static string? Phase3Workspace { get; private set; }
+    internal static string? Phase4Workspace { get; private set; }
     private static string? SmokeReport { get; set; }
 
     [STAThread]
@@ -19,6 +20,7 @@ internal static class Program
     {
         Phase2SmokeFile = ReadOption(args, "--phase2-smoke");
         Phase3Workspace = ReadOption(args, "--phase3-smoke");
+        Phase4Workspace = ReadOption(args, "--phase4-smoke");
         SmokeFile = Phase2SmokeFile ?? (Phase3Workspace is null ? null : Path.Combine(Phase3Workspace, "active.cs"));
         SmokeReport = ReadOption(args, "--smoke-report");
         var builder = PhotinoExBlazorAppBuilder.CreateDefault(args);
@@ -63,6 +65,13 @@ internal static class Program
     }
 
     internal static async Task CompletePhase3SmokeAsync(Phase3SmokeResult result)
+    {
+        if (SmokeReport is null) return;
+        await File.WriteAllTextAsync(SmokeReport, JsonSerializer.Serialize(result));
+        App.MainWindow.Close();
+    }
+
+    internal static async Task CompletePhase4SmokeAsync(Phase4SmokeResult result)
     {
         if (SmokeReport is null) return;
         await File.WriteAllTextAsync(SmokeReport, JsonSerializer.Serialize(result));

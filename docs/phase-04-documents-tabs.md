@@ -42,14 +42,14 @@ Implemented on `phase-4`:
 - Pointer and keyboard reordering, editor-wide drop targeting, drag feedback, and horizontal overflow.
 - Dirty, preview, pinned, read-only, missing-file, and duplicate-name presentation foundations.
 - Automated coverage for path deduplication, ordering, preview promotion, dirty-close protection, and duplicate names.
-
-Remaining:
-
 - Tab context menu and close-others/right/saved/all commands with one aggregated dirty-document prompt.
 - Explorer single-click preview navigation and explicit pin controls.
 - Session persistence for open files, active tab, ordering, cursor, selection, and scroll state.
 - Restoration recovery tests for moved, deleted, and malformed session entries.
 - Automated UI interaction coverage for pointer reordering, overflow, middle-click, and accessible labels.
+
+Automated unit and recovery tests pass locally. The Linux/Xvfb Phase 4 interaction smoke is wired into CI;
+local execution requires the native GTK/WebKit/Xvfb dependencies and remains pending on this machine.
 
 ## Next phase
 

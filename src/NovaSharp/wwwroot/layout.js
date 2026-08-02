@@ -73,6 +73,7 @@ window.novaSharp.initAppContextMenu = function () {
     document.addEventListener("contextmenu", event => {
         if (event.shiftKey) { close(); return; }
         if (event.target.closest(".explorer")) { event.preventDefault(); return; }
+        if (event.target.closest(".document-tab")) return;
         if (event.target.closest(".menu-popup,.explorer-context-menu")) return;
         const editable = event.target.closest("textarea,input:not([type=button]):not([type=submit])");
         const selectionTarget = editable || event.target;
@@ -249,4 +250,49 @@ window.novaSharp.tabIndexAtX = function (strip, x) {
     if (!tabs.length) return 0;
     const index = tabs.findIndex(tab => x < tab.getBoundingClientRect().left + tab.offsetWidth / 2);
     return index < 0 ? tabs.length - 1 : index;
+};
+
+window.novaSharp.runPhase4Smoke = async function (workbench, dotNet) {
+    const wait = (milliseconds = 100) => new Promise(resolve => setTimeout(resolve, milliseconds));
+    try {
+        const strip = workbench.querySelector('.document-tabs');
+        let tabs = [...strip.querySelectorAll('.document-tab')];
+        const tabsPresent = tabs.length > 2;
+        const firstLabel = tabs[0]?.querySelector('.tab-label')?.textContent;
+        tabs[0]?.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true }));
+        tabs[2]?.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true }));
+        tabs[2]?.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true }));
+        await wait();
+        tabs = [...strip.querySelectorAll('.document-tab')];
+        const pointerReordered = tabs[2]?.querySelector('.tab-label')?.textContent === firstLabel;
+        const overflowScrollable = strip.scrollWidth > strip.clientWidth && getComputedStyle(strip).overflowX === 'auto';
+        const accessibleLabels = tabs.every(tab => tab.getAttribute('role') === 'tab'
+            && tab.getAttribute('aria-label')?.includes('saved') && tab.querySelector('.tab-close[aria-label]'));
+        tabs[0]?.dispatchEvent(new MouseEvent('contextmenu', {
+            bubbles: true, cancelable: true, clientX: 80, clientY: 40
+        }));
+        await wait();
+        const menu = workbench.querySelector('.tab-context-menu');
+        const labels = [...(menu?.querySelectorAll('[role="menuitem"]') ?? [])].map(item => item.textContent.trim());
+        const contextCommandsPresent = ['Close others', 'Close to the right', 'Close saved', 'Close all']
+            .every(label => labels.includes(label));
+        workbench.querySelector('.context-menu-dismiss')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await wait();
+        const beforeClose = strip.querySelectorAll('.document-tab').length;
+        strip.querySelector('.document-tab')?.dispatchEvent(new MouseEvent('mousedown', {
+            bubbles: true, cancelable: true, button: 1
+        }));
+        await wait();
+        const middleClickClosed = strip.querySelectorAll('.document-tab').length === beforeClose - 1;
+        await dotNet.invokeMethodAsync('CompletePhase4SmokeAsync', {
+            tabsPresent, pointerReordered, overflowScrollable, middleClickClosed, accessibleLabels,
+            contextCommandsPresent
+        });
+    } catch (error) {
+        await dotNet.invokeMethodAsync('CompletePhase4SmokeAsync', {
+            tabsPresent: false, pointerReordered: false, overflowScrollable: false,
+            middleClickClosed: false, accessibleLabels: false, contextCommandsPresent: false,
+            error: `${error?.name ?? 'Error'}: ${error?.message ?? String(error)}`
+        });
+    }
 };
