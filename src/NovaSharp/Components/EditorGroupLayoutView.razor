@@ -9,7 +9,8 @@
         <input class="editor-splitter" type="range" min="10" max="90" step="2"
                value="@Math.Round(split.Ratio * 100)" aria-label="Resize editor groups"
                aria-orientation="@(split.Orientation == SplitOrientation.Horizontal ? "vertical" : "horizontal")"
-               @oninput="args => Resize(split, args.Value?.ToString())" />
+               @oninput="args => Resize(split, args.Value?.ToString())"
+               @onchange="args => Resize(split, args.Value?.ToString())" />
         <EditorGroupLayoutView Node="split.Second" Workspace="Workspace" WordWrap="WordWrap"
                                ActiveChanged="ActiveChanged" ContentEdited="ContentEdited" CloseRequested="CloseRequested" />
     </div>
