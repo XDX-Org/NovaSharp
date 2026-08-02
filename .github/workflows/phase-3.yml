@@ -105,6 +105,28 @@ jobs:
           $result = Get-Content $report | ConvertFrom-Json
           $required = 'TabsPresent', 'PointerReordered', 'OverflowScrollable', 'MiddleClickClosed', 'AccessibleLabels', 'ContextCommandsPresent'
           foreach ($name in $required) { if (-not $result.$name) { throw "Phase 4 smoke assertion failed: $name" } }
+      - name: Run packaged Linux Phase 5 native-host smoke
+        if: runner.os == 'Linux'
+        shell: pwsh
+        env:
+          GTK_A11Y: none
+          GSK_RENDERER: cairo
+          LIBGL_ALWAYS_SOFTWARE: 1
+          WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: 1
+          WEBKIT_DISABLE_DMABUF_RENDERER: 1
+        run: |
+          $workspace = Join-Path $PWD 'phase5-workspace'
+          $report = Join-Path $PWD 'phase5-smoke.json'
+          New-Item -ItemType Directory -Path $workspace | Out-Null
+          'class Shared;' | Set-Content -Encoding utf8 (Join-Path $workspace 'shared.cs')
+          $binary = 'artifacts/app/NovaSharp'
+          $arguments = @("--phase5-smoke=$workspace", "--smoke-report=$report")
+          $process = Start-Process xvfb-run -ArgumentList (@('-a', $binary) + $arguments) -PassThru
+          if (-not $process.WaitForExit(60000)) { $process.Kill($true); throw 'Phase 5 native smoke timed out.' }
+          if ($process.ExitCode -ne 0) { throw "Phase 5 native smoke exited with $($process.ExitCode)." }
+          $result = Get-Content $report | ConvertFrom-Json
+          $required = 'GroupsPresent', 'SharedEditsImmediate', 'IndependentSelections', 'SplitterAccessible', 'SplitterResized', 'DropZonesPresent', 'EdgeDropSplit', 'NarrowLayoutOperable'
+          foreach ($name in $required) { if (-not $result.$name) { throw "Phase 5 smoke assertion failed: $name" } }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -113,4 +135,5 @@ jobs:
             phase2-smoke.json
             phase3-smoke.json
             phase4-smoke.json
+            phase5-smoke.json
             artifacts/app

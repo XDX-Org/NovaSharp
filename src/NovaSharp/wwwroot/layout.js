@@ -238,6 +238,15 @@ window.novaSharp.runPhase3Smoke = async function (explorer, dotNet) {
 
 window.novaSharp.initAppContextMenu();
 
+document.addEventListener('keydown', event => {
+    const splitter = event.target.closest?.('.editor-splitter');
+    if (!splitter || !event.shiftKey || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+    event.preventDefault();
+    const decreasing = event.key === 'ArrowLeft' || event.key === 'ArrowUp';
+    splitter.value = Math.max(10, Math.min(90, Number(splitter.value) + (decreasing ? -10 : 10)));
+    splitter.dispatchEvent(new Event('input', { bubbles: true }));
+});
+
 document.addEventListener("dragstart", event => {
     const tab = event.target.closest?.(".document-tab");
     if (!tab || !event.dataTransfer) return;
@@ -297,6 +306,62 @@ window.novaSharp.runPhase4Smoke = async function (workbench, dotNet) {
         await dotNet.invokeMethodAsync('CompletePhase4SmokeAsync', {
             tabsPresent: false, pointerReordered: false, overflowScrollable: false,
             middleClickClosed: false, accessibleLabels: false, contextCommandsPresent: false,
+            error: `${error?.name ?? 'Error'}: ${error?.message ?? String(error)}`
+        });
+    }
+};
+
+window.novaSharp.runPhase5Smoke = async function (workbench, dotNet) {
+    const wait = (milliseconds = 150) => new Promise(resolve => setTimeout(resolve, milliseconds));
+    try {
+        let groups = [...workbench.querySelectorAll('.editor-group')];
+        const groupsPresent = groups.length === 2 && !!workbench.querySelector('.editor-split.horizontal');
+        let inputs = groups.map(group => group.querySelector('.editor-input'));
+        inputs[0].value = 'class SharedUpdate;';
+        inputs[0].dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText' }));
+        await wait(250);
+        groups = [...workbench.querySelectorAll('.editor-group')];
+        inputs = groups.map(group => group.querySelector('.editor-input'));
+        const sharedEditsImmediate = inputs.every(input => input?.value === 'class SharedUpdate;');
+        inputs[0].setSelectionRange(1, 4);
+        inputs[0].dispatchEvent(new Event('select', { bubbles: true }));
+        inputs[1].setSelectionRange(7, 13);
+        inputs[1].dispatchEvent(new Event('select', { bubbles: true }));
+        await wait();
+        const independentSelections = inputs[0].selectionStart === 1 && inputs[0].selectionEnd === 4
+            && inputs[1].selectionStart === 7 && inputs[1].selectionEnd === 13;
+        const splitter = workbench.querySelector('.editor-splitter');
+        const splitterAccessible = splitter?.getAttribute('aria-label') === 'Resize editor groups'
+            && splitter.getAttribute('aria-orientation') === 'vertical';
+        splitter.value = '65';
+        splitter.dispatchEvent(new Event('input', { bubbles: true }));
+        await wait();
+        const splitterResized = workbench.querySelector('.editor-split')?.style.gridTemplateColumns.includes('65fr');
+        const originalWidth = workbench.style.width;
+        workbench.style.width = '480px';
+        await wait();
+        const narrowLayoutOperable = [...workbench.querySelectorAll('.editor-group')]
+            .every(group => group.getBoundingClientRect().width >= 159);
+        workbench.style.width = originalWidth;
+        const sourceTab = workbench.querySelector('.document-tab');
+        const dataTransfer = new DataTransfer();
+        sourceTab.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer }));
+        await wait();
+        const zones = [...workbench.querySelectorAll('.drop-zone')];
+        const dropZonesPresent = zones.length >= 10 && zones.every(zone => zone.getAttribute('aria-label'));
+        const right = workbench.querySelectorAll('.editor-group')[1].querySelector('.drop-zone.right');
+        right.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer }));
+        await wait(250);
+        const edgeDropSplit = workbench.querySelectorAll('.editor-group').length === 3;
+        await dotNet.invokeMethodAsync('CompletePhase5SmokeAsync', {
+            groupsPresent, sharedEditsImmediate, independentSelections, splitterAccessible,
+            splitterResized, dropZonesPresent, edgeDropSplit, narrowLayoutOperable
+        });
+    } catch (error) {
+        await dotNet.invokeMethodAsync('CompletePhase5SmokeAsync', {
+            groupsPresent: false, sharedEditsImmediate: false, independentSelections: false,
+            splitterAccessible: false, splitterResized: false, dropZonesPresent: false,
+            edgeDropSplit: false, narrowLayoutOperable: false,
             error: `${error?.name ?? 'Error'}: ${error?.message ?? String(error)}`
         });
     }

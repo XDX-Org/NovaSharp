@@ -57,9 +57,9 @@ internal sealed class DocumentRegistry : IDisposable
         : StringComparer.Ordinal;
 }
 
-internal sealed class DocumentTab(EditorDocumentState document, bool preview)
+public sealed class DocumentTab(EditorDocumentState document, bool preview, Guid? id = null)
 {
-    internal Guid Id { get; } = Guid.NewGuid();
+    internal Guid Id { get; } = id ?? Guid.NewGuid();
     internal EditorDocumentState Document { get; } = document;
     internal EditorViewState ViewState { get; } = new();
     internal bool IsPreview { get; private set; } = preview;
@@ -246,4 +246,52 @@ internal sealed class WorkbenchSessionPersistence(string path)
         try { await AtomicFile.WriteAsync(path, JsonSerializer.SerializeToUtf8Bytes(state), cancellationToken); }
         finally { _saveGate.Release(); }
     }
+}
+
+internal sealed class EditorLayoutPersistence(string path)
+{
+    private static readonly Guid FallbackGroupId = Guid.Parse("4d711a6b-ff91-4931-a4ec-40f72c00eb52");
+    private readonly SemaphoreSlim _saveGate = new(1, 1);
+
+    internal async Task<WorkbenchLayoutState> LoadAsync(CancellationToken cancellationToken = default)
+    {
+        if (!File.Exists(path)) return Empty();
+        try
+        {
+            var bytes = await File.ReadAllBytesAsync(path, cancellationToken);
+            using var json = JsonDocument.Parse(bytes);
+            var version = json.RootElement.TryGetProperty("SchemaVersion", out var property) ? property.GetInt32() : 0;
+            if (version == 2)
+                return JsonSerializer.Deserialize<WorkbenchLayoutState>(bytes) ?? Empty();
+            if (version == 1)
+            {
+                var legacy = JsonSerializer.Deserialize<WorkbenchSessionState>(bytes) ?? new();
+                var groupId = Guid.NewGuid();
+                var views = (legacy.Tabs ?? []).Where(tab => !string.IsNullOrWhiteSpace(tab.Path)
+                    && Path.IsPathFullyQualified(tab.Path)).Select(tab => new SessionViewState(Guid.NewGuid(),
+                    tab.Path, tab.IsPreview, tab.SelectionStart, tab.SelectionEnd, tab.ScrollTop, tab.ScrollLeft)).ToArray();
+                var active = views.FirstOrDefault(view => PathEquals(view.Path, legacy.ActivePath))?.Id;
+                return new(2, new("group", groupId, Tabs: views, ActiveViewId: active), groupId);
+            }
+            return Empty();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException
+            or InvalidOperationException)
+        { return Empty(); }
+    }
+
+    internal async Task SaveAsync(WorkbenchLayoutState state, CancellationToken cancellationToken = default)
+    {
+        await _saveGate.WaitAsync(cancellationToken);
+        try { await AtomicFile.WriteAsync(path, JsonSerializer.SerializeToUtf8Bytes(state), cancellationToken); }
+        finally { _saveGate.Release(); }
+    }
+
+    private static WorkbenchLayoutState Empty()
+    {
+        return new(2, new("group", FallbackGroupId), FallbackGroupId);
+    }
+    private static bool PathEquals(string left, string? right) => right is not null && string.Equals(
+        Path.GetFullPath(left), Path.GetFullPath(right), OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 }

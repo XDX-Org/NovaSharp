@@ -13,6 +13,8 @@ internal static class Program
     internal static string? Phase2SmokeFile { get; private set; }
     internal static string? Phase3Workspace { get; private set; }
     internal static string? Phase4Workspace { get; private set; }
+    internal static string? Phase5Workspace { get; private set; }
+    internal static Func<bool>? ConfirmWorkbenchClose { get; set; }
     private static string? SmokeReport { get; set; }
 
     [STAThread]
@@ -21,6 +23,7 @@ internal static class Program
         Phase2SmokeFile = ReadOption(args, "--phase2-smoke");
         Phase3Workspace = ReadOption(args, "--phase3-smoke");
         Phase4Workspace = ReadOption(args, "--phase4-smoke");
+        Phase5Workspace = ReadOption(args, "--phase5-smoke");
         SmokeFile = Phase2SmokeFile ?? (Phase3Workspace is null ? null : Path.Combine(Phase3Workspace, "active.cs"));
         SmokeReport = ReadOption(args, "--smoke-report");
         var builder = PhotinoExBlazorAppBuilder.CreateDefault(args);
@@ -78,6 +81,13 @@ internal static class Program
         App.MainWindow.Close();
     }
 
+    internal static async Task CompletePhase5SmokeAsync(Phase5SmokeResult result)
+    {
+        if (SmokeReport is null) return;
+        await File.WriteAllTextAsync(SmokeReport, JsonSerializer.Serialize(result));
+        App.MainWindow.Close();
+    }
+
     private static string? ReadOption(string[] args, string name)
     {
         var prefix = name + "=";
@@ -86,6 +96,7 @@ internal static class Program
 
     private static bool ConfirmClose(object? sender, EventArgs? args)
     {
+        if (ConfirmWorkbenchClose is not null) return ConfirmWorkbenchClose();
         var document = ActiveDocument;
         if (document is null || !document.IsDirty) return true;
         var result = App.MainWindow.ShowMessageDialogAsync(

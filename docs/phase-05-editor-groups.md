@@ -81,13 +81,16 @@ Started on `phase-5`:
 - Shared canonical-path document registry extracted from the single-strip tab service with reference-counted lifetime.
 - Stable group and split identities, directional insertion, focus, bounded ratios/depth, equalization, and empty-branch normalization implemented.
 - Unit coverage added for shared ownership and foundational layout operations.
+- Recursive horizontal and vertical group rendering with accessible resizable splitters.
+- Command and drag/drop routes for moving, copying, reordering, and edge splitting over the same model operations.
+- Per-group previews, independent view state, shared document edits/undo, last-view dirty decisions, and empty-group cleanup.
+- Version 2 layout-tree persistence with version 1 migration, stable identities, corruption recovery, and missing-file restoration.
+- Linux/Xvfb interaction coverage added for shared edits, independent selections, splitters, drop zones, edge splits, and narrow layouts.
 
 Remaining:
 
-- Add stable view identities and atomic move/copy operations over the registry-backed groups.
-- Render nested groups, splitters, commands, focus navigation, and drop-zone previews.
-- Migrate Phase 4 sessions to the version 2 layout schema.
-- Add model, restoration, shared-editing, accessibility, and native interaction coverage.
+- Pass the four-platform build/test/package workflow and packaged Linux Phase 2–5 interaction smokes.
+- Complete the existing Windows/macOS manual native interaction checks before preview release.
 
 ## Next phase
 

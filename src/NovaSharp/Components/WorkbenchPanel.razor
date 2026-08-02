@@ -1,0 +1,270 @@
+@using PhotinoEx.Core.Models
+@using Microsoft.AspNetCore.Components.Web
+@implements IDisposable
+@inject IJSRuntime JS
+
+<main @ref="_workbenchElement" class="workbench" @onkeydown="HandleKeyAsync">
+    <header class="toolbar">
+        <div class="main-menu">
+            <button class="menu-trigger" @onclick="ToggleMenu" aria-label="Main menu" aria-expanded="@_showMenu">☰</button>
+            @if (_showMenu)
+            {
+                <div class="menu-dismiss" @onclick="ToggleMenu"></div>
+                <div class="menu-popup" role="menu" @onclick:stopPropagation>
+                    <button role="menuitem" @onclick="OpenFileAsync">Open <kbd>Ctrl+O</kbd></button>
+                    <button role="menuitem" @onclick="SaveAsync" disabled="@(!_document.IsDirty)">Save <kbd>Ctrl+S</kbd></button>
+                    <button role="menuitem" @onclick="SaveAsAsync" disabled="@(_document.FilePath is null)">Save As</button>
+                    <hr />
+                    <button role="menuitem" @onclick="() => Split(SplitDirection.Left)">Split left</button>
+                    <button role="menuitem" @onclick="() => Split(SplitDirection.Right)">Split right <kbd>Ctrl+\</kbd></button>
+                    <button role="menuitem" @onclick="() => Split(SplitDirection.Up)">Split up</button>
+                    <button role="menuitem" @onclick="() => Split(SplitDirection.Down)">Split down</button>
+                    <button role="menuitem" @onclick="Equalize" disabled="@(_workspace.Layout.Groups.Count < 2)">Distribute evenly</button>
+                    <button role="menuitem" @onclick="() => TransferToNextAsync(false)" disabled="@(ActiveTab is null)">Move view to next group</button>
+                    <button role="menuitem" @onclick="() => TransferToNextAsync(true)" disabled="@(ActiveTab is null)">Copy view to next group</button>
+                    <button role="menuitem" @onclick="FocusNext" disabled="@(_workspace.Layout.Groups.Count < 2)">Focus next group</button>
+                    <hr />
+                    <button role="menuitem" @onclick="Undo" disabled="@(!_document.CanUndo)">Undo <kbd>Ctrl+Z</kbd></button>
+                    <button role="menuitem" @onclick="Redo" disabled="@(!_document.CanRedo)">Redo <kbd>Ctrl+Y</kbd></button>
+                    <button role="menuitem" @onclick="ToggleFind">Find <kbd>Ctrl+F</kbd></button>
+                    <button role="menuitem" @onclick="ToggleWrapAsync">Word wrap <span>@(_wordWrap ? "On" : "Off")</span></button>
+                </div>
+            }
+        </div>
+    </header>
+    @if (_showFind)
+    {
+        <div class="findbar">
+            <input aria-label="Find" @bind="_query" @bind:event="oninput" />
+            <input aria-label="Replace" @bind="_replacement" />
+            <span>@_document.Find(_query).Count matches</span>
+            <button @onclick="ReplaceAll">Replace all</button>
+            <button @onclick="ToggleFind" aria-label="Close find">×</button>
+        </div>
+    }
+    @if (_externalChange)
+    {
+        <div class="conflict" role="alert">
+            <span>@(_document.IsDeletedOnDisk ? "The file was deleted outside NovaSharp." : "The file changed outside NovaSharp.")</span>
+            <button @onclick="ReloadAsync">Reload disk version</button>
+            <button @onclick="KeepBuffer">Keep editor version</button>
+        </div>
+    }
+    <div class="workbench-body">
+        <div class="editor-area">
+            <EditorGroupLayoutView Node="_workspace.Layout.Root" Workspace="_workspace" WordWrap="_wordWrap"
+                                   ActiveChanged="ActiveChangedAsync" ContentEdited="ContentEditedAsync"
+                                   CloseRequested="CloseRequestedAsync" />
+        </div>
+        <WorkspaceExplorer @ref="_explorer" Document="_document" FileOpened="OpenWorkspaceFileAsync"
+                           FilePreviewed="PreviewWorkspaceFileAsync" OpenChanged="ExplorerOpenChanged" />
+        <nav class="activity-bar" aria-label="Tool windows">
+            <button class="@(_explorerOpen ? "active" : null)" @onclick="ToggleExplorerAsync" aria-label="Explorer"
+                    title="Explorer" aria-pressed="@_explorerOpen">
+                <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 5.5h6l2 2h10v11H3z" /></svg>
+            </button>
+        </nav>
+    </div>
+    <footer class="statusbar"><span class="status-message">@Status</span></footer>
+</main>
+
+@code {
+    private readonly EditorGroupWorkspace _workspace = new();
+    private readonly EditorDocumentState _emptyDocument = new();
+    private EditorLayoutPersistence _persistence = null!;
+    private WorkspaceExplorer? _explorer;
+    private ElementReference _workbenchElement;
+    private DotNetObjectReference<WorkbenchPanel>? _self;
+    private string? _status;
+    private string _query = "", _replacement = "";
+    private bool _showMenu, _showFind, _wordWrap, _externalChange, _explorerOpen = true, _phase4SmokeStarted, _phase5SmokeStarted;
+    private DocumentTab? ActiveTab => _workspace.FocusedGroup.ActiveTab;
+    private EditorDocumentState _document => ActiveTab?.Document ?? _emptyDocument;
+    private string Status => _status ?? (_document.IsReadOnly ? "Read-only" : _document.FilePath ?? "Ready");
+
+    protected override async Task OnInitializedAsync()
+    {
+        _wordWrap = Program.Configuration.Current.WordWrap;
+        _persistence = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "NovaSharp", "workbench-session.json"));
+        _workspace.Changed += WorkspaceChanged;
+        Program.ConfirmWorkbenchClose = ConfirmClose;
+        if (Program.Phase5Workspace is not null)
+        {
+            var path = Directory.EnumerateFiles(Program.Phase5Workspace, "*.cs").First();
+            var tab = await _workspace.OpenAsync(path);
+            var source = _workspace.FocusedGroup;
+            var target = _workspace.Split(source.Id, SplitDirection.Right)!;
+            await _workspace.CopyAsync(tab!, target.Id);
+            _workspace.Focus(source.Id);
+        }
+        else if (Program.Phase4Workspace is not null)
+            foreach (var path in Directory.EnumerateFiles(Program.Phase4Workspace, "*.cs").Order()) await OpenTabAsync(path);
+        else if (Program.SmokeFile is not null) await OpenTabAsync(Program.SmokeFile);
+        else await _workspace.RestoreAsync(await _persistence.LoadAsync());
+        TrackActiveDocument();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_phase4SmokeStarted && Program.Phase4Workspace is not null && _workspace.FocusedGroup.Tabs.Count > 2)
+        {
+            _phase4SmokeStarted = true;
+            _self ??= DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("novaSharp.runPhase4Smoke", _workbenchElement, _self);
+        }
+        if (!_phase5SmokeStarted && Program.Phase5Workspace is not null && _workspace.Layout.Groups.Count == 2)
+        {
+            _phase5SmokeStarted = true;
+            _self ??= DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("novaSharp.runPhase5Smoke", _workbenchElement, _self);
+        }
+    }
+
+    private async Task OpenFileAsync()
+    {
+        _showMenu = false;
+        var files = await Program.App.MainWindow.ShowOpenFileDialogAsync(title: "Open C# file", multiSelect: true,
+            filterPatterns: [new FileFilter("C# source", "*.cs")]);
+        foreach (var path in files ?? []) await OpenTabAsync(path);
+    }
+    private Task OpenWorkspaceFileAsync(string path) => OpenTabAsync(path);
+    private Task PreviewWorkspaceFileAsync(string path) => OpenTabAsync(path, true);
+    private async Task OpenTabAsync(string path, bool preview = false)
+    {
+        UntrackActiveDocument();
+        var tab = await _workspace.OpenAsync(path, preview);
+        if (tab is null) _status = _workspace.LastError;
+        else _status = null;
+        TrackActiveDocument();
+        await SaveLayoutAsync();
+    }
+
+    private async Task CloseRequestedAsync(EditorGroupLayoutView.CloseViewRequest request)
+    {
+        var tabs = request.Tabs.Where(tab => _workspace.Layout.Groups.Any(group => group.Tabs.Contains(tab))).ToArray();
+        var targets = tabs.ToHashSet();
+        var allTabs = _workspace.Layout.Groups.SelectMany(group => group.Tabs).ToArray();
+        var dirty = tabs.Where(tab => tab.Document.IsDirty
+            && allTabs.Where(candidate => ReferenceEquals(candidate.Document, tab.Document)).All(targets.Contains))
+            .DistinctBy(tab => tab.Document).ToArray();
+        var discard = false;
+        if (dirty.Length > 0)
+        {
+            var names = string.Join(Environment.NewLine, dirty.Select(tab => $"• {tab.Document.DisplayName}"));
+            var result = await Program.App.MainWindow.ShowMessageDialogAsync("Unsaved changes",
+                $"Save these files before closing?{Environment.NewLine}{Environment.NewLine}{names}", DialogButtons.YesNoCancel, DialogIcon.Warning);
+            if (result is not (DialogResult.Yes or DialogResult.No)) return;
+            if (result == DialogResult.Yes)
+                foreach (var tab in dirty) try { await tab.Document.SaveAsync(); } catch (Exception ex) { _status = ex.Message; return; }
+            discard = true;
+        }
+        UntrackActiveDocument();
+        foreach (var tab in tabs)
+            if (_workspace.Layout.Groups.SelectMany(group => group.Tabs).Contains(tab))
+                _workspace.Close(_workspace.GroupContaining(tab).Id, tab, discard);
+        TrackActiveDocument();
+        await SaveLayoutAsync();
+    }
+
+    private async Task ActiveChangedAsync() { TrackActiveDocument(); await SaveLayoutAsync(); }
+    private async Task ContentEditedAsync() { _status = null; StateHasChanged(); await SaveLayoutAsync(); }
+    private void Split(SplitDirection direction) { _showMenu = false; _workspace.Split(_workspace.Layout.FocusedGroupId, direction); }
+    private void Equalize() { _showMenu = false; _workspace.Layout.DistributeEvenly(); StateHasChanged(); _ = SaveLayoutAsync(); }
+    private async Task TransferToNextAsync(bool copy)
+    {
+        _showMenu = false;
+        if (ActiveTab is not { } tab) return;
+        var groups = _workspace.Layout.Groups;
+        var source = _workspace.FocusedGroup;
+        var index = Array.IndexOf(groups.ToArray(), source);
+        var target = groups.Count == 1 ? _workspace.Split(source.Id, SplitDirection.Right)! : groups[(index + 1) % groups.Count];
+        if (copy) await _workspace.CopyAsync(tab, target.Id); else _workspace.Move(tab, source.Id, target.Id);
+        await ActiveChangedAsync();
+    }
+    private void FocusNext()
+    {
+        _showMenu = false;
+        var groups = _workspace.Layout.Groups;
+        var index = Array.IndexOf(groups.ToArray(), _workspace.FocusedGroup);
+        _workspace.Focus(groups[(index + 1) % groups.Count].Id);
+        TrackActiveDocument();
+    }
+    private async Task SaveAsync() { _showMenu = false; try { await _document.SaveAsync(); _status = "Saved"; } catch (Exception ex) { _status = ex.Message; } }
+    private async Task SaveAsAsync()
+    {
+        _showMenu = false;
+        var path = await Program.App.MainWindow.ShowSaveFileDialogAsync("Save C# file", _document.FilePath ?? "Untitled.cs", [new FileFilter("C# source", "*.cs")]);
+        if (!string.IsNullOrWhiteSpace(path)) try { await _document.SaveAsync(path); _status = "Saved"; } catch (Exception ex) { _status = ex.Message; }
+    }
+    private void Undo() { _showMenu = false; _document.Undo(); StateHasChanged(); }
+    private void Redo() { _showMenu = false; _document.Redo(); StateHasChanged(); }
+    private void ReplaceAll() { _document.ReplaceAll(_query, _replacement); StateHasChanged(); }
+    private void ToggleFind() { _showMenu = false; _showFind = !_showFind; }
+    private void ToggleMenu() => _showMenu = !_showMenu;
+    private async Task ToggleWrapAsync() { _showMenu = false; _wordWrap = !_wordWrap; await Program.Configuration.SaveUserAsync(Program.Configuration.Current with { WordWrap = _wordWrap }); }
+    private async Task ReloadAsync() { await _document.ReloadAsync(); _externalChange = false; StateHasChanged(); }
+    private void KeepBuffer() { _document.KeepBuffer(); _externalChange = false; }
+    private Task ToggleExplorerAsync() => _explorer?.ToggleCollapsedAsync() ?? Task.CompletedTask;
+    private void ExplorerOpenChanged(bool open) => _explorerOpen = open;
+    private Task SaveLayoutAsync() => _persistence.SaveAsync(_workspace.CaptureState());
+    private void WorkspaceChanged() => _ = InvokeAsync(StateHasChanged);
+    private void OnExternalChange() => _ = InvokeAsync(() => { _externalChange = true; StateHasChanged(); });
+    private void UntrackActiveDocument() => _document.ExternalChangeDetected -= OnExternalChange;
+    private void TrackActiveDocument()
+    {
+        _document.ExternalChangeDetected -= OnExternalChange;
+        _document.ExternalChangeDetected += OnExternalChange;
+        Program.ActiveDocument = _document;
+    }
+
+    private async Task HandleKeyAsync(KeyboardEventArgs args)
+    {
+        if (!(args.CtrlKey || args.MetaKey)) return;
+        switch (args.Key.ToLowerInvariant())
+        {
+            case "o": await OpenFileAsync(); break;
+            case "s" when args.ShiftKey: await SaveAsAsync(); break;
+            case "s": await SaveAsync(); break;
+            case "f": _showFind = true; break;
+            case "z" when args.ShiftKey: Redo(); break;
+            case "z": Undo(); break;
+            case "y": Redo(); break;
+            case "\\": Split(SplitDirection.Right); break;
+            case "]" when args.AltKey: await TransferToNextAsync(args.ShiftKey); break;
+            case "`": FocusNext(); break;
+        }
+    }
+
+    [JSInvokable]
+    public Task CompletePhase4SmokeAsync(Phase4SmokeResult result) => Program.CompletePhase4SmokeAsync(result);
+
+    [JSInvokable]
+    public Task CompletePhase5SmokeAsync(Phase5SmokeResult result) => Program.CompletePhase5SmokeAsync(result);
+
+    public void Dispose()
+    {
+        _ = SaveLayoutAsync();
+        _workspace.Changed -= WorkspaceChanged;
+        UntrackActiveDocument();
+        _workspace.Dispose();
+        _emptyDocument.Dispose();
+        _self?.Dispose();
+        if (Program.ConfirmWorkbenchClose == ConfirmClose) Program.ConfirmWorkbenchClose = null;
+    }
+
+    private bool ConfirmClose()
+    {
+        var dirty = _workspace.Layout.Groups.SelectMany(group => group.Tabs).Where(tab => tab.Document.IsDirty)
+            .DistinctBy(tab => tab.Document).ToArray();
+        if (dirty.Length == 0) return true;
+        var names = string.Join(Environment.NewLine, dirty.Select(tab => $"• {tab.Document.DisplayName}"));
+        var result = Program.App.MainWindow.ShowMessageDialogAsync("Unsaved changes",
+            $"Save these files before closing?{Environment.NewLine}{Environment.NewLine}{names}",
+            DialogButtons.YesNoCancel, DialogIcon.Warning).GetAwaiter().GetResult();
+        if (result == DialogResult.No) return true;
+        if (result != DialogResult.Yes) return false;
+        try { foreach (var tab in dirty) tab.Document.SaveAsync().GetAwaiter().GetResult(); return true; }
+        catch { return false; }
+    }
+}
