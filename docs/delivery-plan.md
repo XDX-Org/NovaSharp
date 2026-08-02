@@ -13,7 +13,8 @@ Source control UI, remote development, collaboration, notebooks, AI completion, 
 | 1. Single-file editor shell | Complete | Phase 2 verification subsumes its build, test, package, and native-launch gates |
 | 2. Editor and file lifecycle | Complete | Four-platform verification passed; see `phase-02-decisions.md` |
 | 3. Workspace explorer | In progress | Automated gates pass in run 30742324717; Windows/macOS interactive native checks pending |
-| 4–17 | Planned | Completion criteria not yet met |
+| 4. Documents and movable tabs | In progress | Document registry and ordered tab-state implementation started on `phase-4` |
+| 5–17 | Planned | Completion criteria not yet met |
 
 Status values are `planned`, `in progress`, `blocked`, and `complete`. Update this table only from test or release evidence; documentation or partial UI alone does not complete a phase.
 

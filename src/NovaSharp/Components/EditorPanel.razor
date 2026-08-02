@@ -1,6 +1,7 @@
 @using PhotinoEx.Core.Models
 @using Microsoft.AspNetCore.Components.Web
 @implements IDisposable
+@inject IJSRuntime JS
 
 <main class="workbench" @onkeydown="HandleKeyAsync">
     <header class="toolbar">
@@ -22,8 +23,6 @@
                 </div>
             }
         </div>
-        <span class="file-name" title="@_document.FilePath">@(_document.IsDirty ? "● " : null)@_document.DisplayName</span>
-        <span class="document-info">@_document.Encoding · @LineEndingLabel · v@_document.Version</span>
     </header>
 
     @if (_showFind)
@@ -60,6 +59,31 @@
     }
 
     <div class="workbench-body">
+    <div class="editor-area">
+    @if (_tabs.Tabs.Count > 0)
+    {
+        <div @ref="_tabStrip" class="document-tabs" role="tablist" aria-label="Open editors">
+            @foreach (var tab in _tabs.Tabs)
+            {
+                <div class="document-tab @(ReferenceEquals(tab, _tabs.ActiveTab) ? "active" : null) @(tab.IsPreview ? "preview" : null) @(ReferenceEquals(tab, _draggedTab) ? "dragging" : null)"
+                     role="tab" aria-selected="@ReferenceEquals(tab, _tabs.ActiveTab)" tabindex="@(ReferenceEquals(tab, _tabs.ActiveTab) ? 0 : -1)"
+                     title="@tab.Document.FilePath" draggable="true" @onclick="() => ActivateTab(tab)"
+                     @onmousedown="args => HandleTabMouseDownAsync(args, tab)" @ondragstart="() => BeginTabDrag(tab)"
+                     @ondragenter="() => PreviewTabDrop(tab)" @ondragover:preventDefault
+                     @ondrop="EndTabDrag" @ondragend="EndTabDrag">
+                    <span class="tab-label">@(_tabs.GetDisplayName(tab))</span>
+                    @if (tab.Document.IsDirty) { <span class="tab-dirty" aria-label="Unsaved changes">●</span> }
+                    <button class="tab-close" aria-label="Close @(_tabs.GetDisplayName(tab))" title="Close"
+                            @onclick="() => CloseTabAsync(tab)" @onclick:stopPropagation>×</button>
+                </div>
+            }
+        </div>
+    }
+    @if (_draggedTab is not null)
+    {
+        <div class="tab-drag-surface" @ondragover="ReorderFromEditorAsync" @ondragover:preventDefault
+             @ondrop="EndTabDrag" @ondrop:preventDefault></div>
+    }
     <section class="editor-panel" aria-label="C# editor">
         @if (_document.Error is not null) { <div class="error" role="alert">@_document.Error</div> }
         @if (_document.FilePath is null) { <div class="empty-state">Open a .cs file to begin.</div> }
@@ -69,6 +93,7 @@
         }
         else { <CodeEditor Value="@(_document.Content ?? string.Empty)" ValueChanged="ContentChanged" WordWrap="_wordWrap" ViewState="_viewState" @key="_wordWrap" /> }
     </section>
+    </div>
     <WorkspaceExplorer @ref="_explorer" Document="_document" FileOpened="OpenWorkspaceFileAsync" OpenChanged="ExplorerOpenChanged" />
     <nav class="activity-bar" aria-label="Tool windows">
         <button class="@(_explorerOpen ? "active" : null)" @onclick="ToggleExplorerAsync" aria-label="Explorer" title="Explorer" aria-pressed="@_explorerOpen">
@@ -76,13 +101,24 @@
         </button>
     </nav>
     </div>
-    <footer class="statusbar">@Status</footer>
+    <footer class="statusbar">
+        <span class="status-message">@Status</span>
+        @if (_document.FilePath is not null)
+        {
+            <span class="document-info">@_document.Encoding · @LineEndingLabel</span>
+        }
+    </footer>
 </main>
 
 @code {
-    private readonly EditorDocumentState _document = new();
-    private readonly EditorViewState _viewState = new();
+    private readonly DocumentTabService _tabs = new();
+    private readonly EditorDocumentState _emptyDocument = new();
+    private readonly EditorViewState _emptyViewState = new();
     private readonly CommandRegistry _commands = new();
+    private ElementReference _tabStrip;
+    private EditorDocumentState _document => _tabs.ActiveTab?.Document ?? _emptyDocument;
+    private EditorViewState _viewState => _tabs.ActiveTab?.ViewState ?? _emptyViewState;
+    private DocumentTab? _draggedTab;
     private WorkspaceExplorer? _explorer;
     private string? _status, _compareText;
     private string _query = "", _replacement = "";
@@ -94,27 +130,91 @@
 
     protected override async Task OnInitializedAsync()
     {
-        Program.ActiveDocument = _document;
-        _document.ExternalChangeDetected += OnExternalChange;
         _wordWrap = Program.Configuration.Current.WordWrap;
         RegisterCommands();
-        if (Program.SmokeFile is not null) await _document.OpenAsync(Program.SmokeFile);
+        if (Program.SmokeFile is not null) await OpenTabAsync(Program.SmokeFile);
+        else Program.ActiveDocument = _emptyDocument;
     }
 
     private async Task OpenFileAsync()
     {
-        if (_document.IsDirty) { _status = "Save or reload the current changes before opening another file."; return; }
         var files = await Program.App.MainWindow.ShowOpenFileDialogAsync(
-            title: "Open C# file", multiSelect: false, filterPatterns: [new FileFilter("C# source", "*.cs")]);
-        await _document.OpenAsync(files is [var path] ? path : null);
-        _status = null;
+            title: "Open C# file", multiSelect: true, filterPatterns: [new FileFilter("C# source", "*.cs")]);
+        foreach (var path in files ?? []) await OpenTabAsync(path);
     }
 
     private async Task OpenWorkspaceFileAsync(string path)
     {
-        if (_document.IsDirty) { _status = "Save or reload the current changes before opening another file."; return; }
-        await _document.OpenAsync(path);
-        _status = _document.Error;
+        await OpenTabAsync(path);
+    }
+
+    private async Task OpenTabAsync(string path)
+    {
+        var previous = _tabs.ActiveTab?.Document;
+        var tab = await _tabs.OpenAsync(path);
+        if (tab is null) { _status = _tabs.LastError; return; }
+        if (previous is not null) previous.ExternalChangeDetected -= OnExternalChange;
+        tab.Document.ExternalChangeDetected -= OnExternalChange;
+        tab.Document.ExternalChangeDetected += OnExternalChange;
+        Program.ActiveDocument = tab.Document;
+        _status = null;
+    }
+
+    private void ActivateTab(DocumentTab tab)
+    {
+        _document.ExternalChangeDetected -= OnExternalChange;
+        _tabs.Activate(tab);
+        tab.Document.ExternalChangeDetected -= OnExternalChange;
+        tab.Document.ExternalChangeDetected += OnExternalChange;
+        Program.ActiveDocument = tab.Document;
+        _externalChange = _confirmReload = false;
+        _compareText = null;
+    }
+
+    private async Task CloseTabAsync(DocumentTab tab)
+    {
+        if (tab.Document.IsDirty)
+        {
+            var result = await Program.App.MainWindow.ShowMessageDialogAsync(
+                "Unsaved changes", $"Save changes to {tab.Document.DisplayName} before closing?",
+                DialogButtons.YesNoCancel, DialogIcon.Warning);
+            if (result is not (DialogResult.Yes or DialogResult.No)) return;
+            if (result == DialogResult.Yes)
+            {
+                try { await tab.Document.SaveAsync(); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+                { _status = ex.Message; return; }
+            }
+        }
+
+        var wasActive = ReferenceEquals(tab, _tabs.ActiveTab);
+        if (wasActive) tab.Document.ExternalChangeDetected -= OnExternalChange;
+        _tabs.Close(tab, discardDirty: true);
+        if (wasActive && _tabs.ActiveTab is { } active)
+            active.Document.ExternalChangeDetected += OnExternalChange;
+        Program.ActiveDocument = _tabs.ActiveTab?.Document ?? _emptyDocument;
+        _externalChange = _confirmReload = false;
+        _compareText = null;
+    }
+
+    private async Task HandleTabMouseDownAsync(MouseEventArgs args, DocumentTab tab)
+    {
+        if (args.Button == 1) await CloseTabAsync(tab);
+    }
+
+    private void BeginTabDrag(DocumentTab tab) => _draggedTab = tab;
+    private void PreviewTabDrop(DocumentTab destination)
+    {
+        if (_draggedTab is null || ReferenceEquals(_draggedTab, destination)) return;
+        _tabs.Move(_draggedTab, Array.IndexOf(_tabs.Tabs.ToArray(), destination));
+    }
+    private void EndTabDrag() => _draggedTab = null;
+
+    private async Task ReorderFromEditorAsync(DragEventArgs args)
+    {
+        if (_draggedTab is null) return;
+        var destination = await JS.InvokeAsync<int>("novaSharp.tabIndexAtX", _tabStrip, args.ClientX);
+        _tabs.Move(_draggedTab, destination);
     }
 
     private async Task SaveAsync()
@@ -136,7 +236,12 @@
     private async Task ReloadConfirmedAsync() { _confirmReload = _externalChange = false; _compareText = null; await _document.ReloadAsync(); _status = _document.Error; }
     private void KeepBuffer() { _document.KeepBuffer(); _externalChange = false; _compareText = null; }
     private async Task CompareAsync() { if (_document.FilePath is not null && File.Exists(_document.FilePath)) _compareText = await File.ReadAllTextAsync(_document.FilePath); }
-    private void ContentChanged(string value) { _document.Content = value; _status = null; }
+    private void ContentChanged(string value)
+    {
+        _document.Content = value;
+        if (_tabs.ActiveTab is { IsPreview: true } tab) _tabs.Promote(tab);
+        _status = null;
+    }
     private void Undo() { _document.Undo(); _status = null; }
     private void Redo() { _document.Redo(); _status = null; }
     private void ToggleFind() => _showFind = !_showFind;
@@ -179,13 +284,23 @@
             case "z" when args.ShiftKey: await Run("edit.redo"); break;
             case "z": await Run("edit.undo"); break;
             case "y": await Run("edit.redo"); break;
+            case "pageup" when args.ShiftKey: MoveActiveTab(-1); break;
+            case "pagedown" when args.ShiftKey: MoveActiveTab(1); break;
         }
+    }
+
+    private void MoveActiveTab(int offset)
+    {
+        if (_tabs.ActiveTab is not { } active) return;
+        var index = Array.IndexOf(_tabs.Tabs.ToArray(), active);
+        _tabs.Move(active, index + offset);
     }
 
     public void Dispose()
     {
         _document.ExternalChangeDetected -= OnExternalChange;
         if (ReferenceEquals(Program.ActiveDocument, _document)) Program.ActiveDocument = null;
-        _document.Dispose();
+        _tabs.Dispose();
+        _emptyDocument.Dispose();
     }
 }

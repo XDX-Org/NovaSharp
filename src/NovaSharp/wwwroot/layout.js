@@ -236,3 +236,17 @@ window.novaSharp.runPhase3Smoke = async function (explorer, dotNet) {
 };
 
 window.novaSharp.initAppContextMenu();
+
+document.addEventListener("dragstart", event => {
+    const tab = event.target.closest?.(".document-tab");
+    if (!tab || !event.dataTransfer) return;
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", tab.innerText);
+});
+
+window.novaSharp.tabIndexAtX = function (strip, x) {
+    const tabs = [...strip.querySelectorAll(".document-tab")];
+    if (!tabs.length) return 0;
+    const index = tabs.findIndex(tab => x < tab.getBoundingClientRect().left + tab.offsetWidth / 2);
+    return index < 0 ? tabs.length - 1 : index;
+};

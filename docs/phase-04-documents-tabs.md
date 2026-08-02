@@ -32,6 +32,25 @@ Splitting into multiple groups is deferred to phase 5, but tab state must not as
 - Restoring a session tolerates moved or deleted files and malformed state.
 - Automated tests cover tab ordering, preview promotion, close decisions, duplicate names, and restoration.
 
+## Progress
+
+Implemented on `phase-4`:
+
+- Canonical-path document registry with one buffer per open file.
+- Ordered tabs with active-document and per-tab view state.
+- Multi-file opening, tab switching, close buttons, middle-click close, and dirty-close prompts.
+- Pointer and keyboard reordering, editor-wide drop targeting, drag feedback, and horizontal overflow.
+- Dirty, preview, pinned, read-only, missing-file, and duplicate-name presentation foundations.
+- Automated coverage for path deduplication, ordering, preview promotion, dirty-close protection, and duplicate names.
+
+Remaining:
+
+- Tab context menu and close-others/right/saved/all commands with one aggregated dirty-document prompt.
+- Explorer single-click preview navigation and explicit pin controls.
+- Session persistence for open files, active tab, ordering, cursor, selection, and scroll state.
+- Restoration recovery tests for moved, deleted, and malformed session entries.
+- Automated UI interaction coverage for pointer reordering, overflow, middle-click, and accessible labels.
+
 ## Next phase
 
 Make tab ownership explicit through editor groups and split layouts.
