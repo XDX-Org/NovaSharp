@@ -62,16 +62,19 @@ button:disabled { opacity: .45; cursor: default; }
 .editor-split { display: grid; width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: auto; }
 .editor-split.horizontal { grid-template-rows: minmax(0, 1fr); }
 .editor-split.vertical { grid-template-columns: minmax(0, 1fr); }
-.editor-splitter { z-index: 5; width: 100%; height: 100%; margin: 0; padding: 0; appearance: none; border: 0; outline: none; background: #343842; }
-.editor-split.horizontal > .editor-splitter { cursor: col-resize; writing-mode: vertical-lr; }
+.editor-splitter { z-index: 5; width: 100%; height: 100%; border: 0; outline: none; background: #343842; touch-action: none; }
+.editor-split.horizontal > .editor-splitter { cursor: col-resize; }
 .editor-split.vertical > .editor-splitter { cursor: row-resize; }
 .editor-splitter:focus-visible { background: #8397c4; box-shadow: 0 0 0 2px #181a1f inset; }
+body.resizing-editor-x { cursor: col-resize; user-select: none; }
+body.resizing-editor-y { cursor: row-resize; user-select: none; }
 .editor-group { position: relative; display: grid; width: 100%; height: 100%; min-width: 160px; min-height: 160px; grid-template-rows: 28px 35px minmax(0, 1fr); overflow: hidden; border: 1px solid transparent; }
-.editor-group.focused { border-color: #58709a; }
-.group-actions { display: flex; align-items: center; justify-content: flex-end; gap: 2px; padding: 2px 5px; background: #202329; }
+.editor-group:not(.focused) .document-tabs { opacity: .55; }
+.group-actions { display: flex; grid-row: 1; align-items: center; justify-content: flex-end; gap: 2px; padding: 2px 5px; background: #202329; }
 .group-actions button { width: 24px; height: 23px; padding: 0; border: 0; background: transparent; }
 .group-actions button:hover { background: #3b4252; }
-.group-editor { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+.document-tabs { grid-row: 2; }
+.group-editor { position: relative; grid-row: 3; min-width: 0; min-height: 0; overflow: hidden; }
 .group-editor > .code-editor { position: absolute; inset: 0; }
 .group-drop-zones { position: absolute; z-index: 30; inset: 0; pointer-events: none; }
 .drop-zone { position: absolute; pointer-events: auto; border: 2px dashed rgba(131, 151, 196, .8); background: rgba(88, 112, 154, .2); }

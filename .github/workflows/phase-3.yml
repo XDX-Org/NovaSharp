@@ -125,7 +125,7 @@ jobs:
           if (-not $process.WaitForExit(60000)) { $process.Kill($true); throw 'Phase 5 native smoke timed out.' }
           if ($process.ExitCode -ne 0 -and -not (Test-Path $report)) { throw "Phase 5 native smoke exited with $($process.ExitCode) before reporting." }
           $result = Get-Content $report | ConvertFrom-Json
-          $required = 'GroupsPresent', 'SharedEditsImmediate', 'IndependentSelections', 'SplitterAccessible', 'SplitterResized', 'DropZonesPresent', 'EdgeDropSplit', 'NarrowLayoutOperable'
+          $required = 'GroupsPresent', 'SharedEditsImmediate', 'IndependentSelections', 'SplitterAccessible', 'SplitterResized', 'DropZonesPresent', 'EdgeDropSplit', 'NarrowLayoutOperable', 'EscapeCancelsDrag', 'FractionalPointerResize', 'DirectionalFocus'
           foreach ($name in $required) { if (-not $result.$name) { throw "Phase 5 smoke assertion failed: $name" } }
       - uses: actions/upload-artifact@v4
         if: always()

@@ -3,7 +3,7 @@
 @implements IDisposable
 @inject IJSRuntime JS
 
-<main class="workbench" @onkeydown="HandleKeyAsync">
+<main @ref="_workbench" class="workbench" @onkeydown="HandleKeyAsync">
     <header class="toolbar">
         <div class="main-menu">
             <button class="menu-trigger" @onclick="ToggleMenu" aria-label="Main menu" aria-expanded="@_showMenu">☰</button>
@@ -23,6 +23,10 @@
                     <button role="menuitem" @onclick="() => TransferToNextAsync(false)" disabled="@(ActiveTab is null)">Move view to next group</button>
                     <button role="menuitem" @onclick="() => TransferToNextAsync(true)" disabled="@(ActiveTab is null)">Copy view to next group</button>
                     <button role="menuitem" @onclick="FocusNext" disabled="@(_workspace.Layout.Groups.Count < 2)">Focus next group</button>
+                    <button role="menuitem" @onclick='() => FocusDirectionAsync("left")' disabled="@(_workspace.Layout.Groups.Count < 2)">Focus left</button>
+                    <button role="menuitem" @onclick='() => FocusDirectionAsync("right")' disabled="@(_workspace.Layout.Groups.Count < 2)">Focus right</button>
+                    <button role="menuitem" @onclick='() => FocusDirectionAsync("up")' disabled="@(_workspace.Layout.Groups.Count < 2)">Focus up</button>
+                    <button role="menuitem" @onclick='() => FocusDirectionAsync("down")' disabled="@(_workspace.Layout.Groups.Count < 2)">Focus down</button>
                     <hr />
                     <button role="menuitem" @onclick="Undo" disabled="@(!_document.CanUndo)">Undo <kbd>Ctrl+Z</kbd></button>
                     <button role="menuitem" @onclick="Redo" disabled="@(!_document.CanRedo)">Redo <kbd>Ctrl+Y</kbd></button>
@@ -52,7 +56,7 @@
     }
     <div class="workbench-body">
         <div class="editor-area">
-            <EditorGroupLayoutView Node="_workspace.Layout.Root" Workspace="_workspace" WordWrap="_wordWrap"
+            <EditorGroupLayoutView @key="_workspace.Layout.Root.Id" Node="_workspace.Layout.Root" Workspace="_workspace" WordWrap="_wordWrap"
                                    ActiveChanged="ActiveChangedAsync" ContentEdited="ContentEditedAsync"
                                    CloseRequested="CloseRequestedAsync" />
         </div>
@@ -73,13 +77,14 @@
     private readonly EditorDocumentState _emptyDocument = new();
     private EditorLayoutPersistence _persistence = null!;
     private WorkspaceExplorer? _explorer;
+    private ElementReference _workbench;
     private DotNetObjectReference<WorkbenchPanel>? _self;
     private string? _status;
     private string _query = "", _replacement = "";
     private bool _showMenu, _showFind, _wordWrap, _externalChange, _explorerOpen = true;
     private DocumentTab? ActiveTab => _workspace.FocusedGroup.ActiveTab;
     private EditorDocumentState _document => ActiveTab?.Document ?? _emptyDocument;
-    private string Status => _status ?? (_document.IsReadOnly ? "Read-only" : _document.FilePath ?? "Ready");
+    private string Status => _status ?? _workspace.LastError ?? (_document.IsReadOnly ? "Read-only" : _document.FilePath ?? "Ready");
 
     protected override async Task OnInitializedAsync()
     {
@@ -106,10 +111,12 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender || Program.Phase4Workspace is null && Program.Phase5Workspace is null) return;
+        if (!firstRender) return;
         _self = DotNetObjectReference.Create(this);
-        await JS.InvokeVoidAsync("novaSharp.startSmokePolling", _self,
-            Program.Phase4Workspace is not null, Program.Phase5Workspace is not null);
+        await JS.InvokeVoidAsync("novaSharp.initEditorDragCleanup", _workbench, _self);
+        if (Program.Phase4Workspace is not null || Program.Phase5Workspace is not null)
+            await JS.InvokeVoidAsync("novaSharp.startSmokePolling", _self,
+                Program.Phase4Workspace is not null, Program.Phase5Workspace is not null);
     }
 
     private async Task OpenFileAsync()
@@ -163,8 +170,8 @@
 
     private async Task ActiveChangedAsync() { TrackActiveDocument(); await SaveLayoutAsync(); }
     private async Task ContentEditedAsync() { _status = null; StateHasChanged(); await SaveLayoutAsync(); }
-    private void Split(SplitDirection direction) { _showMenu = false; _workspace.Split(_workspace.Layout.FocusedGroupId, direction); }
-    private void Equalize() { _showMenu = false; _workspace.Layout.DistributeEvenly(); StateHasChanged(); _ = SaveLayoutAsync(); }
+    private void Split(SplitDirection direction) { _showMenu = false; _status = null; _workspace.Split(_workspace.Layout.FocusedGroupId, direction); }
+    private void Equalize() { _showMenu = false; _workspace.Equalize(); _ = SaveLayoutAsync(); }
     private async Task TransferToNextAsync(bool copy)
     {
         _showMenu = false;
@@ -183,6 +190,11 @@
         var index = Array.IndexOf(groups.ToArray(), _workspace.FocusedGroup);
         _workspace.Focus(groups[(index + 1) % groups.Count].Id);
         TrackActiveDocument();
+    }
+    private async Task FocusDirectionAsync(string direction)
+    {
+        _showMenu = false;
+        await JS.InvokeVoidAsync("novaSharp.focusEditorGroup", _workbench, _self, direction);
     }
     private async Task SaveAsync() { _showMenu = false; try { await _document.SaveAsync(); _status = "Saved"; } catch (Exception ex) { _status = ex.Message; } }
     private async Task SaveAsAsync()
@@ -225,6 +237,15 @@
             case "z": Undo(); break;
             case "y": Redo(); break;
             case "\\": Split(SplitDirection.Right); break;
+            case "arrowleft" when args.AltKey && args.ShiftKey: Split(SplitDirection.Left); break;
+            case "arrowright" when args.AltKey && args.ShiftKey: Split(SplitDirection.Right); break;
+            case "arrowup" when args.AltKey && args.ShiftKey: Split(SplitDirection.Up); break;
+            case "arrowdown" when args.AltKey && args.ShiftKey: Split(SplitDirection.Down); break;
+            case "arrowleft" when args.AltKey: await FocusDirectionAsync("left"); break;
+            case "arrowright" when args.AltKey: await FocusDirectionAsync("right"); break;
+            case "arrowup" when args.AltKey: await FocusDirectionAsync("up"); break;
+            case "arrowdown" when args.AltKey: await FocusDirectionAsync("down"); break;
+            case "=" when args.ShiftKey: Equalize(); break;
             case "]" when args.AltKey: await TransferToNextAsync(args.ShiftKey); break;
             case "`": FocusNext(); break;
         }
@@ -235,6 +256,19 @@
 
     [JSInvokable]
     public Task CompletePhase5SmokeAsync(Phase5SmokeResult result) => Program.CompletePhase5SmokeAsync(result);
+
+    [JSInvokable]
+    public void CancelEditorDrag() => _workspace.CancelDrag();
+
+    [JSInvokable]
+    public async Task FocusEditorGroup(string id)
+    {
+        if (Guid.TryParse(id, out var groupId) && _workspace.Focus(groupId))
+        {
+            TrackActiveDocument();
+            await SaveLayoutAsync();
+        }
+    }
 
     public void Dispose()
     {

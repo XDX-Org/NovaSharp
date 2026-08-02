@@ -86,6 +86,9 @@ Started on `phase-5`:
 - Per-group previews, independent view state, shared document edits/undo, last-view dirty decisions, and empty-group cleanup.
 - Version 2 layout-tree persistence with version 1 migration, stable identities, corruption recovery, and missing-file restoration.
 - Linux/Xvfb interaction coverage added for shared edits, independent selections, splitters, drop zones, edge splits, and narrow layouts.
+- Directional geometry-based focus with most-recent-focus tie-breaking, complete keyboard command routes, and actionable split-depth feedback.
+- Shared pointer resize handling covers fractional coordinates and window changes; Escape restores cancelled tab reorders without changing model state.
+- Empty-group controls, stable keyed recursive rendering, and axis-correct splitters prevent stale layout and drag state after tree reshaping.
 
 Verification run 30754664630 passes all four platform build/test/package jobs, 44 automated tests,
 the established Phase 2–4 Linux native regressions, and the Phase 5 Linux/Xvfb interaction

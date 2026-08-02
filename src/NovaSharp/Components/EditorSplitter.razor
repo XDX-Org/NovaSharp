@@ -1,0 +1,53 @@
+@using Microsoft.AspNetCore.Components.Web
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<div @ref="_element" class="editor-splitter" role="separator" tabindex="0"
+     aria-label="Resize editor groups"
+     aria-orientation="@(Split.Orientation == SplitOrientation.Horizontal ? "vertical" : "horizontal")"
+     aria-valuemin="10" aria-valuemax="90" aria-valuenow="@Math.Round(Split.Ratio * 100)"
+     @onkeydown="ResizeWithKeyboard"></div>
+
+@code {
+    [Parameter, EditorRequired] public EditorSplit Split { get; set; } = null!;
+    [Parameter, EditorRequired] public EditorGroupWorkspace Workspace { get; set; } = null!;
+    [Parameter] public EventCallback Resized { get; set; }
+    private ElementReference _element;
+    private DotNetObjectReference<EditorSplitter>? _self;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        _self = DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("novaSharp.initEditorSplitter", _element, _self,
+            Split.Orientation == SplitOrientation.Horizontal ? "horizontal" : "vertical");
+    }
+
+    [JSInvokable]
+    public async Task SplitterResized(double ratio)
+    {
+        if (Workspace.Resize(Split.Id, ratio)) await Resized.InvokeAsync();
+    }
+
+    private async Task ResizeWithKeyboard(KeyboardEventArgs args)
+    {
+        var delta = args.ShiftKey ? 0.1 : 0.02;
+        var change = (Split.Orientation, args.Key) switch
+        {
+            (SplitOrientation.Horizontal, "ArrowLeft") => -delta,
+            (SplitOrientation.Horizontal, "ArrowRight") => delta,
+            (SplitOrientation.Vertical, "ArrowUp") => -delta,
+            (SplitOrientation.Vertical, "ArrowDown") => delta,
+            (_, "Home") => 0.1 - Split.Ratio,
+            (_, "End") => 0.9 - Split.Ratio,
+            _ => 0
+        };
+        if (change != 0) await SplitterResized(Split.Ratio + change);
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        _self?.Dispose();
+        return ValueTask.CompletedTask;
+    }
+}

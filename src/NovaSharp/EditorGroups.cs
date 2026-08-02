@@ -61,6 +61,8 @@ public sealed class EditorSplit : EditorLayoutNode
 
 internal sealed class EditorLayout
 {
+    private readonly Dictionary<Guid, long> _focusRanks = [];
+    private long _focusClock;
     internal const int MaximumDepth = 8;
     internal const int MinimumGroupExtent = 160;
     internal EditorLayoutNode Root { get; private set; }
@@ -72,6 +74,7 @@ internal sealed class EditorLayout
         var group = initialGroup ?? new();
         Root = group;
         FocusedGroupId = group.Id;
+        RecordFocus(group.Id);
     }
 
     internal EditorLayout(EditorLayoutNode root, Guid focusedGroupId)
@@ -79,6 +82,7 @@ internal sealed class EditorLayout
         Root = root;
         FocusedGroupId = EnumerateGroups(root).Any(group => group.Id == focusedGroupId)
             ? focusedGroupId : EnumerateGroups(root).First().Id;
+        RecordFocus(FocusedGroupId);
     }
 
     internal EditorGroup? Split(Guid groupId, SplitDirection direction)
@@ -93,6 +97,7 @@ internal sealed class EditorLayout
             before ? found.Group : created);
         Root = Replace(Root, groupId, replacement);
         FocusedGroupId = created.Id;
+        RecordFocus(created.Id);
         return created;
     }
 
@@ -109,8 +114,11 @@ internal sealed class EditorLayout
     {
         if (Groups.All(group => group.Id != groupId)) return false;
         FocusedGroupId = groupId;
+        RecordFocus(groupId);
         return true;
     }
+
+    internal long FocusRank(Guid groupId) => _focusRanks.GetValueOrDefault(groupId);
 
     internal bool Resize(Guid splitId, double ratio)
     {
@@ -166,17 +174,21 @@ internal sealed class EditorLayout
     }
 
     private static IEnumerable<EditorGroup> EnumerateGroups(EditorLayoutNode node) => Enumerate(node).OfType<EditorGroup>();
+    private void RecordFocus(Guid groupId) => _focusRanks[groupId] = ++_focusClock;
 }
 
 public sealed class EditorGroupWorkspace : IDisposable
 {
     private readonly DocumentRegistry _registry = new();
+    private string? _lastError;
     internal EditorLayout Layout { get; private set; } = new();
     internal EditorGroup FocusedGroup => Layout.Groups.Single(group => group.Id == Layout.FocusedGroupId);
-    internal string? LastError => _registry.LastError;
+    internal string? LastError => _lastError ?? _registry.LastError;
     internal event Action? Changed;
     internal DocumentTab? DraggedTab { get; private set; }
     internal Guid? DragSourceGroupId { get; private set; }
+    private int? _dragSourceIndex;
+    private DocumentTab? _dragSourceActiveTab;
 
     internal async Task<DocumentTab?> OpenAsync(string path, bool preview = false, Guid? groupId = null)
     {
@@ -204,9 +216,31 @@ public sealed class EditorGroupWorkspace : IDisposable
 
     internal EditorGroup? Split(Guid groupId, SplitDirection direction)
     {
+        ClearDrag(restore: true);
         var group = Layout.Split(groupId, direction);
-        if (group is not null) OnChanged();
+        _lastError = group is null ? $"Editor groups are limited to {EditorLayout.MaximumDepth} nested splits." : null;
+        OnChanged();
         return group;
+    }
+
+    internal bool Resize(Guid splitId, double ratio)
+    {
+        var changed = Layout.Resize(splitId, ratio);
+        if (changed) OnChanged();
+        return changed;
+    }
+
+    internal bool CloseGroup(Guid groupId)
+    {
+        var changed = Layout.RemoveEmptyGroup(groupId);
+        if (changed) OnChanged();
+        return changed;
+    }
+
+    internal void Equalize()
+    {
+        Layout.DistributeEvenly();
+        OnChanged();
     }
 
     internal bool Move(DocumentTab tab, Guid sourceGroupId, Guid targetGroupId, int? index = null)
@@ -277,7 +311,10 @@ public sealed class EditorGroupWorkspace : IDisposable
     internal void BeginDrag(DocumentTab tab)
     {
         DraggedTab = tab;
-        DragSourceGroupId = GroupContaining(tab).Id;
+        var source = GroupContaining(tab);
+        DragSourceGroupId = source.Id;
+        _dragSourceIndex = source.IndexOf(tab);
+        _dragSourceActiveTab = source.ActiveTab;
         OnChanged();
     }
 
@@ -295,14 +332,35 @@ public sealed class EditorGroupWorkspace : IDisposable
     {
         if (DraggedTab is not { } tab || DragSourceGroupId is not { } sourceId) return false;
         var destination = direction is null ? FindGroup(targetGroupId) : Layout.Split(targetGroupId, direction.Value);
-        if (destination is null) { CancelDrag(); return false; }
+        if (destination is null)
+        {
+            _lastError = $"Editor groups are limited to {EditorLayout.MaximumDepth} nested splits.";
+            CancelDrag();
+            return false;
+        }
         var changed = copy ? await CopyAsync(tab, destination.Id, index) is not null
             : Move(tab, sourceId, destination.Id, index);
-        CancelDrag();
+        ClearDrag(restore: false);
+        OnChanged();
         return changed;
     }
 
-    internal void CancelDrag() { DraggedTab = null; DragSourceGroupId = null; OnChanged(); }
+    internal void CancelDrag() { ClearDrag(restore: true); OnChanged(); }
+
+    private void ClearDrag(bool restore)
+    {
+        if (restore && DraggedTab is { } tab && DragSourceGroupId is { } sourceId && _dragSourceIndex is { } index
+            && Layout.Groups.FirstOrDefault(group => group.Id == sourceId) is { } source && source.Tabs.Contains(tab))
+        {
+            source.Remove(tab);
+            source.Add(tab, index);
+            if (_dragSourceActiveTab is { } active && source.Tabs.Contains(active)) source.Activate(active);
+        }
+        DraggedTab = null;
+        DragSourceGroupId = null;
+        _dragSourceIndex = null;
+        _dragSourceActiveTab = null;
+    }
 
     private EditorGroup FindGroup(Guid id) => Layout.Groups.Single(group => group.Id == id);
     private void OnChanged() => Changed?.Invoke();

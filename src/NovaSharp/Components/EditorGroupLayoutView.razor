@@ -4,26 +4,27 @@
 {
     <div class="editor-split @OrientationClass(split)" style="@SplitStyle(split)"
          data-ratio="@split.Ratio.ToString(System.Globalization.CultureInfo.InvariantCulture)">
-        <EditorGroupLayoutView Node="split.First" Workspace="Workspace" WordWrap="WordWrap"
+        <EditorGroupLayoutView @key="split.First.Id" Node="split.First" Workspace="Workspace" WordWrap="WordWrap"
                                ActiveChanged="ActiveChanged" ContentEdited="ContentEdited" CloseRequested="CloseRequested" />
-        <input class="editor-splitter" type="range" min="0.1" max="0.9" step="0.02"
-               @bind:get="split.Ratio" @bind:set="value => Resize(split, value)" @bind:event="oninput"
-               aria-label="Resize editor groups"
-               aria-orientation="@(split.Orientation == SplitOrientation.Horizontal ? "vertical" : "horizontal")"
-               />
-        <EditorGroupLayoutView Node="split.Second" Workspace="Workspace" WordWrap="WordWrap"
+        <EditorSplitter @key="split.Id" Split="split" Workspace="Workspace" Resized="ActiveChanged" />
+        <EditorGroupLayoutView @key="split.Second.Id" Node="split.Second" Workspace="Workspace" WordWrap="WordWrap"
                                ActiveChanged="ActiveChanged" ContentEdited="ContentEdited" CloseRequested="CloseRequested" />
     </div>
 }
 else if (Node is EditorGroup group)
 {
     <section class="editor-group @(Workspace.Layout.FocusedGroupId == group.Id ? "focused" : null)"
-             aria-label="Editor group" @onclick="() => Focus(group)">
+             aria-label="Editor group" data-group-id="@group.Id" data-focus-rank="@Workspace.Layout.FocusRank(group.Id)"
+             @onclick="() => Focus(group)">
         <div class="group-actions">
             <button aria-label="Split left" title="Split left" @onclick="() => Split(group, SplitDirection.Left)" @onclick:stopPropagation>◧</button>
             <button aria-label="Split right" title="Split right" @onclick="() => Split(group, SplitDirection.Right)" @onclick:stopPropagation>▧</button>
             <button aria-label="Split up" title="Split up" @onclick="() => Split(group, SplitDirection.Up)" @onclick:stopPropagation>⬒</button>
             <button aria-label="Split down" title="Split down" @onclick="() => Split(group, SplitDirection.Down)" @onclick:stopPropagation>⬓</button>
+            @if (group.Tabs.Count == 0 && Workspace.Layout.Groups.Count > 1)
+            {
+                <button aria-label="Close editor group" title="Close editor group" @onclick="() => CloseGroup(group)" @onclick:stopPropagation>×</button>
+            }
         </div>
         @if (group.Tabs.Count > 0)
         {
@@ -72,7 +73,6 @@ else if (Node is EditorGroup group)
                             WordWrap="WordWrap" ViewState="active.ViewState" ViewStateChanged="ActiveChanged"
                             @key="(active.Id, WordWrap)" />
             }
-            else { <div class="empty-state">Drop or open a file in this group.</div> }
             @if (Workspace.DraggedTab is not null)
             {
                 <div class="group-drop-zones" aria-label="Editor drop zones">
@@ -107,9 +107,9 @@ else if (Node is EditorGroup group)
             ? $"grid-template-columns:minmax(160px,{first}fr) 8px minmax(160px,{second}fr)"
             : $"grid-template-rows:minmax(160px,{first}fr) 8px minmax(160px,{second}fr)";
     }
-    private void Resize(EditorSplit split, double ratio) => Workspace.Layout.Resize(split.Id, ratio);
     private async Task Focus(EditorGroup group) { Workspace.Focus(group.Id); await ActiveChanged.InvokeAsync(); }
     private async Task Split(EditorGroup group, SplitDirection direction) { Workspace.Split(group.Id, direction); await ActiveChanged.InvokeAsync(); }
+    private async Task CloseGroup(EditorGroup group) { Workspace.CloseGroup(group.Id); await ActiveChanged.InvokeAsync(); }
     private async Task Activate(EditorGroup group, DocumentTab tab) { group.Activate(tab); Workspace.Focus(group.Id); await ActiveChanged.InvokeAsync(); }
     private void TogglePin(DocumentTab tab) { if (tab.IsPinned) tab.SetPreview(true); else Workspace.Promote(tab); }
     private Task RequestClose(EditorGroup group, DocumentTab tab) => RequestClose([tab]);

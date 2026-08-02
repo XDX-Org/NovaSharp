@@ -108,37 +108,34 @@ window.novaSharp.initAppContextMenu = function () {
     document.addEventListener("keydown", event => { if (event.key === "Escape") close(); });
 };
 
-window.novaSharp.initExplorerResize = function (explorer, dotNet) {
-    const handle = explorer?.querySelector(".explorer-resizer");
+window.novaSharp.initPointerResize = function (handle, axis, bodyClass, begin, resize, complete) {
     if (!handle || handle.dataset.resizeReady) return;
-    handle.dataset.resizeReady = "true";
-
+    handle.dataset.resizeReady = 'true';
     handle.addEventListener("pointerdown", event => {
         if (event.button !== 0) return;
         event.preventDefault();
-        handle.setPointerCapture(event.pointerId);
-        document.body.classList.add("resizing-explorer");
-        const startX = event.clientX;
-        const startWidth = explorer.getBoundingClientRect().width;
-        let latestX = startX;
+        try { handle.setPointerCapture(event.pointerId); } catch { }
+        document.body.classList.add(bodyClass);
+        const coordinate = value => axis === 'x' ? value.clientX : value.clientY;
+        const start = coordinate(event);
+        const state = begin();
+        let latest = start;
         let animationFrame = 0;
-
-        const applyWidth = () => {
+        const apply = () => {
             animationFrame = 0;
-            const maximum = Math.min(800, window.innerWidth * 0.65);
-            explorer.style.width = Math.max(180, Math.min(maximum, startWidth + startX - latestX)) + "px";
+            resize(latest - start, state);
         };
         const move = moveEvent => {
-            latestX = moveEvent.clientX;
-            if (!animationFrame) animationFrame = requestAnimationFrame(applyWidth);
+            latest = coordinate(moveEvent);
+            if (!animationFrame) animationFrame = requestAnimationFrame(apply);
         };
         const stop = () => {
             if (animationFrame) {
                 cancelAnimationFrame(animationFrame);
-                applyWidth();
+                apply();
             }
-            document.body.classList.remove("resizing-explorer");
-            dotNet?.invokeMethodAsync("ExplorerResized", explorer.getBoundingClientRect().width);
+            document.body.classList.remove(bodyClass);
+            complete(state);
             handle.removeEventListener("pointermove", move);
             handle.removeEventListener("pointerup", stop);
             handle.removeEventListener("pointercancel", stop);
@@ -148,6 +145,78 @@ window.novaSharp.initExplorerResize = function (explorer, dotNet) {
         handle.addEventListener("pointerup", stop);
         handle.addEventListener("pointercancel", stop);
     });
+};
+
+window.novaSharp.initExplorerResize = function (explorer, dotNet) {
+    const handle = explorer?.querySelector('.explorer-resizer');
+    window.novaSharp.initPointerResize(handle, 'x', 'resizing-explorer',
+        () => ({ width: explorer.getBoundingClientRect().width }),
+        (delta, state) => {
+            const maximum = Math.min(800, window.innerWidth * 0.65);
+            explorer.style.width = Math.max(180, Math.min(maximum, state.width - delta)) + 'px';
+        },
+        () => dotNet?.invokeMethodAsync('ExplorerResized', explorer.getBoundingClientRect().width));
+};
+
+window.novaSharp.initEditorSplitter = function (handle, dotNet, orientation) {
+    const horizontal = orientation === 'horizontal';
+    handle.dataset.axis = horizontal ? 'x' : 'y';
+    window.novaSharp.initPointerResize(handle, horizontal ? 'x' : 'y', horizontal ? 'resizing-editor-x' : 'resizing-editor-y',
+        () => {
+            const parent = handle.parentElement;
+            const bounds = parent.getBoundingClientRect();
+            return {
+                parent,
+                extent: horizontal ? bounds.width : bounds.height,
+                ratio: Number(handle.getAttribute('aria-valuenow')) / 100,
+                latestRatio: Number(handle.getAttribute('aria-valuenow')) / 100
+            };
+        },
+        (delta, state) => {
+            const ratio = Math.max(0.1, Math.min(0.9, state.ratio + delta / Math.max(1, state.extent)));
+            state.latestRatio = ratio;
+            const first = ratio * 100;
+            const second = (1 - ratio) * 100;
+            const template = `minmax(160px,${first}fr) 8px minmax(160px,${second}fr)`;
+            if (horizontal) state.parent.style.gridTemplateColumns = template;
+            else state.parent.style.gridTemplateRows = template;
+            handle.setAttribute('aria-valuenow', Math.round(first));
+        },
+        state => dotNet?.invokeMethodAsync('SplitterResized', state.latestRatio || state.ratio));
+};
+
+window.novaSharp.initEditorDragCleanup = function (workbench, dotNet) {
+    if (!workbench || workbench.dataset.dragCleanupReady) return;
+    workbench.dataset.dragCleanupReady = 'true';
+    document.addEventListener('dragend', () => setTimeout(() => {
+        if (workbench.querySelector('.group-drop-zones')) dotNet?.invokeMethodAsync('CancelEditorDrag');
+    }, 0));
+    document.addEventListener('keydown', event => {
+        if (event.key !== 'Escape' || !workbench.querySelector('.group-drop-zones')) return;
+        event.preventDefault();
+        dotNet?.invokeMethodAsync('CancelEditorDrag');
+    });
+};
+
+window.novaSharp.focusEditorGroup = function (workbench, dotNet, direction) {
+    const current = workbench?.querySelector('.editor-group.focused');
+    if (!current) return;
+    const source = current.getBoundingClientRect();
+    const sourceX = source.left + source.width / 2;
+    const sourceY = source.top + source.height / 2;
+    const candidates = [...workbench.querySelectorAll('.editor-group')].filter(group => group !== current)
+        .map(group => {
+            const bounds = group.getBoundingClientRect();
+            const x = bounds.left + bounds.width / 2;
+            const y = bounds.top + bounds.height / 2;
+            const primary = direction === 'left' ? sourceX - x : direction === 'right' ? x - sourceX
+                : direction === 'up' ? sourceY - y : y - sourceY;
+            const secondary = direction === 'left' || direction === 'right' ? Math.abs(y - sourceY) : Math.abs(x - sourceX);
+            return { group, primary, secondary, rank: Number(group.dataset.focusRank) || 0 };
+        })
+        .filter(candidate => candidate.primary > 0)
+        .sort((left, right) => left.primary - right.primary || left.secondary - right.secondary || right.rank - left.rank);
+    if (candidates[0]) dotNet?.invokeMethodAsync('FocusEditorGroup', candidates[0].group.dataset.groupId);
 };
 
 window.novaSharp.runPhase3Smoke = async function (explorer, dotNet) {
@@ -238,15 +307,6 @@ window.novaSharp.runPhase3Smoke = async function (explorer, dotNet) {
 
 window.novaSharp.initAppContextMenu();
 
-document.addEventListener('keydown', event => {
-    const splitter = event.target.closest?.('.editor-splitter');
-    if (!splitter || !event.shiftKey || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
-    event.preventDefault();
-    const decreasing = event.key === 'ArrowLeft' || event.key === 'ArrowUp';
-    splitter.value = Math.max(0.1, Math.min(0.9, Number(splitter.value) + (decreasing ? -0.1 : 0.1)));
-    splitter.dispatchEvent(new Event('input', { bubbles: true }));
-});
-
 document.addEventListener("dragstart", event => {
     const tab = event.target.closest?.(".document-tab");
     if (!tab || !event.dataTransfer) return;
@@ -335,11 +395,27 @@ window.novaSharp.runPhase5Smoke = async function (workbench, dotNet) {
             && inputs[1].selectionStart === 7 && inputs[1].selectionEnd === 13;
         const splitter = workbench.querySelector('.editor-splitter');
         const splitterAccessible = splitter?.getAttribute('aria-label') === 'Resize editor groups'
-            && splitter.getAttribute('aria-orientation') === 'vertical';
-        splitter.value = '0.66';
-        splitter.dispatchEvent(new Event('input', { bubbles: true }));
+            && splitter.getAttribute('aria-orientation') === 'vertical'
+            && splitter.dataset.axis === 'x';
+        const initialRatio = Number(splitter.getAttribute('aria-valuenow'));
+        splitter.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
         await wait();
-        const splitterResized = Math.abs(Number(splitter.value) - 0.66) < 0.001;
+        const splitterResized = Number(splitter.getAttribute('aria-valuenow')) > initialRatio;
+        const splitterBounds = splitter.getBoundingClientRect();
+        const pointerStart = splitterBounds.left + splitterBounds.width / 2 + 0.25;
+        const pointerRatio = Number(splitter.getAttribute('aria-valuenow'));
+        splitter.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, pointerId: 51, clientX: pointerStart }));
+        workbench.style.maxWidth = 'calc(100% - 1px)';
+        splitter.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 51, clientX: pointerStart + 20.5 }));
+        splitter.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 51, clientX: pointerStart + 20.5 }));
+        workbench.style.maxWidth = '';
+        await wait();
+        const fractionalPointerResize = Number(splitter.getAttribute('aria-valuenow')) > pointerRatio;
+        const focusedBefore = workbench.querySelector('.editor-group.focused')?.dataset.groupId;
+        window.novaSharp.focusEditorGroup(workbench, dotNet, 'right');
+        await wait();
+        const directionalFocus = !!focusedBefore
+            && workbench.querySelector('.editor-group.focused')?.dataset.groupId !== focusedBefore;
         const originalWidth = workbench.style.width;
         workbench.style.width = '480px';
         await wait();
@@ -348,7 +424,8 @@ window.novaSharp.runPhase5Smoke = async function (workbench, dotNet) {
         workbench.style.width = originalWidth;
         const sourceTab = workbench.querySelector('.document-tab');
         const dataTransfer = new DataTransfer();
-        sourceTab.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer }));
+        const renewedSourceTab = workbench.querySelector('.document-tab');
+        renewedSourceTab.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer }));
         await wait();
         let zones = [];
         for (let attempt = 0; attempt < 10 && zones.length < 10; attempt++) {
@@ -356,20 +433,29 @@ window.novaSharp.runPhase5Smoke = async function (workbench, dotNet) {
             zones = [...workbench.querySelectorAll('.drop-zone')];
         }
         const dropZonesPresent = zones.length >= 10 && zones.every(zone => zone.getAttribute('aria-label'));
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+        await wait();
+        const escapeCancelsDrag = !workbench.querySelector('.group-drop-zones');
+        sourceTab.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer }));
+        await wait();
         const right = workbench.querySelectorAll('.editor-group')[1]?.querySelector('.drop-zone.right');
         if (!right) throw new Error('Drop zones did not render after drag start.');
         right.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer, ctrlKey: true }));
         await wait(250);
-        const edgeDropSplit = workbench.querySelectorAll('.editor-group').length === 3;
+        const splittersMatchOrientation = [...workbench.querySelectorAll('.editor-splitter')].every(candidate =>
+            candidate.dataset.axis === (candidate.getAttribute('aria-orientation') === 'vertical' ? 'x' : 'y'));
+        const edgeDropSplit = workbench.querySelectorAll('.editor-group').length === 3 && splittersMatchOrientation;
         await dotNet.invokeMethodAsync('CompletePhase5SmokeAsync', {
             groupsPresent, sharedEditsImmediate, independentSelections, splitterAccessible,
-            splitterResized, dropZonesPresent, edgeDropSplit, narrowLayoutOperable
+            splitterResized, dropZonesPresent, edgeDropSplit, narrowLayoutOperable,
+            escapeCancelsDrag, fractionalPointerResize, directionalFocus
         });
     } catch (error) {
         await dotNet.invokeMethodAsync('CompletePhase5SmokeAsync', {
             groupsPresent: false, sharedEditsImmediate: false, independentSelections: false,
             splitterAccessible: false, splitterResized: false, dropZonesPresent: false,
-            edgeDropSplit: false, narrowLayoutOperable: false,
+            edgeDropSplit: false, narrowLayoutOperable: false, escapeCancelsDrag: false,
+            fractionalPointerResize: false, directionalFocus: false,
             error: `${error?.name ?? 'Error'}: ${error?.message ?? String(error)}`
         });
     }

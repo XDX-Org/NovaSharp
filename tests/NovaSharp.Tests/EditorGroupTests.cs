@@ -49,6 +49,35 @@ public sealed class EditorGroupTests
     }
 
     [TestMethod]
+    public void ToolbarSplitClearsStaleTabDrag()
+    {
+        var workspace = new EditorGroupWorkspace();
+        var group = workspace.FocusedGroup;
+        var document = new EditorDocumentState();
+        var tab = new DocumentTab(document, preview: false);
+        group.Add(tab);
+        workspace.BeginDrag(tab);
+
+        workspace.Split(group.Id, SplitDirection.Up);
+
+        Assert.IsNull(workspace.DraggedTab);
+        Assert.IsNull(workspace.DragSourceGroupId);
+        document.Dispose();
+    }
+
+    [TestMethod]
+    public void EmptySplitGroupCanBeClosed()
+    {
+        using var workspace = new EditorGroupWorkspace();
+        var initial = workspace.FocusedGroup;
+        var empty = workspace.Split(initial.Id, SplitDirection.Up)!;
+
+        Assert.IsTrue(workspace.CloseGroup(empty.Id));
+        Assert.AreEqual(1, workspace.Layout.Groups.Count);
+        Assert.IsFalse(workspace.CloseGroup(initial.Id));
+    }
+
+    [TestMethod]
     public void SplittingStopsAtMaximumDepth()
     {
         var layout = new EditorLayout();
@@ -58,6 +87,31 @@ public sealed class EditorGroupTests
 
         Assert.IsNull(layout.Split(group.Id, SplitDirection.Right));
         Assert.AreEqual(EditorLayout.MaximumDepth + 1, layout.Groups.Count);
+    }
+
+    [TestMethod]
+    public void SplitLimitReportsAnActionableError()
+    {
+        using var workspace = new EditorGroupWorkspace();
+        var group = workspace.FocusedGroup;
+        for (var depth = 0; depth < EditorLayout.MaximumDepth; depth++)
+            group = workspace.Split(group.Id, SplitDirection.Right)!;
+
+        Assert.IsNull(workspace.Split(group.Id, SplitDirection.Right));
+        StringAssert.Contains(workspace.LastError, "8 nested splits");
+    }
+
+    [TestMethod]
+    public void FocusRanksUseMostRecentOrder()
+    {
+        var layout = new EditorLayout();
+        var first = layout.Groups[0];
+        var second = layout.Split(first.Id, SplitDirection.Right)!;
+        var secondRank = layout.FocusRank(second.Id);
+
+        layout.Focus(first.Id);
+
+        Assert.IsGreaterThan(secondRank, layout.FocusRank(first.Id));
     }
 
     [TestMethod]
@@ -199,5 +253,25 @@ public sealed class EditorGroupTests
             Assert.AreSame(tab.Document, copyTarget.ActiveTab.Document);
         }
         finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [TestMethod]
+    public void CancelledReorderRestoresOriginalTabPosition()
+    {
+        var workspace = new EditorGroupWorkspace();
+        var group = workspace.FocusedGroup;
+        using var firstDocument = new EditorDocumentState();
+        using var secondDocument = new EditorDocumentState();
+        var first = new DocumentTab(firstDocument, preview: false);
+        var second = new DocumentTab(secondDocument, preview: false);
+        group.Add(first);
+        group.Add(second);
+        workspace.BeginDrag(first);
+
+        workspace.PreviewReorder(group.Id, 1);
+        workspace.CancelDrag();
+
+        Assert.AreSame(first, group.Tabs[0]);
+        Assert.AreSame(second, group.Tabs[1]);
     }
 }
