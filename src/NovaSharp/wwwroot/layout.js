@@ -336,10 +336,10 @@ window.novaSharp.runPhase5Smoke = async function (workbench, dotNet) {
         const splitter = workbench.querySelector('.editor-splitter');
         const splitterAccessible = splitter?.getAttribute('aria-label') === 'Resize editor groups'
             && splitter.getAttribute('aria-orientation') === 'vertical';
-        splitter.value = '0.65';
+        splitter.value = '0.66';
         splitter.dispatchEvent(new Event('input', { bubbles: true }));
         await wait();
-        const splitterResized = Math.abs(Number(splitter.value) - 0.65) < 0.001;
+        const splitterResized = Math.abs(Number(splitter.value) - 0.66) < 0.001;
         const originalWidth = workbench.style.width;
         workbench.style.width = '480px';
         await wait();
