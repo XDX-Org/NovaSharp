@@ -177,7 +177,7 @@ window.novaSharp.initEditorSplitter = function (handle, dotNet, orientation) {
             state.latestRatio = ratio;
             const first = ratio * 100;
             const second = (1 - ratio) * 100;
-            const template = `minmax(160px,${first}fr) 8px minmax(160px,${second}fr)`;
+            const template = `minmax(160px,${first}fr) 5px minmax(160px,${second}fr)`;
             if (horizontal) state.parent.style.gridTemplateColumns = template;
             else state.parent.style.gridTemplateRows = template;
             handle.setAttribute('aria-valuenow', Math.round(first));
@@ -188,13 +188,109 @@ window.novaSharp.initEditorSplitter = function (handle, dotNet, orientation) {
 window.novaSharp.initEditorDragCleanup = function (workbench, dotNet) {
     if (!workbench || workbench.dataset.dragCleanupReady) return;
     workbench.dataset.dragCleanupReady = 'true';
+    window.novaSharp.cancelEditorDrag = () => {
+        window.novaSharp.tabDragActive = false;
+        if (workbench.querySelector('.group-drop-zones')) dotNet?.invokeMethodAsync('CancelEditorDrag');
+    };
     document.addEventListener('dragend', () => setTimeout(() => {
         if (workbench.querySelector('.group-drop-zones')) dotNet?.invokeMethodAsync('CancelEditorDrag');
     }, 0));
+    document.addEventListener('drop', event => {
+        if (event.target.closest?.('.drop-zone,.document-tab')) return;
+        window.novaSharp.cancelEditorDrag();
+    }, true);
     document.addEventListener('keydown', event => {
         if (event.key !== 'Escape' || !workbench.querySelector('.group-drop-zones')) return;
         event.preventDefault();
         dotNet?.invokeMethodAsync('CancelEditorDrag');
+    });
+};
+
+window.novaSharp.initLeftMouseStatus = function (workbench, dotNet) {
+    if (!workbench || workbench.dataset.leftMouseStatusReady) return;
+    workbench.dataset.leftMouseStatusReady = 'true';
+    let down = false;
+    const update = value => {
+        if (down === value) return;
+        down = value;
+        dotNet?.invokeMethodAsync('LeftMouseChanged', value);
+    };
+    window.addEventListener('pointerdown', event => { if (event.button === 0) update(true); }, true);
+    window.addEventListener('mousedown', event => { if (event.button === 0) update(true); }, true);
+    window.addEventListener('pointerup', event => { if (event.button === 0) update(false); }, true);
+    window.addEventListener('mouseup', event => { if (event.button === 0) update(false); }, true);
+    window.addEventListener('drop', () => update(false), true);
+    window.addEventListener('dragend', () => update(false), true);
+    window.addEventListener('blur', () => update(false));
+};
+
+window.novaSharp.initPointerTabDrag = function (workbench, dotNet) {
+    if (!workbench || workbench.dataset.pointerTabDragReady) return;
+    workbench.dataset.pointerTabDragReady = 'true';
+    workbench.addEventListener('pointerdown', event => {
+        const tab = event.target.closest?.('.document-tab');
+        if (!tab || event.button !== 0 || event.target.closest('button')) return;
+        const startX = event.clientX, startY = event.clientY, pointerId = event.pointerId;
+        let dragging = false, cancelled = false, target, ghost;
+        tab.setPointerCapture(pointerId);
+        const clearTarget = () => { target?.classList.remove('pointer-target'); target = null; };
+        const clearVisuals = () => {
+            clearTarget();
+            ghost?.remove();
+            ghost = null;
+            document.body.classList.remove('pointer-tab-dragging');
+        };
+        const move = async moveEvent => {
+            moveEvent.preventDefault();
+            if (!dragging && Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) < 5) return;
+            if (!dragging) {
+                dragging = true;
+                tab.addEventListener('click', click => {
+                    click.preventDefault();
+                    click.stopImmediatePropagation();
+                }, { once: true, capture: true });
+                document.body.classList.add('pointer-tab-dragging');
+                const bounds = tab.getBoundingClientRect();
+                ghost = tab.cloneNode(true);
+                ghost.className = 'tab-drag-ghost';
+                ghost.style.width = `${bounds.width}px`;
+                document.body.appendChild(ghost);
+                await dotNet.invokeMethodAsync('BeginPointerTabDrag', tab.dataset.tabId);
+            }
+            ghost.style.transform = `translate(${moveEvent.clientX + 12}px,${moveEvent.clientY + 12}px)`;
+            clearTarget();
+            const hit = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY);
+            target = hit?.closest?.('.drop-zone,.document-tab');
+            target?.classList.add('pointer-target');
+        };
+        const finish = async finishEvent => {
+            tab.removeEventListener('pointermove', move);
+            tab.removeEventListener('pointerup', finish);
+            tab.removeEventListener('pointercancel', cancel);
+            window.removeEventListener('keydown', escape, true);
+            if (!dragging || cancelled) return;
+            const destination = target;
+            clearVisuals();
+            if (!destination) { await dotNet.invokeMethodAsync('CancelEditorDrag'); return; }
+            const group = destination.closest('.editor-group');
+            const direction = destination.classList.contains('drop-zone') ? destination.dataset.direction : null;
+            const index = destination.classList.contains('document-tab') ? Number(destination.dataset.tabIndex) : null;
+            await dotNet.invokeMethodAsync('DropPointerTab', group.dataset.groupId, index,
+                direction === 'center' ? null : direction, finishEvent.ctrlKey || finishEvent.metaKey);
+        };
+        const cancel = async () => {
+            cancelled = true;
+            clearVisuals();
+            tab.removeEventListener('pointermove', move);
+            tab.removeEventListener('pointerup', finish);
+            window.removeEventListener('keydown', escape, true);
+            if (dragging) await dotNet.invokeMethodAsync('CancelEditorDrag');
+        };
+        const escape = event => { if (event.key === 'Escape') cancel(); };
+        tab.addEventListener('pointermove', move);
+        tab.addEventListener('pointerup', finish);
+        tab.addEventListener('pointercancel', cancel, { once: true });
+        window.addEventListener('keydown', escape, true);
     });
 };
 
@@ -311,8 +407,25 @@ document.addEventListener("dragstart", event => {
     const tab = event.target.closest?.(".document-tab");
     if (!tab || !event.dataTransfer) return;
     event.dataTransfer.effectAllowed = "move";
+    window.novaSharp.tabDragActive = true;
+    tab.addEventListener("dragend", () => window.novaSharp.cancelEditorDrag?.(), { once: true });
+    event.dataTransfer.setData("application/x-novasharp-tab", "tab");
     event.dataTransfer.setData("text/plain", tab.innerText);
 });
+
+const hasNovaSharpTab = event => window.novaSharp.tabDragActive || [...(event.dataTransfer?.types ?? [])]
+    .includes("application/x-novasharp-tab");
+document.addEventListener("dragover", event => {
+    if (!hasNovaSharpTab(event) || event.target.closest?.(".drop-zone,.document-tab")) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "none";
+}, true);
+document.addEventListener("drop", event => {
+    if (!hasNovaSharpTab(event) || event.target.closest?.(".drop-zone,.document-tab")) return;
+    event.preventDefault();
+}, true);
+document.addEventListener("dragend", () => { window.novaSharp.tabDragActive = false; }, true);
+document.addEventListener("drop", () => { window.novaSharp.tabDragActive = false; });
 
 window.novaSharp.tabIndexAtX = function (strip, x) {
     const tabs = [...strip.querySelectorAll(".document-tab")];
@@ -328,14 +441,9 @@ window.novaSharp.runPhase4Smoke = async function (workbench, dotNet) {
         let tabs = [...strip.querySelectorAll('.document-tab')];
         const tabsPresent = tabs.length > 2;
         const firstLabel = tabs[0]?.querySelector('.tab-label')?.textContent;
-        const dataTransfer = new DataTransfer();
-        tabs[0]?.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer }));
-        await wait(200);
-        tabs = [...strip.querySelectorAll('.document-tab')];
-        tabs[2]?.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer }));
-        await wait(200);
-        tabs = [...strip.querySelectorAll('.document-tab')];
-        tabs[2]?.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer }));
+        await dotNet.invokeMethodAsync('BeginPointerTabDrag', tabs[0].dataset.tabId);
+        const groupId = tabs[0].closest('.editor-group').dataset.groupId;
+        await dotNet.invokeMethodAsync('DropPointerTab', groupId, 2, null, false);
         await wait();
         tabs = [...strip.querySelectorAll('.document-tab')];
         const pointerReordered = tabs[2]?.querySelector('.tab-label')?.textContent === firstLabel;
@@ -422,10 +530,8 @@ window.novaSharp.runPhase5Smoke = async function (workbench, dotNet) {
         const narrowLayoutOperable = [...workbench.querySelectorAll('.editor-group')]
             .every(group => group.getBoundingClientRect().width >= 159);
         workbench.style.width = originalWidth;
-        const sourceTab = workbench.querySelector('.document-tab');
-        const dataTransfer = new DataTransfer();
-        const renewedSourceTab = workbench.querySelector('.document-tab');
-        renewedSourceTab.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer }));
+        let sourceTab = workbench.querySelector('.document-tab');
+        await dotNet.invokeMethodAsync('BeginPointerTabDrag', sourceTab.dataset.tabId);
         await wait();
         let zones = [];
         for (let attempt = 0; attempt < 10 && zones.length < 10; attempt++) {
@@ -436,11 +542,12 @@ window.novaSharp.runPhase5Smoke = async function (workbench, dotNet) {
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
         await wait();
         const escapeCancelsDrag = !workbench.querySelector('.group-drop-zones');
-        sourceTab.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer }));
+        sourceTab = workbench.querySelector('.document-tab');
+        await dotNet.invokeMethodAsync('BeginPointerTabDrag', sourceTab.dataset.tabId);
         await wait();
         const right = workbench.querySelectorAll('.editor-group')[1]?.querySelector('.drop-zone.right');
         if (!right) throw new Error('Drop zones did not render after drag start.');
-        right.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer, ctrlKey: true }));
+        await dotNet.invokeMethodAsync('DropPointerTab', right.closest('.editor-group').dataset.groupId, null, 'right', true);
         await wait(250);
         const splittersMatchOrientation = [...workbench.querySelectorAll('.editor-splitter')].every(candidate =>
             candidate.dataset.axis === (candidate.getAttribute('aria-orientation') === 'vertical' ? 'x' : 'y'));

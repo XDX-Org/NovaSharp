@@ -69,7 +69,10 @@
             </button>
         </nav>
     </div>
-    <footer class="statusbar"><span class="status-message">@Status</span></footer>
+    <footer class="statusbar">
+        <span class="status-message">@Status</span>
+        <span class="pointer-status" aria-live="polite">LMB: @(_leftMouseDown ? "Down" : "Up")</span>
+    </footer>
 </main>
 
 @code {
@@ -81,7 +84,7 @@
     private DotNetObjectReference<WorkbenchPanel>? _self;
     private string? _status;
     private string _query = "", _replacement = "";
-    private bool _showMenu, _showFind, _wordWrap, _externalChange, _explorerOpen = true;
+    private bool _showMenu, _showFind, _wordWrap, _externalChange, _leftMouseDown, _explorerOpen = true;
     private DocumentTab? ActiveTab => _workspace.FocusedGroup.ActiveTab;
     private EditorDocumentState _document => ActiveTab?.Document ?? _emptyDocument;
     private string Status => _status ?? _workspace.LastError ?? (_document.IsReadOnly ? "Read-only" : _document.FilePath ?? "Ready");
@@ -114,6 +117,8 @@
         if (!firstRender) return;
         _self = DotNetObjectReference.Create(this);
         await JS.InvokeVoidAsync("novaSharp.initEditorDragCleanup", _workbench, _self);
+        await JS.InvokeVoidAsync("novaSharp.initLeftMouseStatus", _workbench, _self);
+        await JS.InvokeVoidAsync("novaSharp.initPointerTabDrag", _workbench, _self);
         if (Program.Phase4Workspace is not null || Program.Phase5Workspace is not null)
             await JS.InvokeVoidAsync("novaSharp.startSmokePolling", _self,
                 Program.Phase4Workspace is not null, Program.Phase5Workspace is not null);
@@ -259,6 +264,31 @@
 
     [JSInvokable]
     public void CancelEditorDrag() => _workspace.CancelDrag();
+
+    [JSInvokable]
+    public void BeginPointerTabDrag(string id)
+    {
+        if (Guid.TryParse(id, out var tabId) && _workspace.Layout.Groups
+            .SelectMany(group => group.Tabs).FirstOrDefault(tab => tab.Id == tabId) is { } tab)
+            _workspace.BeginDrag(tab);
+    }
+
+    [JSInvokable]
+    public async Task DropPointerTab(string groupId, int? index, string? direction, bool copy)
+    {
+        if (!Guid.TryParse(groupId, out var targetId)) { _workspace.CancelDrag(); return; }
+        var split = Enum.TryParse<SplitDirection>(direction, true, out var parsed) ? parsed : (SplitDirection?)null;
+        await _workspace.DropAsync(targetId, index, split, copy);
+        await ActiveChangedAsync();
+    }
+
+    [JSInvokable]
+    public void LeftMouseChanged(bool down)
+    {
+        if (_leftMouseDown == down) return;
+        _leftMouseDown = down;
+        StateHasChanged();
+    }
 
     [JSInvokable]
     public async Task FocusEditorGroup(string id)

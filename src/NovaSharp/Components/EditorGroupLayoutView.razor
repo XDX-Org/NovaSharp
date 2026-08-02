@@ -17,10 +17,6 @@ else if (Node is EditorGroup group)
              aria-label="Editor group" data-group-id="@group.Id" data-focus-rank="@Workspace.Layout.FocusRank(group.Id)"
              @onclick="() => Focus(group)">
         <div class="group-actions">
-            <button aria-label="Split left" title="Split left" @onclick="() => Split(group, SplitDirection.Left)" @onclick:stopPropagation>◧</button>
-            <button aria-label="Split right" title="Split right" @onclick="() => Split(group, SplitDirection.Right)" @onclick:stopPropagation>▧</button>
-            <button aria-label="Split up" title="Split up" @onclick="() => Split(group, SplitDirection.Up)" @onclick:stopPropagation>⬒</button>
-            <button aria-label="Split down" title="Split down" @onclick="() => Split(group, SplitDirection.Down)" @onclick:stopPropagation>⬓</button>
             @if (group.Tabs.Count == 0 && Workspace.Layout.Groups.Count > 1)
             {
                 <button aria-label="Close editor group" title="Close editor group" @onclick="() => CloseGroup(group)" @onclick:stopPropagation>×</button>
@@ -35,12 +31,10 @@ else if (Node is EditorGroup group)
                     var insertionIndex = index;
                     <div class="document-tab @(ReferenceEquals(tab, group.ActiveTab) ? "active" : null) @(tab.IsPreview ? "preview" : null)"
                          role="tab" aria-selected="@ReferenceEquals(tab, group.ActiveTab)" tabindex="@(ReferenceEquals(tab, group.ActiveTab) ? 0 : -1)"
-                         aria-label="@AccessibleLabel(tab)" title="@tab.Document.FilePath" draggable="true"
+                         aria-label="@AccessibleLabel(tab)" title="@tab.Document.FilePath"
+                         data-tab-id="@tab.Id" data-tab-index="@index"
                          @onclick="() => Activate(group, tab)" @onmousedown="args => MiddleClose(args, tab)"
-                         @ondragstart="() => Workspace.BeginDrag(tab)"
-                         @ondragenter="() => Workspace.PreviewReorder(group.Id, insertionIndex)"
-                         @ondragover:preventDefault @ondrop="args => DropOnTabAsync(group, insertionIndex, args)"
-                         @ondragend="Workspace.CancelDrag" @oncontextmenu="args => ShowContextMenu(args, group, tab)"
+                         @oncontextmenu="args => ShowContextMenu(args, group, tab)"
                          @oncontextmenu:preventDefault>
                         <span class="tab-label">@DisplayName(group, tab)</span>
                         @if (tab.Document.IsDirty) { <span class="tab-dirty" aria-label="Unsaved changes">●</span> }
@@ -57,6 +51,11 @@ else if (Node is EditorGroup group)
             <div class="context-menu-dismiss" @onclick="HideContextMenu"></div>
             <div class="explorer-context-menu tab-context-menu" role="menu" style="left:@(_contextX)px;top:@(_contextY)px" @onclick:stopPropagation>
                 <button role="menuitem" @onclick="ToggleContextPin">@(_contextTab.IsPinned ? "Unpin" : "Pin")</button>
+                <hr />
+                <button role="menuitem" @onclick="() => SplitContext(SplitDirection.Left)">Split left</button>
+                <button role="menuitem" @onclick="() => SplitContext(SplitDirection.Right)">Split right</button>
+                <button role="menuitem" @onclick="() => SplitContext(SplitDirection.Up)">Split up</button>
+                <button role="menuitem" @onclick="() => SplitContext(SplitDirection.Down)">Split down</button>
                 <hr />
                 <button role="menuitem" @onclick="() => RequestClose([_contextTab])">Close</button>
                 <button role="menuitem" @onclick="() => RequestClose(_contextGroup.Tabs.Where(tab => !ReferenceEquals(tab, _contextTab)).ToArray())">Close others</button>
@@ -76,11 +75,11 @@ else if (Node is EditorGroup group)
             @if (Workspace.DraggedTab is not null)
             {
                 <div class="group-drop-zones" aria-label="Editor drop zones">
-                    <div class="drop-zone left" aria-label="Drop left" @ondragover:preventDefault @ondrop="args => DropEdgeAsync(group, SplitDirection.Left, args)"></div>
-                    <div class="drop-zone right" aria-label="Drop right" @ondragover:preventDefault @ondrop="args => DropEdgeAsync(group, SplitDirection.Right, args)"></div>
-                    <div class="drop-zone up" aria-label="Drop above" @ondragover:preventDefault @ondrop="args => DropEdgeAsync(group, SplitDirection.Up, args)"></div>
-                    <div class="drop-zone down" aria-label="Drop below" @ondragover:preventDefault @ondrop="args => DropEdgeAsync(group, SplitDirection.Down, args)"></div>
-                    <div class="drop-zone center" aria-label="Drop in group" @ondragover:preventDefault @ondrop="args => DropCenterAsync(group, args)"></div>
+                    <div class="drop-zone left" data-direction="left" aria-label="Drop left"></div>
+                    <div class="drop-zone right" data-direction="right" aria-label="Drop right"></div>
+                    <div class="drop-zone up" data-direction="up" aria-label="Drop above"></div>
+                    <div class="drop-zone down" data-direction="down" aria-label="Drop below"></div>
+                    <div class="drop-zone center" data-direction="center" aria-label="Drop in group"></div>
                 </div>
             }
         </div>
@@ -104,13 +103,19 @@ else if (Node is EditorGroup group)
         var first = (split.Ratio * 100).ToString(System.Globalization.CultureInfo.InvariantCulture);
         var second = ((1 - split.Ratio) * 100).ToString(System.Globalization.CultureInfo.InvariantCulture);
         return split.Orientation == SplitOrientation.Horizontal
-            ? $"grid-template-columns:minmax(160px,{first}fr) 8px minmax(160px,{second}fr)"
-            : $"grid-template-rows:minmax(160px,{first}fr) 8px minmax(160px,{second}fr)";
+            ? $"grid-template-columns:minmax(160px,{first}fr) 5px minmax(160px,{second}fr)"
+            : $"grid-template-rows:minmax(160px,{first}fr) 5px minmax(160px,{second}fr)";
     }
     private async Task Focus(EditorGroup group) { Workspace.Focus(group.Id); await ActiveChanged.InvokeAsync(); }
     private async Task Split(EditorGroup group, SplitDirection direction) { Workspace.Split(group.Id, direction); await ActiveChanged.InvokeAsync(); }
     private async Task CloseGroup(EditorGroup group) { Workspace.CloseGroup(group.Id); await ActiveChanged.InvokeAsync(); }
-    private async Task Activate(EditorGroup group, DocumentTab tab) { group.Activate(tab); Workspace.Focus(group.Id); await ActiveChanged.InvokeAsync(); }
+    private async Task Activate(EditorGroup group, DocumentTab tab)
+    {
+        if (!group.Tabs.Contains(tab)) return;
+        group.Activate(tab);
+        Workspace.Focus(group.Id);
+        await ActiveChanged.InvokeAsync();
+    }
     private void TogglePin(DocumentTab tab) { if (tab.IsPinned) tab.SetPreview(true); else Workspace.Promote(tab); }
     private Task RequestClose(EditorGroup group, DocumentTab tab) => RequestClose([tab]);
     private Task MiddleClose(MouseEventArgs args, DocumentTab tab) => args.Button == 1 ? RequestClose([tab]) : Task.CompletedTask;
@@ -119,6 +124,16 @@ else if (Node is EditorGroup group)
     { _contextGroup = group; _contextTab = tab; _contextX = args.ClientX; _contextY = args.ClientY; }
     private void HideContextMenu() { _contextGroup = null; _contextTab = null; }
     private void ToggleContextPin() { if (_contextTab is { } tab) TogglePin(tab); HideContextMenu(); }
+    private async Task SplitContext(SplitDirection direction)
+    {
+        if (_contextGroup is { } group && _contextTab is { } tab
+            && Workspace.Split(group.Id, direction) is { } created)
+        {
+            await Workspace.CopyAsync(tab, created.Id);
+            await ActiveChanged.InvokeAsync();
+        }
+        HideContextMenu();
+    }
     private async Task Edit(DocumentTab tab, string value) { tab.Document.Content = value; if (tab.IsPreview) Workspace.Promote(tab); await ContentEdited.InvokeAsync(); }
     private Task DropOnTabAsync(EditorGroup group, int index, DragEventArgs args) => DropAsync(group, index, null, args);
     private Task DropEdgeAsync(EditorGroup group, SplitDirection direction, DragEventArgs args) => DropAsync(group, null, direction, args);
