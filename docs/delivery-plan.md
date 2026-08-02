@@ -14,7 +14,7 @@ Source control UI, remote development, collaboration, notebooks, AI completion, 
 | 2. Editor and file lifecycle | Complete | Four-platform verification passed; see `phase-02-decisions.md` |
 | 3. Workspace explorer | In progress | Automated gates pass in run 30742324717; Windows/macOS interactive native checks pending |
 | 4. Documents and movable tabs | Complete | Four-platform build/test/package and Linux interaction gates pass in run 30750653723 |
-| 5. Editor groups and split views | Complete | Four-platform build/test/package and Linux interaction gates pass in run 30754228493 |
+| 5. Editor groups and split views | Complete | Four-platform build/test/package and Linux Phase 2–5 interaction gates pass in run 30754664630 |
 | 6–17 | Planned | Completion criteria not yet met |
 
 Status values are `planned`, `in progress`, `blocked`, and `complete`. Update this table only from test or release evidence; documentation or partial UI alone does not complete a phase.

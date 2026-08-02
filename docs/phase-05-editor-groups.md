@@ -87,8 +87,8 @@ Started on `phase-5`:
 - Version 2 layout-tree persistence with version 1 migration, stable identities, corruption recovery, and missing-file restoration.
 - Linux/Xvfb interaction coverage added for shared edits, independent selections, splitters, drop zones, edge splits, and narrow layouts.
 
-Verification run 30754228493 passes all four platform build/test/package jobs, 44 automated tests,
-the established Phase 2 and Phase 3 Linux native regressions, and the Phase 5 Linux/Xvfb interaction
+Verification run 30754664630 passes all four platform build/test/package jobs, 44 automated tests,
+the established Phase 2–4 Linux native regressions, and the Phase 5 Linux/Xvfb interaction
 checks for shared edits, independent selections, accessible splitters, resizing, drop zones, copied edge
 splits, and narrow layouts. Windows and macOS interactive desktop checks remain part of the preview-release
 manual matrix rather than the Phase 5 automated gate.
