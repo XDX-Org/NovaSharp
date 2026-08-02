@@ -4,8 +4,15 @@
 
 @if (!_state.SidebarCollapsed)
 {
-<aside @ref="_explorer" class="explorer @(ProjectSystem?.State.Path is not null ? "has-view-switch" : null)" style="width:@_state.SidebarWidth.ToString(System.Globalization.CultureInfo.InvariantCulture)px" aria-label="Explorer" @onclick="HideContextMenu">
+<aside @ref="_explorer" class="explorer" style="width:@_state.SidebarWidth.ToString(System.Globalization.CultureInfo.InvariantCulture)px" aria-label="Explorer" @onclick="HideContextMenu">
     <header class="explorer-header">
+        @if (ProjectSystem?.State.Path is not null)
+        {
+            <select class="explorer-view-switch" aria-label="Explorer view" value="@SelectedView" @onchange="ChangeViewAsync">
+                <option value="solution">Solution</option>
+                <option value="files">Files</option>
+            </select>
+        }
         <span class="explorer-actions">
             @if (ShowSolution)
             {
@@ -19,15 +26,6 @@
             }
         </span>
     </header>
-        @if (ProjectSystem?.State.Path is not null)
-        {
-            <div class="explorer-view-switch">
-                <select aria-label="Explorer view" value="@SelectedView" @onchange="ChangeViewAsync">
-                    <option value="solution">Solution</option>
-                    <option value="files">Files</option>
-                </select>
-            </div>
-        }
         @if (ShowSolution)
         {
             <SolutionExplorer ProjectSystem="ProjectSystem!" FileOpened="FileOpened" ContextRequested="ShowProjectContextMenuAsync" />
