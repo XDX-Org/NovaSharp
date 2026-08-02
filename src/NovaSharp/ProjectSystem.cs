@@ -8,6 +8,7 @@ using Microsoft.CodeAnalysis.Text;
 namespace NovaSharp;
 
 public enum ProjectNodeKind { Solution, Project, TargetFramework, Folder, File, ProjectReference, AssemblyReference, Analyzer }
+public sealed record ProjectNodeContextRequest(ProjectNode Node, double X, double Y);
 public sealed record ProjectNode(string Id, string Name, ProjectNodeKind Kind, string? Path = null,
     ImmutableArray<ProjectNode> Children = default)
 {
@@ -286,10 +287,10 @@ public sealed class RoslynProjectSystem : IAsyncDisposable
             var relative = Path.GetRelativePath(root, file);
             return new ProjectFile(relative.StartsWith("..", StringComparison.Ordinal) ? Path.GetFileName(file) : relative, file);
         }).ToArray();
-        return BuildFolder(entries, "");
+        return BuildFolder(entries, "", root);
     }
 
-    private static ImmutableArray<ProjectNode> BuildFolder(IEnumerable<ProjectFile> entries, string prefix)
+    private static ImmutableArray<ProjectNode> BuildFolder(IEnumerable<ProjectFile> entries, string prefix, string root)
     {
         var children = new List<ProjectNode>();
         foreach (var group in entries.GroupBy(entry => FirstSegment(entry.RelativePath), PathComparer)
@@ -305,7 +306,8 @@ public sealed class RoslynProjectSystem : IAsyncDisposable
             var nested = group.Where(entry => HasDirectory(entry.RelativePath))
                 .Select(entry => entry with { RelativePath = Remainder(entry.RelativePath) });
             var folderPath = string.IsNullOrEmpty(prefix) ? group.Key : Path.Combine(prefix, group.Key);
-            children.Add(new($"d:{folderPath}", group.Key, ProjectNodeKind.Folder, null, BuildFolder(nested, folderPath)));
+            children.Add(new($"d:{folderPath}", group.Key, ProjectNodeKind.Folder, Path.Combine(root, folderPath),
+                BuildFolder(nested, folderPath, root)));
         }
         return children.ToImmutableArray();
     }

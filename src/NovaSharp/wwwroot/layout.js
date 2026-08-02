@@ -653,9 +653,18 @@ window.novaSharp.runPhase6Smoke = async function (bridge) {
             await new Promise(resolve => setTimeout(resolve, 100));
         const solutionTreePresent = !!document.querySelector('.solution-explorer .project-tree');
         const projectNodes = document.querySelectorAll('.solution-explorer .project-node').length;
-        await bridge.invokeMethodAsync('CompletePhase6SmokeAsync', solutionTreePresent, projectNodes, null);
+        const project = [...document.querySelectorAll('.project-node > summary')]
+            .find(summary => summary.title?.toLowerCase().endsWith('.csproj'));
+        const projectFileEditable = !!project;
+        project?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 120, clientY: 100 }));
+        await new Promise(resolve => setTimeout(resolve, 200));
+        const menuText = document.querySelector('.explorer-context-menu')?.textContent ?? '';
+        const contextMenuPresent = ['Open', 'New file', 'New folder', 'Rename', 'Move', 'Delete']
+            .every(label => menuText.includes(label));
+        await bridge.invokeMethodAsync('CompletePhase6SmokeAsync', solutionTreePresent, projectNodes,
+            projectFileEditable, contextMenuPresent, null);
     } catch (error) {
-        await bridge.invokeMethodAsync('CompletePhase6SmokeAsync', false, 0,
+        await bridge.invokeMethodAsync('CompletePhase6SmokeAsync', false, 0, false, false,
             `${error?.name ?? 'Error'}: ${error?.message ?? String(error)}`);
     }
 };

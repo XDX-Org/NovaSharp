@@ -54,9 +54,13 @@ public sealed class ProjectSystemTests
         Assert.HasCount(3, projectSystem.State.Root!.Items);
         Assert.AreEqual("3 projects", projectSystem.State.Root.Detail);
         var webNode = projectSystem.State.Root.Items.Single(node => node.Name == "Web");
+        Assert.EndsWith("Web.csproj", webNode.Path);
         Assert.AreEqual("Dependencies", webNode.Items[0].Name);
         Assert.IsTrue(Descendants(webNode).Any(node => node.Name == "Component.razor"));
-        Assert.IsTrue(Descendants(webNode).Any(node => node.Name == "app.css"));
+        var css = Descendants(webNode).Single(node => node.Name == "app.css");
+        Assert.AreEqual(Path.Combine(fixture.Root, "Web", "wwwroot", "app.css"), css.Path);
+        Assert.AreEqual(Path.Combine(fixture.Root, "Web", "wwwroot"),
+            Descendants(webNode).Single(node => node.Name == "wwwroot").Path);
         Assert.IsTrue(projectSystem.Contexts.Any(context => context.TargetFramework == "net9.0" && context.Configuration == "Debug"));
         Assert.IsTrue(projectSystem.Contexts.Any(context => context.TargetFramework == "net10.0" && context.Configuration == "Debug"));
         var app = projectSystem.CurrentSolution!.Projects.First(project => project.Name.StartsWith("App", StringComparison.Ordinal)

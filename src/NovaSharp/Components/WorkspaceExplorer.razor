@@ -31,7 +31,7 @@
         }
         @if (ShowSolution)
         {
-            <SolutionExplorer ProjectSystem="ProjectSystem!" FileOpened="FileOpened" />
+            <SolutionExplorer ProjectSystem="ProjectSystem!" FileOpened="FileOpened" ContextRequested="ShowProjectContextMenuAsync" />
         }
         else
         {
@@ -42,43 +42,6 @@
           else
           {
             <div class="workspace-title" title="@_workspace.RootPath">@_workspace.RootPath</div>
-            @if (_editMode is not null)
-            {
-                <div class="modal-backdrop" @onclick="CancelEdit">
-                    <form class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="edit-title"
-                          @onclick:stopPropagation @onsubmit="CommitEditAsync" @onsubmit:preventDefault>
-                        <h2 id="edit-title">@EditTitle</h2>
-                        <label class="modal-field">
-                            <span>Name</span>
-                            <input aria-label="@_editMode" @bind="_editName" autofocus />
-                        </label>
-                        @if (_editMode == "Move item")
-                        {
-                            <label class="modal-field">
-                                <span>Destination folder (relative to workspace)</span>
-                                <input aria-label="Destination folder" @bind="_moveDestination" />
-                            </label>
-                        }
-                        <div class="modal-actions">
-                            <button type="submit">@EditAction</button>
-                            <button type="button" @onclick="CancelEdit">Cancel</button>
-                        </div>
-                    </form>
-                </div>
-            }
-            @if (_deletePending is not null)
-            {
-                <div class="modal-backdrop" @onclick="CancelDelete">
-                    <div class="modal-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-title" @onclick:stopPropagation>
-                        <h2 id="delete-title">Delete @_deletePending.Name?</h2>
-                        <p>This action cannot be undone.</p>
-                        <div class="modal-actions">
-                            <button class="danger" @onclick="ConfirmDeleteAsync">Delete</button>
-                            <button @onclick="CancelDelete">Cancel</button>
-                        </div>
-                    </div>
-                </div>
-            }
             @if (_error is not null) { <div class="explorer-error" role="alert">@_error <button @onclick="ClearError">×</button></div> }
             <div class="tree" role="tree" aria-label="Workspace files" @onkeydown="HandleKeyAsync" @onkeydown:preventDefault
                  @oncontextmenu="ShowRootContextMenu">
@@ -100,26 +63,52 @@
                     </div>
                 </Virtualize>
             </div>
-            @if (_showContextMenu)
-            {
-                <div class="context-menu-dismiss" @onclick="HideContextMenu"
-                     @oncontextmenu="HideContextMenu" @oncontextmenu:preventDefault></div>
-                <div @ref="_contextMenu" class="explorer-context-menu" role="menu" @onclick:stopPropagation
-                     @oncontextmenu:preventDefault @oncontextmenu:stopPropagation>
-                    <button role="menuitem" @onclick='() => BeginCreate(false)'>New file</button>
-                    <button role="menuitem" @onclick='() => BeginCreate(true)'>New folder</button>
-                    <hr />
-                    <button role="menuitem" @onclick="BeginRename" disabled="@(_selected is null || IsRoot(_selected.Path))">Rename <kbd>F2</kbd></button>
-                    <button role="menuitem" @onclick="BeginMove" disabled="@(_selected is null || IsRoot(_selected.Path))">Move <kbd>Ctrl+M</kbd></button>
-                    <button role="menuitem" @onclick="BeginDelete" disabled="@(_selected is null || IsRoot(_selected.Path))">Delete <kbd>Del</kbd></button>
-                    <hr />
-                    <button role="menuitem" @onclick="CloseWorkspaceAsync">Close workspace</button>
-                    <hr />
-                    <div class="context-menu-hint">Browser options <kbd>Shift+Right-click</kbd></div>
-                </div>
-            }
           }
         }
+    @if (_editMode is not null)
+    {
+        <div class="modal-backdrop" @onclick="CancelEdit">
+            <form class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="edit-title"
+                  @onclick:stopPropagation @onsubmit="CommitEditAsync" @onsubmit:preventDefault>
+                <h2 id="edit-title">@EditTitle</h2>
+                <label class="modal-field"><span>Name</span><input aria-label="@_editMode" @bind="_editName" autofocus /></label>
+                @if (_editMode == "Move item")
+                {
+                    <label class="modal-field"><span>Destination folder (relative to workspace)</span><input aria-label="Destination folder" @bind="_moveDestination" /></label>
+                }
+                <div class="modal-actions"><button type="submit">@EditAction</button><button type="button" @onclick="CancelEdit">Cancel</button></div>
+            </form>
+        </div>
+    }
+    @if (_deletePending is not null)
+    {
+        <div class="modal-backdrop" @onclick="CancelDelete">
+            <div class="modal-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-title" @onclick:stopPropagation>
+                <h2 id="delete-title">Delete @_deletePending.Name?</h2><p>This action cannot be undone.</p>
+                <div class="modal-actions"><button class="danger" @onclick="ConfirmDeleteAsync">Delete</button><button @onclick="CancelDelete">Cancel</button></div>
+            </div>
+        </div>
+    }
+    @if (_showContextMenu)
+    {
+        <div class="context-menu-dismiss" @onclick="HideContextMenu" @oncontextmenu="HideContextMenu" @oncontextmenu:preventDefault></div>
+        <div @ref="_contextMenu" class="explorer-context-menu" role="menu" @onclick:stopPropagation
+             @oncontextmenu:preventDefault @oncontextmenu:stopPropagation>
+            <button role="menuitem" @onclick="OpenSelectedAsync" disabled="@(_selected?.IsDirectory != false)">Open</button>
+            <hr />
+            <button role="menuitem" @onclick='() => BeginCreate(false)'>New file</button>
+            <button role="menuitem" @onclick='() => BeginCreate(true)'>New folder</button>
+            <hr />
+            <button role="menuitem" @onclick="BeginRename" disabled="@(_selected is null || IsRoot(_selected.Path))">Rename <kbd>F2</kbd></button>
+            <button role="menuitem" @onclick="BeginMove" disabled="@(_selected is null || IsRoot(_selected.Path))">Move <kbd>Ctrl+M</kbd></button>
+            <button role="menuitem" @onclick="BeginDelete" disabled="@(_selected is null || IsRoot(_selected.Path))">Delete <kbd>Del</kbd></button>
+            @if (!ShowSolution)
+            {
+                <hr /><button role="menuitem" @onclick="CloseWorkspaceAsync">Close workspace</button>
+                <hr /><div class="context-menu-hint">Browser options <kbd>Shift+Right-click</kbd></div>
+            }
+        </div>
+    }
     <div class="explorer-resizer" role="separator" aria-label="Resize Explorer" aria-orientation="vertical" title="Drag to resize Explorer"></div>
 </aside>
 }
@@ -171,6 +160,27 @@
     }
 
     private Task ReloadSolutionAsync() => ProjectSystem?.ReloadAsync() ?? Task.CompletedTask;
+
+    private async Task ShowProjectContextMenuAsync(ProjectNodeContextRequest request)
+    {
+        if (request.Node.Path is not { } path || ProjectSystem?.State.Path is not { } solutionPath) return;
+        var solutionRoot = Path.GetDirectoryName(solutionPath)!;
+        var target = Path.GetFullPath(path);
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        var root = target.StartsWith(solutionRoot + Path.DirectorySeparatorChar, comparison) ? solutionRoot
+            : Directory.Exists(target) ? target : Path.GetDirectoryName(target)!;
+        if (_workspace.RootPath is null || !string.Equals(_workspace.RootPath, root, comparison))
+            await OpenFolderCoreAsync(root);
+        _selected = EntryFor(target, Directory.Exists(target));
+        ShowContextMenu(request.X, request.Y);
+    }
+
+    private async Task OpenSelectedAsync()
+    {
+        var path = _selected?.IsDirectory == false ? _selected.Path : null;
+        HideContextMenu();
+        if (path is not null) await FileOpened.InvokeAsync(path);
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -359,13 +369,18 @@
                 Document.Relocate(oldPath, newPath); _selected = EntryFor(newPath, _selected.IsDirectory);
             }
             CancelEdit(); await RefreshAsync();
+            if (ShowSolution && ProjectSystem is not null) await ProjectSystem.ReloadAsync();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException) { _error = ex.Message; }
     }
 
     private async Task ConfirmDeleteAsync()
     {
-        try { _workspace.Delete(_deletePending!.Path); _deletePending = null; _selected = null; await RefreshAsync(); }
+        try
+        {
+            _workspace.Delete(_deletePending!.Path); _deletePending = null; _selected = null; await RefreshAsync();
+            if (ShowSolution && ProjectSystem is not null) await ProjectSystem.ReloadAsync();
+        }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException) { _error = ex.Message; }
     }
 

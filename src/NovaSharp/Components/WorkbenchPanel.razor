@@ -343,12 +343,14 @@
     public Task CompletePhase5SmokeAsync(Phase5SmokeResult result) => Program.CompletePhase5SmokeAsync(result);
 
     [JSInvokable]
-    public Task CompletePhase6SmokeAsync(bool solutionTreePresent, int projectNodes, string? error = null) =>
+    public Task CompletePhase6SmokeAsync(bool solutionTreePresent, int projectNodes, bool projectFileEditable,
+        bool contextMenuPresent, string? error = null) =>
         Program.CompletePhase6SmokeAsync(new(solutionTreePresent, projectNodes,
             !_projectSystem.State.IsLoading && _projectSystem.State.Root is not null,
             _projectSystem.CurrentSolution?.Projects.SelectMany(project => project.Documents).Any() == true,
             _projectSystem.HasLinkedDocuments,
-            _projectSystem.Contexts.Any(context => context.TargetFramework is not null && context.Configuration is not null), error));
+            _projectSystem.Contexts.Any(context => context.TargetFramework is not null && context.Configuration is not null),
+            projectFileEditable, contextMenuPresent, error));
 
     [JSInvokable]
     public void CancelEditorDrag() => _workspace.CancelDrag();

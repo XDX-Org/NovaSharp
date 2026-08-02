@@ -6,7 +6,7 @@
     else if (ProjectSystem.State.Root is { } root)
     {
         <div class="project-tree" role="tree">
-            <ProjectTreeNodeView Node="root" FileOpened="FileOpened" />
+            <ProjectTreeNodeView Node="root" FileOpened="FileOpened" ContextRequested="ContextRequested" />
         </div>
         <div class="project-summary">@ProjectSystem.State.ProjectCount projects · @ProjectSystem.State.DocumentCount files · @ProjectSystem.State.Elapsed.TotalSeconds.ToString("0.0")s</div>
     }
@@ -32,4 +32,5 @@
 @code {
     [Parameter, EditorRequired] public RoslynProjectSystem ProjectSystem { get; set; } = null!;
     [Parameter] public EventCallback<string> FileOpened { get; set; }
+    [Parameter] public EventCallback<ProjectNodeContextRequest> ContextRequested { get; set; }
 }
