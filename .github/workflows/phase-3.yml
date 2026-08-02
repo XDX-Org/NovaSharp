@@ -2,7 +2,7 @@ name: Workbench verification
 
 on:
   push:
-    branches: [main, phase-3, phase-4, phase-5]
+    branches: [main, phase-3, phase-4, phase-5, phase-6]
   pull_request:
   workflow_dispatch:
 
@@ -127,6 +127,34 @@ jobs:
           $result = Get-Content $report | ConvertFrom-Json
           $required = 'GroupsPresent', 'SharedEditsImmediate', 'IndependentSelections', 'SplitterAccessible', 'SplitterResized', 'DropZonesPresent', 'EdgeDropSplit', 'NarrowLayoutOperable', 'EscapeCancelsDrag', 'FractionalPointerResize', 'DirectionalFocus'
           foreach ($name in $required) { if (-not $result.$name) { throw "Phase 5 smoke assertion failed: $name" } }
+      - name: Run packaged Linux Phase 6 native-host smoke
+        if: runner.os == 'Linux'
+        shell: pwsh
+        env:
+          GTK_A11Y: none
+          GSK_RENDERER: cairo
+          LIBGL_ALWAYS_SOFTWARE: 1
+          WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: 1
+          WEBKIT_DISABLE_DMABUF_RENDERER: 1
+        run: |
+          $workspace = Join-Path $PWD 'phase6-workspace'
+          $report = Join-Path $PWD 'phase6-smoke.json'
+          New-Item -ItemType Directory -Path (Join-Path $workspace 'One') -Force | Out-Null
+          New-Item -ItemType Directory -Path (Join-Path $workspace 'Two') -Force | Out-Null
+          'public class Shared;' | Set-Content -Encoding utf8 (Join-Path $workspace 'Shared.cs')
+          $project = '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup><ItemGroup><Compile Include="../Shared.cs" Link="Shared.cs" /></ItemGroup></Project>'
+          $project | Set-Content -Encoding utf8 (Join-Path $workspace 'One/One.csproj')
+          $project | Set-Content -Encoding utf8 (Join-Path $workspace 'Two/Two.csproj')
+          '<Solution><Project Path="One/One.csproj" /><Project Path="Two/Two.csproj" /></Solution>' | Set-Content -Encoding utf8 (Join-Path $workspace 'Fixture.slnx')
+          $binary = 'artifacts/app/NovaSharp'
+          $arguments = @("--phase6-smoke=$(Join-Path $workspace 'Fixture.slnx')", "--smoke-report=$report")
+          $process = Start-Process xvfb-run -ArgumentList (@('-a', $binary) + $arguments) -PassThru
+          if (-not $process.WaitForExit(60000)) { $process.Kill($true); throw 'Phase 6 native smoke timed out.' }
+          if ($process.ExitCode -ne 0 -and -not (Test-Path $report)) { throw "Phase 6 native smoke exited with $($process.ExitCode) before reporting." }
+          $result = Get-Content $report | ConvertFrom-Json
+          $required = 'SolutionTreePresent', 'LoadCompleted', 'SemanticDocumentsMapped', 'LinkedContextsPresent', 'EvaluatedTargetContexts'
+          foreach ($name in $required) { if (-not $result.$name) { throw "Phase 6 smoke assertion failed: $name" } }
+          if ($result.ProjectNodes -lt 3) { throw 'Phase 6 project tree did not render expected nodes.' }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -136,4 +164,5 @@ jobs:
             phase3-smoke.json
             phase4-smoke.json
             phase5-smoke.json
+            phase6-smoke.json
             artifacts/app

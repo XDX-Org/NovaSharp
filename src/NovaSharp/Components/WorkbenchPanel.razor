@@ -13,6 +13,7 @@
                 {
                 <div class="menu-popup" role="menu" @onclick:stopPropagation>
                     <button role="menuitem" @onclick="OpenFileAsync">Open <kbd>Ctrl+O</kbd></button>
+                    <button role="menuitem" @onclick="OpenSolutionAsync">Open Solution</button>
                     <button role="menuitem" @onclick="SaveAsync" disabled="@(!_document.IsDirty)">Save <kbd>Ctrl+S</kbd></button>
                     <button role="menuitem" @onclick="SaveAsAsync" disabled="@(_document.FilePath is null)">Save As</button>
                 </div>
@@ -87,7 +88,7 @@
                                    ActiveChanged="ActiveChangedAsync" ContentEdited="ContentEditedAsync"
                                    CloseRequested="CloseRequestedAsync" />
         </div>
-        <WorkspaceExplorer @ref="_explorer" Document="_document" FileOpened="OpenWorkspaceFileAsync"
+        <WorkspaceExplorer @ref="_explorer" Document="_document" ProjectSystem="_projectSystem" FileOpened="OpenWorkspaceFileAsync"
                            FilePreviewed="PreviewWorkspaceFileAsync" OpenChanged="ExplorerOpenChanged" />
         <nav class="activity-bar" aria-label="Tool windows">
             <button class="@(_explorerOpen ? "active" : null)" @onclick="ToggleExplorerAsync" aria-label="Explorer"
@@ -98,12 +99,20 @@
     </div>
     <footer class="statusbar">
         <span class="status-message">@Status</span>
+        @if (ActiveContexts.Count > 1)
+        {
+            <select aria-label="Active project context" value="@ActiveContextId" @onchange="SelectContext">
+                @foreach (var context in ActiveContexts) { <option value="@context.Id.Id">@context.Name</option> }
+            </select>
+        }
         <span class="pointer-status" aria-live="polite">LMB: @(_leftMouseDown ? "Down" : "Up")</span>
     </footer>
 </main>
 
 @code {
     private readonly EditorGroupWorkspace _workspace = new();
+    private readonly RoslynProjectSystem _projectSystem = new();
+    private readonly HashSet<EditorDocumentState> _projectDocuments = [];
     private readonly EditorDocumentState _emptyDocument = new();
     private EditorLayoutPersistence _persistence = null!;
     private WorkspaceExplorer? _explorer;
@@ -117,6 +126,10 @@
     private DocumentTab? ActiveTab => _workspace.FocusedGroup.ActiveTab;
     private EditorDocumentState _document => ActiveTab?.Document ?? _emptyDocument;
     private string Status => _status ?? _workspace.LastError ?? (_document.IsReadOnly ? "Read-only" : _document.FilePath ?? "Ready");
+    private IReadOnlyList<(Microsoft.CodeAnalysis.ProjectId Id, string Name)> ActiveContexts =>
+        _document.FilePath is { } path ? _projectSystem.GetContexts(path) : [];
+    private string? ActiveContextId => _document.FilePath is { } path
+        ? _projectSystem.GetActiveDocument(path)?.Project.Id.Id.ToString() : null;
 
     protected override async Task OnInitializedAsync()
     {
@@ -124,6 +137,7 @@
         _persistence = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "NovaSharp", "workbench-session.json"));
         _workspace.Changed += WorkspaceChanged;
+        _projectSystem.Changed += ProjectSystemChanged;
         Program.ConfirmWorkbenchClose = ConfirmClose;
         if (Program.Phase5Workspace is not null)
         {
@@ -138,6 +152,7 @@
             foreach (var path in Directory.EnumerateFiles(Program.Phase4Workspace, "*.cs").Order()) await _workspace.OpenAsync(path);
         else if (Program.SmokeFile is not null) await OpenTabAsync(Program.SmokeFile);
         else await _workspace.RestoreAsync(await _persistence.LoadAsync());
+        if (Program.Phase6Solution is not null) await _projectSystem.OpenAsync(Program.Phase6Solution);
         TrackActiveDocument();
     }
 
@@ -152,6 +167,8 @@
         if (Program.Phase4Workspace is not null || Program.Phase5Workspace is not null)
             await JS.InvokeVoidAsync("novaSharp.startSmokePolling", _self,
                 Program.Phase4Workspace is not null, Program.Phase5Workspace is not null);
+        if (Program.Phase6Solution is not null)
+            await JS.InvokeVoidAsync("novaSharp.runPhase6Smoke", _self);
     }
 
     private async Task OpenFileAsync()
@@ -163,6 +180,16 @@
         foreach (var path in files ?? []) await _workspace.OpenAsync(path);
         TrackActiveDocument();
         await SaveLayoutAsync();
+    }
+    private async Task OpenSolutionAsync()
+    {
+        _openMenu = null;
+        var files = await Program.App.MainWindow.ShowOpenFileDialogAsync(title: "Open solution or project", multiSelect: false,
+            filterPatterns: [new FileFilter("Solution", "*.sln"), new FileFilter("XML solution", "*.slnx"),
+                new FileFilter("C# project", "*.csproj")]);
+        if (files is not [var path]) return;
+        await _projectSystem.OpenAsync(path);
+        _status = _projectSystem.State.Progress;
     }
     private Task OpenWorkspaceFileAsync(string path) => OpenTabAsync(path);
     private Task PreviewWorkspaceFileAsync(string path) => OpenTabAsync(path, true);
@@ -258,7 +285,29 @@
         _document.ExternalChangeDetected -= OnExternalChange;
         _document.ExternalChangeDetected += OnExternalChange;
         Program.ActiveDocument = _document;
+        SyncProjectDocuments();
     }
+
+    private void SyncProjectDocuments()
+    {
+        var current = _workspace.Layout.Groups.SelectMany(group => group.Tabs).Select(tab => tab.Document).ToHashSet();
+        foreach (var document in _projectDocuments.Except(current).ToArray())
+        {
+            _projectSystem.Untrack(document);
+            _projectDocuments.Remove(document);
+        }
+        foreach (var document in current)
+            if (_projectDocuments.Add(document)) _projectSystem.Track(document);
+    }
+
+    private void SelectContext(ChangeEventArgs args)
+    {
+        if (_document.FilePath is not { } path || !Guid.TryParse(args.Value?.ToString(), out var id)) return;
+        var context = ActiveContexts.FirstOrDefault(item => item.Id.Id == id);
+        if (context.Id is not null) _projectSystem.SelectContext(path, context.Id);
+    }
+
+    private void ProjectSystemChanged() => _ = InvokeAsync(StateHasChanged);
 
     private async Task HandleKeyAsync(KeyboardEventArgs args)
     {
@@ -292,6 +341,14 @@
 
     [JSInvokable]
     public Task CompletePhase5SmokeAsync(Phase5SmokeResult result) => Program.CompletePhase5SmokeAsync(result);
+
+    [JSInvokable]
+    public Task CompletePhase6SmokeAsync(bool solutionTreePresent, int projectNodes, string? error = null) =>
+        Program.CompletePhase6SmokeAsync(new(solutionTreePresent, projectNodes,
+            !_projectSystem.State.IsLoading && _projectSystem.State.Root is not null,
+            _projectSystem.CurrentSolution?.Projects.SelectMany(project => project.Documents).Any() == true,
+            _projectSystem.HasLinkedDocuments,
+            _projectSystem.Contexts.Any(context => context.TargetFramework is not null && context.Configuration is not null), error));
 
     [JSInvokable]
     public void CancelEditorDrag() => _workspace.CancelDrag();
@@ -361,10 +418,12 @@
     {
         _ = SaveLayoutAsync();
         _workspace.Changed -= WorkspaceChanged;
+        _projectSystem.Changed -= ProjectSystemChanged;
         UntrackActiveDocument();
         _workspace.Dispose();
         _emptyDocument.Dispose();
         _self?.Dispose();
+        _projectSystem.DisposeAsync().AsTask().GetAwaiter().GetResult();
         if (Program.ConfirmWorkbenchClose == ConfirmClose) Program.ConfirmWorkbenchClose = null;
     }
 

@@ -1,0 +1,30 @@
+@if (Node.Items.Length > 0)
+{
+    <details class="project-node" open="@(Node.Kind is ProjectNodeKind.Solution or ProjectNodeKind.Project)">
+        <summary title="@Node.Path"><span aria-hidden="true">@Icon</span> @Node.Name</summary>
+        <div role="group">
+            @foreach (var child in Node.Items)
+            {
+                <ProjectTreeNodeView Node="child" FileOpened="FileOpened" />
+            }
+        </div>
+    </details>
+}
+else
+{
+    <button class="project-leaf" title="@Node.Path" disabled="@(Node.Kind != ProjectNodeKind.File)"
+            @onclick="OpenAsync"><span aria-hidden="true">@Icon</span> @Node.Name</button>
+}
+
+@code {
+    [Parameter, EditorRequired] public ProjectNode Node { get; set; } = null!;
+    [Parameter] public EventCallback<string> FileOpened { get; set; }
+    private string Icon => Node.Kind switch
+    {
+        ProjectNodeKind.Solution => "◈", ProjectNodeKind.Project => "◆", ProjectNodeKind.Folder => "▾",
+        ProjectNodeKind.File => "C#", ProjectNodeKind.ProjectReference => "↗", ProjectNodeKind.Analyzer => "A",
+        _ => "◇"
+    };
+    private Task OpenAsync() => Node is { Kind: ProjectNodeKind.File, Path: { } path }
+        ? FileOpened.InvokeAsync(path) : Task.CompletedTask;
+}

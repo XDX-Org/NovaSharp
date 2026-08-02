@@ -209,6 +209,23 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
 .status-message { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .pointer-status { margin-left: auto; }
 .document-info { flex: 0 0 auto; margin-left: auto; color: #929cab; }
+.solution-explorer { max-height: 48%; overflow: auto; border-bottom: 1px solid #343842; background: #202329; }
+.solution-explorer > header { position: sticky; z-index: 2; top: 0; display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; background: #252931; font-size: var(--text-small); text-transform: uppercase; }
+.solution-explorer > header button { padding: 1px 5px; border: 0; background: transparent; }
+.project-tree { padding: 4px 5px 7px; font-size: var(--text-small); }
+.project-node summary, .project-leaf { min-height: 22px; padding: 2px 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-node summary { cursor: pointer; list-style-position: inside; }
+.project-node [role="group"] { padding-left: 13px; }
+.project-leaf { display: block; width: 100%; border: 0; color: #c8ced8; background: transparent; text-align: left; }
+.project-leaf:not(:disabled):hover, .project-node summary:hover { background: #313640; }
+.project-leaf:disabled { opacity: .72; }
+.project-progress, .project-summary, .project-diagnostics { padding: 5px 8px; color: #929cab; font-size: var(--text-small); }
+.project-diagnostics { color: #d6b875; }
+.project-diagnostics .error { padding: 3px 0; color: #ff8a8a; }
+.project-diagnostics .warning { padding: 3px 0; color: #d6b875; }
+.msbuild-log { padding: 5px 8px; color: #929cab; font-size: var(--text-small); }
+.msbuild-log pre { max-height: 100px; margin: 4px 0; overflow: auto; white-space: pre-wrap; font: var(--text-small) var(--font-code); }
+.statusbar select { max-width: 260px; border: 0; color: inherit; background: #343943; font: inherit; }
 
 .empty-state, .error { padding: 24px; color: #8f99a8; }
 .error { color: #ff8a8a; }

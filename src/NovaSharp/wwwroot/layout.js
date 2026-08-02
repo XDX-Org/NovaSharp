@@ -646,3 +646,14 @@ window.novaSharp.startSmokePolling = function (bridge, phase4, phase5) {
         else window.novaSharp.schedulePhase5Smoke(workbench, bridge);
     }, 100);
 };
+
+window.novaSharp.runPhase6Smoke = async function (bridge) {
+    try {
+        const solutionTreePresent = !!document.querySelector('.solution-explorer .project-tree');
+        const projectNodes = document.querySelectorAll('.solution-explorer .project-node').length;
+        await bridge.invokeMethodAsync('CompletePhase6SmokeAsync', solutionTreePresent, projectNodes, null);
+    } catch (error) {
+        await bridge.invokeMethodAsync('CompletePhase6SmokeAsync', false, 0,
+            `${error?.name ?? 'Error'}: ${error?.message ?? String(error)}`);
+    }
+};

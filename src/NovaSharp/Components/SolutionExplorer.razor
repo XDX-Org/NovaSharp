@@ -1,0 +1,41 @@
+<section class="solution-explorer" aria-label="Solution">
+    <header>
+        <strong>Solution</strong>
+        <button @onclick="ReloadAsync" disabled="@(ProjectSystem.State.Path is null || ProjectSystem.State.IsLoading)"
+                title="Reload solution" aria-label="Reload solution">↻</button>
+    </header>
+    @if (ProjectSystem.State.IsLoading)
+    {
+        <div class="project-progress" role="status">@ProjectSystem.State.Progress</div>
+    }
+    else if (ProjectSystem.State.Root is { } root)
+    {
+        <div class="project-tree" role="tree">
+            <ProjectTreeNodeView Node="root" FileOpened="FileOpened" />
+        </div>
+        <div class="project-summary">@ProjectSystem.State.ProjectCount projects · @ProjectSystem.State.DocumentCount files · @ProjectSystem.State.Elapsed.TotalSeconds.ToString("0.0")s</div>
+    }
+    @if (ProjectSystem.Diagnostics.Entries.Count > 0)
+    {
+        <details class="project-diagnostics">
+            <summary>@ProjectSystem.Diagnostics.Entries.Count project diagnostics</summary>
+            @foreach (var diagnostic in ProjectSystem.Diagnostics.Entries)
+            {
+                <div class="@diagnostic.Severity.ToString().ToLowerInvariant()">@diagnostic.Message</div>
+            }
+        </details>
+    }
+    @if (ProjectSystem.RawMsBuildLog.Count > 0)
+    {
+        <details class="msbuild-log">
+            <summary>Raw MSBuild log</summary>
+            @foreach (var message in ProjectSystem.RawMsBuildLog) { <pre>@message</pre> }
+        </details>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public RoslynProjectSystem ProjectSystem { get; set; } = null!;
+    [Parameter] public EventCallback<string> FileOpened { get; set; }
+    private Task ReloadAsync() => ProjectSystem.ReloadAsync();
+}

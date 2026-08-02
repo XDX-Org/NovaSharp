@@ -13,6 +13,10 @@
             <button @onclick="RevealAsync" disabled="@(Document.FilePath is null || !_workspace.Contains(Document.FilePath))" title="Reveal active file" aria-label="Reveal active file">◎</button>
         </span>
     </header>
+        @if (ProjectSystem is not null)
+        {
+            <SolutionExplorer ProjectSystem="ProjectSystem" FileOpened="FileOpened" />
+        }
         @if (_workspace.RootPath is null)
         {
             <div class="explorer-empty"><button @onclick="OpenFolderAsync">Open Folder</button></div>
@@ -106,6 +110,7 @@
     [Parameter] public EventCallback<string> FileOpened { get; set; }
     [Parameter] public EventCallback<string> FilePreviewed { get; set; }
     [Parameter] public EventCallback<bool> OpenChanged { get; set; }
+    [Parameter] public RoslynProjectSystem? ProjectSystem { get; set; }
     private readonly WorkspaceService _workspace = new(Program.Configuration.Current.ExplorerIgnoredNames);
     private readonly Dictionary<string, IReadOnlyList<WorkspaceEntry>> _children = new();
     private readonly HashSet<string> _expanded = new(StringComparer.Ordinal);

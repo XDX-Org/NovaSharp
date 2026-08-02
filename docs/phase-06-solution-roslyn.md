@@ -16,6 +16,12 @@ Load a .NET solution or project accurately enough for semantic C# services.
 
 Build execution and IntelliSense presentation are deferred; this phase establishes correct semantic inputs.
 
+## Supported inputs and budgets
+
+- SDK-style C# console, library, ASP.NET Core, Razor, multi-project, and multi-target projects supported by the selected installed SDK.
+- On the Phase 6 fixture (8 projects, including 4 multi-target projects, and 500 documents), initial solution load should complete within 10 seconds, reload within 5 seconds, and retain no more than 3 live Roslyn solution snapshots after pending editor updates settle. Measure on the Linux CI `ubuntu-24.04` x64 runner; other supported platforms report the same counters without using them as hard timing gates.
+- Project-system decisions are recorded in [ADR 0003](decisions/0003-phase-06-project-system.md).
+
 ## Design constraints
 
 - Roslyn Workspaces are the solution-wide entry point for analysis and refactoring; syntax trees and semantic models belong to immutable snapshots ([Roslyn SDK model](https://learn.microsoft.com/en-us/dotnet/csharp/roslyn-sdk/compiler-api-model)).
@@ -31,6 +37,23 @@ Build execution and IntelliSense presentation are deferred; this phase establish
 - Unsaved changes appear in the active Roslyn snapshot without touching disk.
 - Reload preserves open documents and reports removed/changed project contexts.
 - Integration tests use fixture solutions and run without relying on machine-global state beyond the selected SDK.
+
+## Implementation
+
+- `Microsoft.Build.Locator` selects the installed SDK and `MSBuildWorkspace` evaluates solutions and projects.
+- One `RoslynProjectSystem` owns immutable solution snapshots, physical-path/document-ID mappings, active linked-file contexts, project watching, reload, and stale editor-update cancellation.
+- The Explorer shows solution, evaluated project/target-framework, file, project-reference, assembly-reference, and analyzer nodes. Load progress, concise structured diagnostics, and raw MSBuild messages are separate views.
+- Editor mutations publish versioned snapshots. Dirty text is applied to every linked Roslyn document context without changing disk and is reapplied after reload.
+
+## Verification
+
+On 2026-08-02, the Linux local gate passed a warning-free `net10.0` build and all 54 tests. Phase 6 fixtures cover library, console, ASP.NET Core/Razor, multi-project, multi-target, project references, compiler settings, analyzers, linked files, dirty snapshots, reload preservation, and the named 500-document load budget. Supported-platform native interaction and packaging gates remain required before the delivery-plan status can become complete.
+
+## Known limitations
+
+- Only SDK-style C# projects supported by the selected installed SDK are loaded.
+- Configuration defaults to MSBuild's `Debug` evaluation; configuration selection is deferred until build/run commands exist.
+- Solution folders are represented by evaluated projects rather than as buildable project contexts.
 
 ## Next phase
 

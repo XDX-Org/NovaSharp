@@ -70,6 +70,7 @@ public sealed class EditorDocumentState : IDisposable
     private CancellationTokenSource? _watcherDebounce;
 
     internal event Action? ExternalChangeDetected;
+    internal event Action<EditorSnapshot>? ContentChanged;
 
     internal string? FilePath { get; private set; }
     internal string DisplayName => FilePath is null ? "Untitled" : Path.GetFileName(FilePath);
@@ -82,6 +83,7 @@ public sealed class EditorDocumentState : IDisposable
     internal bool CanUndo => _undo.Count > 0;
     internal bool CanRedo => _redo.Count > 0;
     internal bool IsDeletedOnDisk => FilePath is not null && !File.Exists(FilePath);
+    internal EditorSnapshot CreateSnapshot() => new(FilePath ?? string.Empty, _content ?? string.Empty, Version, IsDirty);
 
     internal string? Content
     {
@@ -197,6 +199,7 @@ public sealed class EditorDocumentState : IDisposable
         FilePath = relocated;
         _diskStamp = File.Exists(FilePath) ? DiskStamp.Read(FilePath) : null;
         StartWatching(FilePath);
+        ContentChanged?.Invoke(CreateSnapshot());
     }
 
     internal void Undo()
@@ -240,6 +243,7 @@ public sealed class EditorDocumentState : IDisposable
         _redo.Clear();
         Error = null;
         StartWatching(path);
+        ContentChanged?.Invoke(CreateSnapshot());
     }
 
     private void SetContent(string value, bool recordUndo)
@@ -257,6 +261,7 @@ public sealed class EditorDocumentState : IDisposable
 
         _content = value;
         Version++;
+        if (FilePath is not null) ContentChanged?.Invoke(CreateSnapshot());
     }
 
     private static (string Text, DocumentEncoding Encoding) Decode(byte[] bytes)
