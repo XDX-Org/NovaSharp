@@ -84,7 +84,7 @@ jobs:
           $required = 'TreePresent', 'RowsBounded', 'KeyboardNavigation', 'ContextActionsRelevant', 'ContextMenuInsideViewport', 'ContextMenuDismissed', 'NativeContextBypass', 'RenamePreservedDirtySelection'
           foreach ($name in $required) { if (-not $result.$name) { throw "Phase 3 smoke assertion failed: $name" } }
       - name: Run packaged Linux Phase 4 native-host smoke
-        if: runner.os == 'Linux' && github.ref != 'refs/heads/phase-5'
+        if: runner.os == 'Linux'
         shell: pwsh
         env:
           GTK_A11Y: none
