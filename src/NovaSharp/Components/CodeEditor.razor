@@ -22,16 +22,19 @@
     [Parameter, EditorRequired] public string Value { get; set; } = string.Empty;
     [Parameter, EditorRequired] public EventCallback<string> ValueChanged { get; set; }
     [Parameter] public bool WordWrap { get; set; }
+    [Parameter, EditorRequired] public EditorViewState ViewState { get; set; } = null!;
     private ElementReference _root;
     private IJSObjectReference? _module;
+    private DotNetObjectReference<CodeEditor>? _self;
     private ICollection<EditorLine> Lines => CSharpTokenizer.Tokenize(Value).ToArray();
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
         _module = await JS.InvokeAsync<IJSObjectReference>("import", "./editor.js");
-        await _module.InvokeVoidAsync("createEditor", _root, WordWrap);
-        if (Program.SmokeFile is not null)
+        _self = DotNetObjectReference.Create(this);
+        await _module.InvokeVoidAsync("createEditor", _root, WordWrap, _self, ViewState.SelectionStart, ViewState.SelectionEnd);
+        if (Program.Phase2SmokeFile is not null)
         {
             var result = await _module.InvokeAsync<EditorSmokeResult>("runSmokeChecks", _root);
             await Program.CompleteSmokeAsync(result);
@@ -39,6 +42,9 @@
     }
 
     private Task OnInput(ChangeEventArgs args) => ValueChanged.InvokeAsync(args.Value?.ToString() ?? string.Empty);
+
+    [JSInvokable]
+    public void SelectionChanged(int start, int end) => ViewState.SetSelection(start, end, Value.Length);
 
     public async ValueTask DisposeAsync()
     {
@@ -48,5 +54,6 @@
             catch (JSDisconnectedException) { }
             await _module.DisposeAsync();
         }
+        _self?.Dispose();
     }
 }

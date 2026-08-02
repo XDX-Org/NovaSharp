@@ -1,8 +1,8 @@
-name: Phase 2 verification
+name: Phase 3 verification
 
 on:
   push:
-    branches: [main, phase-2]
+    branches: [main, phase-3]
   pull_request:
   workflow_dispatch:
 
@@ -35,7 +35,9 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libgtk-4-1 libwebkitgtk-6.0-4 xvfb
       - run: dotnet restore NovaSharp.slnx -r ${{ matrix.rid }}
       - run: dotnet build NovaSharp.slnx --no-restore --configuration Release --warnaserror
-      - run: dotnet test tests/NovaSharp.Tests/NovaSharp.Tests.csproj --no-build --no-restore --configuration Release
+      - name: Run unit and acceptance tests
+        shell: pwsh
+        run: dotnet tests/NovaSharp.Tests/bin/Release/net10.0/NovaSharp.Tests.dll --progress off
       - run: dotnet publish src/NovaSharp/NovaSharp.csproj --no-restore --configuration Release --runtime ${{ matrix.rid }} --self-contained false --output artifacts/app
       - name: Run packaged Linux native-host smoke
         if: runner.os == 'Linux'
@@ -58,10 +60,34 @@ jobs:
           $result = Get-Content $report | ConvertFrom-Json
           $required = 'InputPresent', 'SelectionReplacement', 'BracketPairing', 'TabInsertion', 'CompositionCommittedOnce', 'RowsBounded', 'DocumentLoaded', 'DocumentClean'
           foreach ($name in $required) { if (-not $result.$name) { throw "Smoke assertion failed: $name" } }
+      - name: Run packaged Linux Phase 3 native-host smoke
+        if: runner.os == 'Linux'
+        shell: pwsh
+        env:
+          GTK_A11Y: none
+          GSK_RENDERER: cairo
+          LIBGL_ALWAYS_SOFTWARE: 1
+          WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: 1
+          WEBKIT_DISABLE_DMABUF_RENDERER: 1
+        run: |
+          $workspace = Join-Path $PWD 'phase3-workspace'
+          $report = Join-Path $PWD 'phase3-smoke.json'
+          New-Item -ItemType Directory -Path $workspace | Out-Null
+          'class Active;' | Set-Content -Encoding utf8 (Join-Path $workspace 'active.cs')
+          1..500 | ForEach-Object { New-Item -ItemType File -Path (Join-Path $workspace "fixture-$_.cs") | Out-Null }
+          $binary = 'artifacts/app/NovaSharp'
+          $arguments = @("--phase3-smoke=$workspace", "--smoke-report=$report")
+          $process = Start-Process xvfb-run -ArgumentList (@('-a', $binary) + $arguments) -PassThru
+          if (-not $process.WaitForExit(60000)) { $process.Kill($true); throw 'Phase 3 native smoke timed out.' }
+          if ($process.ExitCode -ne 0) { throw "Phase 3 native smoke exited with $($process.ExitCode)." }
+          $result = Get-Content $report | ConvertFrom-Json
+          $required = 'TreePresent', 'RowsBounded', 'KeyboardNavigation', 'ContextActionsRelevant', 'ContextMenuInsideViewport', 'ContextMenuDismissed', 'RenamePreservedDirtySelection'
+          foreach ($name in $required) { if (-not $result.$name) { throw "Phase 3 smoke assertion failed: $name" } }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: phase-2-${{ matrix.rid }}
+          name: phase-3-${{ matrix.rid }}
           path: |
             phase2-smoke.json
+            phase3-smoke.json
             artifacts/app

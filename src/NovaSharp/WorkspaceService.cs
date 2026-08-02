@@ -48,6 +48,7 @@ internal sealed class WorkspaceService : IDisposable
     internal string? RootPath { get; private set; }
     internal event Action<string?>? Changed;
     internal event Action<string>? Error;
+    internal event Action? RescanRequired;
 
     internal void Open(string path)
     {
@@ -68,7 +69,7 @@ internal sealed class WorkspaceService : IDisposable
 
     internal async Task<IReadOnlyList<WorkspaceEntry>> GetChildrenAsync(string path, CancellationToken cancellationToken = default)
     {
-        var canonical = RequireInside(path);
+        var canonical = RequireTraversableDirectory(path);
         return await Task.Run<IReadOnlyList<WorkspaceEntry>>(() =>
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -141,7 +142,7 @@ internal sealed class WorkspaceService : IDisposable
     {
         if (string.IsNullOrWhiteSpace(name) || name is "." or ".." || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
             throw new ArgumentException("Enter a valid file or folder name.", nameof(name));
-        var directory = RequireInside(parent);
+        var directory = RequireTraversableDirectory(parent);
         if (!Directory.Exists(directory)) throw new DirectoryNotFoundException(directory);
         return RequireInside(Path.Combine(directory, name));
     }
@@ -151,6 +152,22 @@ internal sealed class WorkspaceService : IDisposable
         if (RootPath is null) throw new InvalidOperationException("No workspace is open.");
         var canonical = Canonical(path);
         if (!Contains(canonical)) throw new UnauthorizedAccessException("The path is outside the workspace.");
+        return canonical;
+    }
+
+    private string RequireTraversableDirectory(string path)
+    {
+        var canonical = RequireInside(path);
+        if (!Directory.Exists(canonical)) throw new DirectoryNotFoundException(canonical);
+        var relative = Path.GetRelativePath(RootPath!, canonical);
+        var current = RootPath!;
+        foreach (var segment in relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
+        {
+            if (segment is "" or ".") continue;
+            current = Path.Combine(current, segment);
+            if (File.GetAttributes(current).HasFlag(FileAttributes.ReparsePoint))
+                throw new UnauthorizedAccessException("Symbolic links are Explorer leaves and cannot be traversed.");
+        }
         return canonical;
     }
 
@@ -168,14 +185,21 @@ internal sealed class WorkspaceService : IDisposable
         _watcher.Deleted += OnChanged;
         _watcher.Renamed += OnChanged;
         _watcher.Changed += OnChanged;
-        _watcher.Error += (_, args) =>
-        {
-            Error?.Invoke(args.GetException().Message);
-            Changed?.Invoke(RootPath);
-        };
+        _watcher.Error += (_, args) => HandleWatcherError(args.GetException());
     }
 
-    private void OnChanged(object sender, FileSystemEventArgs args) => Changed?.Invoke(Path.GetDirectoryName(args.FullPath));
+    private void OnChanged(object sender, FileSystemEventArgs args)
+    {
+        if (args is RenamedEventArgs renamed)
+            Changed?.Invoke(Path.GetDirectoryName(renamed.OldFullPath));
+        Changed?.Invoke(Path.GetDirectoryName(args.FullPath));
+    }
+
+    internal void HandleWatcherError(Exception exception)
+    {
+        Error?.Invoke($"Filesystem watcher lost changes: {exception.Message}. The Explorer was rescanned.");
+        RescanRequired?.Invoke();
+    }
     private static string Canonical(string path) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
     private static bool PathEquals(string left, string right) => string.Equals(left, right, PathComparison);
     private static StringComparison PathComparison => OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;

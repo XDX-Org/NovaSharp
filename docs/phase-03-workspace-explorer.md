@@ -2,9 +2,16 @@
 
 ## Implementation status
 
-In progress. The first slice includes folder open/close and restore, lazy virtualized tree expansion, default ignores, file/folder operations, active-file reveal, watcher refresh, keyboard navigation, symlink leaves, and versioned sidebar/expansion persistence.
+Implementation complete; verification in progress. Folder open/close and restore, lazy virtualized expansion, configurable/default ignores, create/rename/delete/move operations, active-file reveal, targeted watcher refresh, overflow rescan, keyboard/context interaction, symlink leaves, and versioned sidebar/expansion persistence are implemented.
 
-Remaining completion work includes measured 20,000-entry performance evidence, richer move interaction, watcher overflow stress testing, and cross-platform native-host verification.
+The Release build and 27 tests pass locally. The generated 20,000-file fixture completes its full lazy enumeration within the five-second budget on an AMD Ryzen 7 5800X3D with NVMe storage. The Phase 3 workflow builds, tests, and publishes all four supported targets and runs the packaged Explorer interaction smoke under Linux/Xvfb. Phase status remains in progress until that matrix passes and Windows/macOS native-host checks are recorded.
+
+## Verification budget
+
+| Scenario | Fixture hardware | Budget |
+|---|---|---:|
+| Enumerate 20 directories containing 1,000 files each | AMD Ryzen 7 5800X3D, NVMe, Linux x64 | 5 seconds |
+| Packaged Explorer keyboard/context/rename smoke | GitHub `ubuntu-24.04`, Xvfb | 60 seconds |
 
 ## Goal
 
@@ -37,8 +44,8 @@ Phase 3 introduces the app-wide context-menu host. The menu is selected from the
 
 | Surface | Actions |
 |---|---|
-| Explorer folder or workspace root | New file, new folder, rename, delete, close workspace; invalid actions are disabled |
-| Explorer file | New file/folder in its parent, rename, delete, close workspace |
+| Explorer folder or workspace root | New file, new folder, rename, move, delete, close workspace; invalid actions are disabled |
+| Explorer file | New file/folder in its parent, rename, move, delete, close workspace |
 | Editable editor or text field | Undo, cut, copy, paste, delete, select all; selection and read-only state control enablement |
 | Selected read-only text | Copy |
 | Surface with no contextual action | No custom menu |

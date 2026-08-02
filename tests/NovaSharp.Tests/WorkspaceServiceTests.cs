@@ -1,3 +1,6 @@
+using System.Collections.Concurrent;
+using System.Diagnostics;
+
 namespace NovaSharp.Tests;
 
 [TestClass]
@@ -9,9 +12,10 @@ public sealed class WorkspaceServiceTests
         using var fixture = new WorkspaceFixture();
         Directory.CreateDirectory(Path.Combine(fixture.Root, "z-folder"));
         Directory.CreateDirectory(Path.Combine(fixture.Root, "bin"));
+        Directory.CreateDirectory(Path.Combine(fixture.Root, ".cache"));
         await File.WriteAllTextAsync(Path.Combine(fixture.Root, "a.cs"), "class A;");
         await File.WriteAllTextAsync(Path.Combine(fixture.Root, "b.data"), "data");
-        using var workspace = new WorkspaceService();
+        using var workspace = new WorkspaceService([".cache"]);
         workspace.Open(fixture.Root);
 
         var children = await workspace.GetChildrenAsync(fixture.Root);
@@ -31,8 +35,10 @@ public sealed class WorkspaceServiceTests
         using var workspace = new WorkspaceService();
         workspace.Open(fixture.Root);
         using var document = new EditorDocumentState();
+        var view = new EditorViewState();
         document.OpenAsync(original).GetAwaiter().GetResult();
         document.Content = "class Dirty;";
+        view.SetSelection(6, 11, document.Content.Length);
 
         Assert.ThrowsExactly<UnauthorizedAccessException>(() => workspace.CreateFile(Path.GetDirectoryName(fixture.Root)!, "escape.cs"));
         var renamed = workspace.Move(original, fixture.Root, "after.cs");
@@ -41,7 +47,97 @@ public sealed class WorkspaceServiceTests
         Assert.AreEqual(renamed, document.FilePath);
         Assert.AreEqual("class Dirty;", document.Content);
         Assert.IsTrue(document.IsDirty);
+        Assert.AreEqual(6, view.SelectionStart);
+        Assert.AreEqual(11, view.SelectionEnd);
         Assert.IsTrue(File.Exists(renamed));
+    }
+
+    [TestMethod]
+    public async Task MoveAcrossFoldersRefreshesBothWatcherBranches()
+    {
+        using var fixture = new WorkspaceFixture();
+        var source = Path.Combine(fixture.Root, "source");
+        var destination = Path.Combine(fixture.Root, "destination");
+        Directory.CreateDirectory(source);
+        Directory.CreateDirectory(destination);
+        var oldPath = Path.Combine(source, "item.cs");
+        await File.WriteAllTextAsync(oldPath, "class Item;");
+        using var workspace = new WorkspaceService();
+        var changed = new ConcurrentDictionary<string, byte>(PathComparer);
+        workspace.Changed += path => { if (path is not null) changed.TryAdd(path, 0); };
+        workspace.Open(fixture.Root);
+
+        File.Move(oldPath, Path.Combine(destination, "item.cs"));
+
+        await WaitUntilAsync(() => changed.ContainsKey(source) && changed.ContainsKey(destination));
+    }
+
+    [TestMethod]
+    public async Task MovingFolderRelocatesDirtyDocumentAndRetainsViewSelection()
+    {
+        using var fixture = new WorkspaceFixture();
+        var folder = Path.Combine(fixture.Root, "before");
+        Directory.CreateDirectory(folder);
+        var file = Path.Combine(folder, "active.cs");
+        await File.WriteAllTextAsync(file, "class Before;");
+        using var document = new EditorDocumentState();
+        await document.OpenAsync(file);
+        document.Content = "class Dirty;";
+        var view = new EditorViewState();
+        view.SetSelection(6, 11, document.Content.Length);
+        using var workspace = new WorkspaceService();
+        workspace.Open(fixture.Root);
+
+        var movedFolder = workspace.Move(folder, fixture.Root, "after");
+        document.Relocate(folder, movedFolder);
+
+        Assert.AreEqual(Path.Combine(movedFolder, "active.cs"), document.FilePath);
+        Assert.AreEqual("class Dirty;", document.Content);
+        Assert.IsTrue(document.IsDirty);
+        Assert.AreEqual(6, view.SelectionStart);
+        Assert.AreEqual(11, view.SelectionEnd);
+    }
+
+    [TestMethod]
+    public void WatcherOverflowProducesRecoverableErrorAndFullRescanRequest()
+    {
+        using var fixture = new WorkspaceFixture();
+        using var workspace = new WorkspaceService();
+        string? message = null;
+        var rescans = 0;
+        workspace.Error += value => message = value;
+        workspace.RescanRequired += () => rescans++;
+        workspace.Open(fixture.Root);
+
+        workspace.HandleWatcherError(new InternalBufferOverflowException("buffer full"));
+
+        Assert.IsTrue(message?.Contains("rescan", StringComparison.OrdinalIgnoreCase));
+        Assert.AreEqual(1, rescans);
+    }
+
+    [TestMethod]
+    [Timeout(30000)]
+    public async Task TwentyThousandEntryWorkspaceEnumeratesResponsively()
+    {
+        using var fixture = new WorkspaceFixture();
+        for (var directory = 0; directory < 20; directory++)
+        {
+            var path = Path.Combine(fixture.Root, $"folder-{directory:D2}");
+            Directory.CreateDirectory(path);
+            for (var file = 0; file < 1000; file++)
+                File.Create(Path.Combine(path, $"file-{file:D4}.cs")).Dispose();
+        }
+        using var workspace = new WorkspaceService();
+        workspace.Open(fixture.Root);
+
+        var stopwatch = Stopwatch.StartNew();
+        var roots = await workspace.GetChildrenAsync(fixture.Root);
+        var children = await Task.WhenAll(roots.Select(entry => workspace.GetChildrenAsync(entry.Path)));
+        stopwatch.Stop();
+
+        Assert.AreEqual(20_000, children.Sum(entries => entries.Count));
+        Assert.IsTrue(stopwatch.Elapsed < TimeSpan.FromSeconds(5),
+            $"20,000-entry enumeration took {stopwatch.Elapsed}.");
     }
 
     [TestMethod]
@@ -81,6 +177,9 @@ public sealed class WorkspaceServiceTests
 
             Assert.AreEqual(WorkspaceEntryKind.SymbolicLink, link.Kind);
             Assert.IsFalse(link.IsDirectory);
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => workspace.GetChildrenAsync(link.Path));
+            Assert.ThrowsExactly<UnauthorizedAccessException>(() => workspace.CreateFile(link.Path, "escape.cs"));
+            Assert.IsFalse(File.Exists(Path.Combine(outside, "escape.cs")));
         }
         finally { Directory.Delete(outside); }
     }
@@ -91,4 +190,14 @@ public sealed class WorkspaceServiceTests
         internal WorkspaceFixture() => Directory.CreateDirectory(Root);
         public void Dispose() { if (Directory.Exists(Root)) Directory.Delete(Root, recursive: true); }
     }
+
+    private static async Task WaitUntilAsync(Func<bool> condition)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while (!condition()) await Task.Delay(25, timeout.Token);
+    }
+
+    private static StringComparer PathComparer => OperatingSystem.IsWindows()
+        ? StringComparer.OrdinalIgnoreCase
+        : StringComparer.Ordinal;
 }

@@ -141,4 +141,78 @@ window.novaSharp.initExplorerResize = function (explorer, dotNet) {
     });
 };
 
+window.novaSharp.runPhase3Smoke = async function (explorer, dotNet) {
+    const wait = (milliseconds = 100) => new Promise(resolve => setTimeout(resolve, milliseconds));
+    const key = (target, value, options = {}) => target.dispatchEvent(new KeyboardEvent("keydown", {
+        key: value, bubbles: true, cancelable: true, ...options
+    }));
+    try {
+        const tree = explorer?.querySelector('[role="tree"]');
+        const root = tree?.querySelector('[role="treeitem"]');
+        const initialName = root?.querySelector(".tree-name")?.textContent;
+        key(tree, "ArrowRight");
+        await wait(250);
+        const rows = [...tree.querySelectorAll('[role="treeitem"]')];
+        const active = rows.find(row => row.querySelector(".tree-name")?.textContent === "active.cs");
+        active?.click();
+        await wait();
+        const keyboardNavigation = explorer.querySelector(".tree-row.selected .tree-name")?.textContent === "active.cs";
+
+        const input = document.querySelector(".editor-input");
+        input.value = "class DirtySelection;";
+        input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText" }));
+        input.setSelectionRange(6, 20);
+        input.dispatchEvent(new Event("select", { bubbles: true }));
+        key(tree, "F2");
+        await wait();
+        const renameInput = explorer.querySelector('input[aria-label="New name"]');
+        if (renameInput) {
+            renameInput.value = "renamed.cs";
+            renameInput.dispatchEvent(new Event("input", { bubbles: true }));
+            renameInput.closest("form")?.requestSubmit();
+        }
+        await wait(250);
+        const renamePreservedDirtySelection = input.value === "class DirtySelection;"
+            && input.selectionStart === 6 && input.selectionEnd === 20
+            && explorer.querySelector(".tree-row.selected .tree-name")?.textContent === "renamed.cs";
+
+        key(tree, "ContextMenu");
+        await wait();
+        const keyboardMenu = explorer.querySelector('[role="menu"]');
+        const contextActionsRelevant = !!keyboardMenu
+            && keyboardMenu.querySelector('button:nth-of-type(3)')?.disabled === false
+            && [...keyboardMenu.querySelectorAll("button")].some(button => button.textContent.includes("Move"));
+        key(tree, "Escape");
+        await wait();
+        const contextMenuDismissed = !explorer.querySelector('[role="menu"]');
+        const renamed = explorer.querySelector(".tree-row.selected");
+        renamed?.dispatchEvent(new MouseEvent("contextmenu", {
+            bubbles: true, cancelable: true, clientX: window.innerWidth - 1, clientY: window.innerHeight - 1
+        }));
+        await wait();
+        const edgeMenu = explorer.querySelector('[role="menu"]');
+        const bounds = edgeMenu?.getBoundingClientRect();
+        const contextMenuInsideViewport = !!bounds && bounds.left >= 0 && bounds.top >= 0
+            && bounds.right <= window.innerWidth && bounds.bottom <= window.innerHeight;
+        const renderedRows = tree.querySelectorAll('[role="treeitem"]').length;
+        const rowLimit = Math.ceil(tree.clientHeight / 26) + 18;
+        await dotNet.invokeMethodAsync("CompletePhase3SmokeAsync", {
+            treePresent: !!tree && initialName?.length > 0,
+            rowsBounded: renderedRows > 0 && renderedRows <= rowLimit,
+            keyboardNavigation,
+            contextActionsRelevant,
+            contextMenuInsideViewport,
+            contextMenuDismissed,
+            renamePreservedDirtySelection,
+            renderedRows
+        });
+    } catch {
+        await dotNet.invokeMethodAsync("CompletePhase3SmokeAsync", {
+            treePresent: false, rowsBounded: false, keyboardNavigation: false,
+            contextActionsRelevant: false, contextMenuInsideViewport: false,
+            contextMenuDismissed: false, renamePreservedDirtySelection: false, renderedRows: 0
+        });
+    }
+};
+
 window.novaSharp.initAppContextMenu();

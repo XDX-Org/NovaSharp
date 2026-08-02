@@ -1,7 +1,8 @@
-export function createEditor(root, wordWrap) {
+export function createEditor(root, wordWrap, dotNet, selectionStart, selectionEnd) {
     const input = root.querySelector('.editor-input');
     const presentation = root.querySelector('.presentation');
     input.wrap = wordWrap ? 'soft' : 'off';
+    input.setSelectionRange(selectionStart, selectionEnd);
 
     const sync = () => {
         presentation.scrollTop = input.scrollTop;
@@ -33,12 +34,16 @@ export function createEditor(root, wordWrap) {
         composing = false;
         input.dispatchEvent(new Event('input', { bubbles: true }));
     };
+    const selectionChange = () => dotNet?.invokeMethodAsync('SelectionChanged', input.selectionStart, input.selectionEnd);
     input.addEventListener('scroll', sync);
     input.addEventListener('keydown', keydown);
     input.addEventListener('compositionstart', compositionStart);
     input.addEventListener('input', compositionInput);
     input.addEventListener('compositionend', compositionEnd);
-    root.__novaEditor = { input, sync, keydown, compositionStart, compositionInput, compositionEnd };
+    input.addEventListener('select', selectionChange);
+    input.addEventListener('keyup', selectionChange);
+    input.addEventListener('pointerup', selectionChange);
+    root.__novaEditor = { input, sync, keydown, compositionStart, compositionInput, compositionEnd, selectionChange };
 }
 
 export function disposeEditor(root) {
@@ -49,6 +54,9 @@ export function disposeEditor(root) {
     editor.input.removeEventListener('compositionstart', editor.compositionStart);
     editor.input.removeEventListener('input', editor.compositionInput);
     editor.input.removeEventListener('compositionend', editor.compositionEnd);
+    editor.input.removeEventListener('select', editor.selectionChange);
+    editor.input.removeEventListener('keyup', editor.selectionChange);
+    editor.input.removeEventListener('pointerup', editor.selectionChange);
     delete root.__novaEditor;
 }
 

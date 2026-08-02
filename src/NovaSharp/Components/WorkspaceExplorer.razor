@@ -30,6 +30,13 @@
                             <span>Name</span>
                             <input aria-label="@_editMode" @bind="_editName" autofocus />
                         </label>
+                        @if (_editMode == "Move item")
+                        {
+                            <label class="modal-field">
+                                <span>Destination folder (relative to workspace)</span>
+                                <input aria-label="Destination folder" @bind="_moveDestination" />
+                            </label>
+                        }
                         <div class="modal-actions">
                             <button type="submit">@EditAction</button>
                             <button type="button" @onclick="CancelEdit">Cancel</button>
@@ -51,7 +58,7 @@
                 </div>
             }
             @if (_error is not null) { <div class="explorer-error" role="alert">@_error <button @onclick="ClearError">×</button></div> }
-            <div class="tree" role="tree" aria-label="Workspace files" @onkeydown="HandleKeyAsync"
+            <div class="tree" role="tree" aria-label="Workspace files" @onkeydown="HandleKeyAsync" @onkeydown:preventDefault
                  @oncontextmenu="ShowRootContextMenu" @oncontextmenu:preventDefault>
                 <Virtualize Items="_visible" Context="row" ItemSize="26" OverscanCount="8">
                     <div class="tree-row @(IsSelected(row.Entry) ? "selected" : null)" role="treeitem"
@@ -78,6 +85,7 @@
                     <button role="menuitem" @onclick='() => BeginCreate(true)'>New folder</button>
                     <hr />
                     <button role="menuitem" @onclick="BeginRename" disabled="@(_selected is null || IsRoot(_selected.Path))">Rename <kbd>F2</kbd></button>
+                    <button role="menuitem" @onclick="BeginMove" disabled="@(_selected is null || IsRoot(_selected.Path))">Move <kbd>Ctrl+M</kbd></button>
                     <button role="menuitem" @onclick="BeginDelete" disabled="@(_selected is null || IsRoot(_selected.Path))">Delete <kbd>Del</kbd></button>
                     <hr />
                     <button role="menuitem" @onclick="CloseWorkspaceAsync">Close workspace</button>
@@ -92,7 +100,7 @@
     [Parameter, EditorRequired] public EditorDocumentState Document { get; set; } = null!;
     [Parameter] public EventCallback<string> FileOpened { get; set; }
     [Parameter] public EventCallback<bool> OpenChanged { get; set; }
-    private readonly WorkspaceService _workspace = new();
+    private readonly WorkspaceService _workspace = new(Program.Configuration.Current.ExplorerIgnoredNames);
     private readonly Dictionary<string, IReadOnlyList<WorkspaceEntry>> _children = new();
     private readonly HashSet<string> _expanded = new(StringComparer.Ordinal);
     private readonly List<TreeRow> _visible = [];
@@ -103,11 +111,12 @@
     private WorkspaceRestoreState _state = new();
     private WorkspaceEntry? _selected, _deletePending;
     private string? _editMode, _error;
-    private string _editName = "";
-    private string EditTitle => _editMode switch { "New file name" => "New file", "New folder name" => "New folder", _ => "Rename item" };
-    private string EditAction => _editMode == "New name" ? "Rename" : "Create";
+    private string _editName = "", _moveDestination = "";
+    private string EditTitle => _editMode switch { "New file name" => "New file", "New folder name" => "New folder", "Move item" => "Move item", _ => "Rename item" };
+    private string EditAction => _editMode switch { "New name" => "Rename", "Move item" => "Move", _ => "Create" };
     private bool _showContextMenu;
     private bool _positionContextMenu;
+    private bool _phase3SmokeStarted;
     private double _contextX, _contextY;
 
     protected override async Task OnInitializedAsync()
@@ -118,9 +127,11 @@
         await OpenChanged.InvokeAsync(!_state.SidebarCollapsed);
         _workspace.Changed += OnWorkspaceChanged;
         _workspace.Error += OnWorkspaceError;
-        if (_state.WorkspacePath is not null && Directory.Exists(_state.WorkspacePath))
+        _workspace.RescanRequired += OnWorkspaceRescanRequired;
+        var restorePath = Program.Phase3Workspace ?? _state.WorkspacePath;
+        if (restorePath is not null && Directory.Exists(restorePath))
         {
-            try { _workspace.Open(_state.WorkspacePath); await RestoreAsync(); }
+            try { _workspace.Open(restorePath); await RestoreAsync(); }
             catch (Exception ex) { _error = ex.Message; }
         }
     }
@@ -136,6 +147,11 @@
         {
             _positionContextMenu = false;
             await JS.InvokeVoidAsync("novaSharp.positionContextMenu", _contextMenu, _contextX, _contextY);
+        }
+        if (!_phase3SmokeStarted && Program.Phase3Workspace is not null && _visible.Count > 0)
+        {
+            _phase3SmokeStarted = true;
+            await JS.InvokeVoidAsync("novaSharp.runPhase3Smoke", _explorer, _self);
         }
     }
 
@@ -222,7 +238,8 @@
     private string ParentForCreate() => _selected?.IsDirectory == true ? _selected.Path : Path.GetDirectoryName(_selected?.Path ?? _workspace.RootPath!)!;
     private void BeginCreate(bool folder) { _showContextMenu = false; _editMode = folder ? "New folder name" : "New file name"; _editName = ""; _deletePending = null; }
     private void BeginRename() { _showContextMenu = false; if (_selected is null || IsRoot(_selected.Path)) return; _editMode = "New name"; _editName = _selected.Name; _deletePending = null; }
-    private void CancelEdit() { _editMode = null; _editName = ""; }
+    private void BeginMove() { _showContextMenu = false; if (_selected is null || IsRoot(_selected.Path)) return; _editMode = "Move item"; _editName = _selected.Name; _moveDestination = "."; _deletePending = null; }
+    private void CancelEdit() { _editMode = null; _editName = _moveDestination = ""; }
     private void BeginDelete() { _showContextMenu = false; if (_selected is not null && !IsRoot(_selected.Path)) _deletePending = _selected; _editMode = null; }
     private void CancelDelete() => _deletePending = null;
     private void ClearError() => _error = null;
@@ -260,7 +277,10 @@
             else if (_selected is not null)
             {
                 var oldPath = _selected.Path;
-                var newPath = _workspace.Move(oldPath, Path.GetDirectoryName(oldPath)!, _editName);
+                var parent = _editMode == "Move item"
+                    ? Path.GetFullPath(Path.Combine(_workspace.RootPath!, _moveDestination))
+                    : Path.GetDirectoryName(oldPath)!;
+                var newPath = _workspace.Move(oldPath, parent, _editName);
                 Document.Relocate(oldPath, newPath); _selected = EntryFor(newPath, _selected.IsDirectory);
             }
             CancelEdit(); await RefreshAsync();
@@ -286,12 +306,22 @@
             case "ArrowDown": _selected = _visible[Math.Min(_visible.Count - 1, index + 1)].Entry; break;
             case "ArrowUp": _selected = _visible[Math.Max(0, index - 1)].Entry; break;
             case "ArrowRight" when _selected?.IsDirectory == true && !_expanded.Contains(_selected.Path): await ToggleAsync(_selected); break;
+            case "ArrowRight" when index + 1 < _visible.Count && _visible[index + 1].Depth > _visible[index].Depth: _selected = _visible[index + 1].Entry; break;
             case "ArrowLeft" when _selected?.IsDirectory == true && _expanded.Contains(_selected.Path): await ToggleAsync(_selected); break;
+            case "ArrowLeft":
+                var depth = _visible[index].Depth;
+                for (var parent = index - 1; parent >= 0; parent--)
+                    if (_visible[parent].Depth < depth) { _selected = _visible[parent].Entry; break; }
+                break;
+            case "Home": _selected = _visible[0].Entry; break;
+            case "End": _selected = _visible[^1].Entry; break;
             case "Enter" when _selected is not null: await ActivateAsync(_selected); break;
             case "F2": BeginRename(); break;
+            case "m" when args.CtrlKey || args.MetaKey: BeginMove(); break;
             case "Delete": BeginDelete(); break;
             case "ContextMenu": ShowContextMenu(WidthForKeyboardMenu(), 72); break;
             case "F10" when args.ShiftKey: ShowContextMenu(WidthForKeyboardMenu(), 72); break;
+            case "Escape": HideContextMenu(); break;
         }
     }
 
@@ -304,6 +334,7 @@
     }
 
     private void OnWorkspaceError(string message) => _ = InvokeAsync(() => { _error = message; StateHasChanged(); });
+    private void OnWorkspaceRescanRequired() => _ = InvokeAsync(RefreshAsync);
     private async Task CloseWorkspaceAsync() { _workspace.Close(); _children.Clear(); _expanded.Clear(); _visible.Clear(); _selected = null; await SaveStateAsync(); }
     public async Task ToggleCollapsedAsync()
     {
@@ -317,13 +348,25 @@
         _state = _state with { SidebarWidth = Math.Clamp(width, 180, 800) };
         await SaveStateAsync();
     }
+    [JSInvokable]
+    public Task CompletePhase3SmokeAsync(Phase3SmokeResult result)
+    {
+        var document = Program.ActiveDocument;
+        var verified = result with
+        {
+            RenamePreservedDirtySelection = result.RenamePreservedDirtySelection
+                && document is { IsDirty: true }
+                && string.Equals(Path.GetFileName(document.FilePath), "renamed.cs", StringComparison.Ordinal)
+        };
+        return Program.CompletePhase3SmokeAsync(verified);
+    }
     private Task SaveStateAsync() => _persistence.SaveAsync(_state with { WorkspacePath = _workspace.RootPath, ExpandedPaths = _expanded.ToArray() });
     private static string Icon(WorkspaceEntry entry) => entry.Kind switch { WorkspaceEntryKind.SymbolicLink => "↗", WorkspaceEntryKind.UnknownFile => "?", _ => "·" };
     private sealed record TreeRow(WorkspaceEntry Entry, int Depth);
 
     public async ValueTask DisposeAsync()
     {
-        _workspace.Changed -= OnWorkspaceChanged; _workspace.Error -= OnWorkspaceError;
+        _workspace.Changed -= OnWorkspaceChanged; _workspace.Error -= OnWorkspaceError; _workspace.RescanRequired -= OnWorkspaceRescanRequired;
         await SaveStateAsync(); _workspace.Dispose(); _self?.Dispose();
     }
 }

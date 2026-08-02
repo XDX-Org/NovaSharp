@@ -31,6 +31,18 @@ internal readonly record struct DiskStamp(long Length, DateTime LastWriteUtc, st
 internal sealed class SaveConflictException(string path)
     : IOException($"'{Path.GetFileName(path)}' changed on disk. Reload it or use Save As.");
 
+public sealed class EditorViewState
+{
+    internal int SelectionStart { get; private set; }
+    internal int SelectionEnd { get; private set; }
+
+    internal void SetSelection(int start, int end, int textLength)
+    {
+        SelectionStart = Math.Clamp(start, 0, textLength);
+        SelectionEnd = Math.Clamp(end, SelectionStart, textLength);
+    }
+}
+
 public sealed class EditorDocumentState : IDisposable
 {
     private string? _content;
@@ -147,9 +159,15 @@ public sealed class EditorDocumentState : IDisposable
 
     internal void Relocate(string oldPath, string newPath)
     {
-        if (FilePath is null || !string.Equals(Path.GetFullPath(oldPath), FilePath,
-            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)) return;
-        FilePath = Path.GetFullPath(newPath);
+        if (FilePath is null) return;
+        var oldCanonical = Path.TrimEndingDirectorySeparator(Path.GetFullPath(oldPath));
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        string relocated;
+        if (string.Equals(oldCanonical, FilePath, comparison)) relocated = Path.GetFullPath(newPath);
+        else if (FilePath.StartsWith(oldCanonical + Path.DirectorySeparatorChar, comparison))
+            relocated = Path.Combine(Path.GetFullPath(newPath), Path.GetRelativePath(oldCanonical, FilePath));
+        else return;
+        FilePath = relocated;
         _diskStamp = File.Exists(FilePath) ? DiskStamp.Read(FilePath) : null;
         StartWatching(FilePath);
     }

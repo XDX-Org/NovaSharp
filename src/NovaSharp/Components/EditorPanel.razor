@@ -67,7 +67,7 @@
         {
             <div class="compare"><pre><strong>Editor</strong>\n@_document.Content</pre><pre><strong>Disk</strong>\n@_compareText</pre></div>
         }
-        else { <CodeEditor Value="@(_document.Content ?? string.Empty)" ValueChanged="ContentChanged" WordWrap="_wordWrap" @key="_wordWrap" /> }
+        else { <CodeEditor Value="@(_document.Content ?? string.Empty)" ValueChanged="ContentChanged" WordWrap="_wordWrap" ViewState="_viewState" @key="_wordWrap" /> }
     </section>
     <WorkspaceExplorer @ref="_explorer" Document="_document" FileOpened="OpenWorkspaceFileAsync" OpenChanged="ExplorerOpenChanged" />
     <nav class="activity-bar" aria-label="Tool windows">
@@ -81,6 +81,7 @@
 
 @code {
     private readonly EditorDocumentState _document = new();
+    private readonly EditorViewState _viewState = new();
     private readonly CommandRegistry _commands = new();
     private WorkspaceExplorer? _explorer;
     private string? _status, _compareText;

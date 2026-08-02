@@ -3,7 +3,8 @@ using System.Text.Json;
 
 namespace NovaSharp;
 
-internal sealed record EditorSettings(int SchemaVersion = 1, bool WordWrap = false, int TabSize = 4);
+internal sealed record EditorSettings(int SchemaVersion = 1, bool WordWrap = false, int TabSize = 4,
+    string[]? ExplorerIgnoredNames = null);
 
 internal sealed class ConfigurationService(string userPath, string? workspacePath = null)
 {
@@ -13,7 +14,10 @@ internal sealed class ConfigurationService(string userPath, string? workspacePat
     {
         Current = await ReadAsync(workspacePath, cancellationToken)
             ?? await ReadAsync(userPath, cancellationToken) ?? new();
-        if (Current.SchemaVersion != 1 || Current.TabSize is < 1 or > 16) Current = new();
+        if (Current.SchemaVersion != 1 || Current.TabSize is < 1 or > 16
+            || Current.ExplorerIgnoredNames?.Any(name => string.IsNullOrWhiteSpace(name)
+                || name is "." or ".." || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0) == true)
+            Current = new();
     }
 
     internal async Task SaveUserAsync(EditorSettings settings, CancellationToken cancellationToken = default)
