@@ -1,9 +1,9 @@
 @using PhotinoEx.Core.Models
 @using Microsoft.AspNetCore.Components.Web
 @implements IDisposable
-@inject IJSRuntime JS
 
-<main @ref="_workbenchElement" class="workbench" @onkeydown="HandleKeyAsync">
+<main class="workbench" data-phase4-smoke="@(Program.Phase4Workspace is not null ? "true" : "false")"
+      data-phase5-smoke="@(Program.Phase5Workspace is not null ? "true" : "false")" @onkeydown="HandleKeyAsync">
     <header class="toolbar">
         <div class="main-menu">
             <button class="menu-trigger" @onclick="ToggleMenu" aria-label="Main menu" aria-expanded="@_showMenu">☰</button>
@@ -73,11 +73,9 @@
     private readonly EditorDocumentState _emptyDocument = new();
     private EditorLayoutPersistence _persistence = null!;
     private WorkspaceExplorer? _explorer;
-    private ElementReference _workbenchElement;
-    private DotNetObjectReference<WorkbenchPanel>? _self;
     private string? _status;
     private string _query = "", _replacement = "";
-    private bool _showMenu, _showFind, _wordWrap, _externalChange, _explorerOpen = true, _phase4SmokeStarted, _phase5SmokeStarted;
+    private bool _showMenu, _showFind, _wordWrap, _externalChange, _explorerOpen = true;
     private DocumentTab? ActiveTab => _workspace.FocusedGroup.ActiveTab;
     private EditorDocumentState _document => ActiveTab?.Document ?? _emptyDocument;
     private string Status => _status ?? (_document.IsReadOnly ? "Read-only" : _document.FilePath ?? "Ready");
@@ -103,24 +101,6 @@
         else if (Program.SmokeFile is not null) await OpenTabAsync(Program.SmokeFile);
         else await _workspace.RestoreAsync(await _persistence.LoadAsync());
         TrackActiveDocument();
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (!_phase4SmokeStarted && Program.Phase4Workspace is not null && _workspace.FocusedGroup.Tabs.Count > 2)
-        {
-            _phase4SmokeStarted = true;
-            _self ??= DotNetObjectReference.Create(this);
-            try { await JS.InvokeVoidAsync("novaSharp.schedulePhase4Smoke", _workbenchElement, _self); }
-            catch (Exception ex) { await Program.CompletePhase4SmokeAsync(new(false, false, false, false, false, false, ex.Message)); }
-        }
-        if (!_phase5SmokeStarted && Program.Phase5Workspace is not null && _workspace.Layout.Groups.Count == 2)
-        {
-            _phase5SmokeStarted = true;
-            _self ??= DotNetObjectReference.Create(this);
-            try { await JS.InvokeVoidAsync("novaSharp.schedulePhase5Smoke", _workbenchElement, _self); }
-            catch (Exception ex) { await Program.CompletePhase5SmokeAsync(new(false, false, false, false, false, false, false, false, ex.Message)); }
-        }
     }
 
     private async Task OpenFileAsync()
@@ -238,12 +218,6 @@
         }
     }
 
-    [JSInvokable]
-    public Task CompletePhase4SmokeAsync(Phase4SmokeResult result) => Program.CompletePhase4SmokeAsync(result);
-
-    [JSInvokable]
-    public Task CompletePhase5SmokeAsync(Phase5SmokeResult result) => Program.CompletePhase5SmokeAsync(result);
-
     public void Dispose()
     {
         _ = SaveLayoutAsync();
@@ -251,7 +225,6 @@
         UntrackActiveDocument();
         _workspace.Dispose();
         _emptyDocument.Dispose();
-        _self?.Dispose();
         if (Program.ConfirmWorkbenchClose == ConfirmClose) Program.ConfirmWorkbenchClose = null;
     }
 
