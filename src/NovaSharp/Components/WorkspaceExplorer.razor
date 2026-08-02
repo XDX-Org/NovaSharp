@@ -60,17 +60,20 @@
             @if (_error is not null) { <div class="explorer-error" role="alert">@_error <button @onclick="ClearError">×</button></div> }
             <div class="tree" role="tree" aria-label="Workspace files" @onkeydown="HandleKeyAsync" @onkeydown:preventDefault
                  @oncontextmenu="ShowRootContextMenu">
-                <Virtualize Items="_visible" Context="row" ItemSize="26" OverscanCount="8">
+                <Virtualize Items="_visible" Context="row" ItemSize="20" OverscanCount="8">
                     <div class="tree-row @(IsSelected(row.Entry) ? "selected" : null)" role="treeitem"
+                         data-file-path="@(row.Entry.IsDirectory ? null : row.Entry.Path)"
                          aria-level="@(row.Depth + 1)" aria-expanded="@(row.Entry.IsDirectory ? _expanded.Contains(row.Entry.Path) : null)"
-                         tabindex="@(IsSelected(row.Entry) ? 0 : -1)" style="padding-left:@(8 + row.Depth * 16)px"
-                         @onclick="() => SelectAsync(row.Entry)" @ondblclick="() => ActivateAsync(row.Entry)"
+                         tabindex="@(IsSelected(row.Entry) ? 0 : -1)" style="padding-left:@(5 + row.Depth * 12)px"
+                         @onclick="args => RowClickAsync(row.Entry, args)"
                          @oncontextmenu="args => ShowContextMenu(args, row.Entry)" @oncontextmenu:stopPropagation>
                         @if (row.Entry.IsDirectory)
                         {
-                            <button class="tree-toggle" tabindex="-1" @onclick="() => ToggleAsync(row.Entry)" @onclick:stopPropagation>@(_expanded.Contains(row.Entry.Path) ? "▾" : "▸")</button>
+                            <span class="tree-toggle folder-icon" aria-hidden="true">
+                                <span>@(_expanded.Contains(row.Entry.Path) ? "▾" : "▸")</span><span>📁</span>
+                            </span>
                         }
-                        else { <span class="tree-toggle">@Icon(row.Entry)</span> }
+                        else { <span class="tree-toggle file-icon @IconClass(row.Entry)">@Icon(row.Entry)</span> }
                         <span class="tree-name" title="@row.Entry.Path">@row.Entry.Name</span>
                     </div>
                 </Virtualize>
@@ -241,6 +244,17 @@
         if (!entry.IsDirectory && entry.Kind != WorkspaceEntryKind.SymbolicLink)
             await FilePreviewed.InvokeAsync(entry.Path);
     }
+    private async Task RowClickAsync(WorkspaceEntry entry, MouseEventArgs args)
+    {
+        Select(entry);
+        if (entry.IsDirectory)
+            await ToggleAsync(entry);
+        else if (entry.Kind != WorkspaceEntryKind.SymbolicLink)
+        {
+            if (args.Detail >= 2) await FileOpened.InvokeAsync(entry.Path);
+            else await FilePreviewed.InvokeAsync(entry.Path);
+        }
+    }
     private void Select(WorkspaceEntry entry) { _selected = entry; _showContextMenu = false; }
     private bool IsSelected(WorkspaceEntry entry) => _selected?.Id == entry.Id;
     private bool IsRoot(string path) => string.Equals(path, _workspace.RootPath, StringComparison.Ordinal);
@@ -372,7 +386,56 @@
         return Program.CompletePhase3SmokeAsync(verified);
     }
     private Task SaveStateAsync() => _persistence.SaveAsync(_state with { WorkspacePath = _workspace.RootPath, ExpandedPaths = _expanded.ToArray() });
-    private static string Icon(WorkspaceEntry entry) => entry.Kind switch { WorkspaceEntryKind.SymbolicLink => "↗", WorkspaceEntryKind.UnknownFile => "?", _ => "·" };
+    private static string Icon(WorkspaceEntry entry) => FileKind(entry) switch
+    {
+        ".cs" => "C#",
+        ".js" => "JS",
+        ".css" => "CSS",
+        ".html" or ".htm" => "HTML",
+        ".json" => "{}",
+        ".md" or ".markdown" => "MD",
+        "git" => "GIT",
+        ".props" => "MSB",
+        ".sln" => "SLN",
+        ".slnx" => "SLNX",
+        ".razor" => "RZ",
+        ".dll" => "⚙",
+        ".exe" or ".com" => "🖥︎",
+        ".csproj" => "CSP",
+        ".xml" => "<>",
+        ".pdb" => "PDB",
+        ".yml" or ".yaml" => "YML",
+        "none" => "FILE",
+        _ => entry.Kind == WorkspaceEntryKind.SymbolicLink ? "↗" : "▧"
+    };
+    private static string IconClass(WorkspaceEntry entry) => FileKind(entry) switch
+    {
+        ".cs" => "csharp",
+        ".js" => "javascript",
+        ".css" => "stylesheet",
+        ".html" or ".htm" => "html",
+        ".json" => "json",
+        ".md" or ".markdown" => "markdown",
+        "git" => "git",
+        ".props" => "props",
+        ".sln" or ".slnx" => "solution",
+        ".razor" => "razor",
+        ".dll" => "assembly",
+        ".exe" or ".com" => "executable",
+        ".csproj" => "csproj",
+        ".xml" => "xml",
+        ".pdb" => "symbols",
+        ".yml" or ".yaml" => "yaml",
+        "none" => "extensionless",
+        _ => "generic"
+    };
+    private static string FileKind(WorkspaceEntry entry)
+    {
+        var name = entry.Name.ToLowerInvariant();
+        if (name is ".gitignore" or ".gitattributes" or ".gitmodules" or ".gitkeep") return "git";
+        var extension = Path.GetExtension(name);
+        return extension.Length == 0 ? "none" : extension;
+    }
     private sealed record TreeRow(WorkspaceEntry Entry, int Depth);
 
     public async ValueTask DisposeAsync()

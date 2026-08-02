@@ -294,6 +294,69 @@ window.novaSharp.initPointerTabDrag = function (workbench, dotNet) {
     });
 };
 
+window.novaSharp.initExplorerFileDrag = function (workbench, dotNet) {
+    if (!workbench || workbench.dataset.explorerFileDragReady) return;
+    workbench.dataset.explorerFileDragReady = 'true';
+    workbench.addEventListener('pointerdown', event => {
+        const row = event.target.closest?.('.tree-row[data-file-path]');
+        if (!row || event.button !== 0) return;
+        const startX = event.clientX, startY = event.clientY;
+        let dragging = false, cancelled = false, target, ghost;
+        row.setPointerCapture(event.pointerId);
+        const clear = () => {
+            target?.classList.remove('pointer-target');
+            ghost?.remove();
+            document.body.classList.remove('pointer-tab-dragging');
+            target = ghost = null;
+        };
+        const move = async moveEvent => {
+            moveEvent.preventDefault();
+            if (!dragging && Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) < 5) return;
+            if (!dragging) {
+                dragging = true;
+                row.addEventListener('click', click => {
+                    click.preventDefault();
+                    click.stopImmediatePropagation();
+                }, { once: true, capture: true });
+                document.body.classList.add('pointer-tab-dragging');
+                ghost = document.createElement('div');
+                ghost.className = 'tab-drag-ghost explorer-file-drag-ghost';
+                ghost.textContent = row.querySelector('.tree-name')?.textContent ?? '';
+                document.body.appendChild(ghost);
+                await dotNet.invokeMethodAsync('BeginExplorerFileDrag', row.dataset.filePath);
+            }
+            ghost.style.transform = `translate(${moveEvent.clientX + 12}px,${moveEvent.clientY + 12}px)`;
+            target?.classList.remove('pointer-target');
+            target = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY)?.closest?.('.drop-zone');
+            target?.classList.add('pointer-target');
+        };
+        const finish = async () => {
+            row.removeEventListener('pointermove', move);
+            row.removeEventListener('pointerup', finish);
+            row.removeEventListener('pointercancel', cancel);
+            window.removeEventListener('keydown', escape, true);
+            if (!dragging || cancelled) return;
+            const destination = target;
+            clear();
+            if (!destination) { await dotNet.invokeMethodAsync('CancelExplorerFileDrag'); return; }
+            const direction = destination.dataset.direction;
+            await dotNet.invokeMethodAsync('DropExplorerFile', destination.closest('.editor-group').dataset.groupId,
+                direction === 'center' ? null : direction);
+        };
+        const cancel = async () => {
+            cancelled = true;
+            clear();
+            window.removeEventListener('keydown', escape, true);
+            if (dragging) await dotNet.invokeMethodAsync('CancelExplorerFileDrag');
+        };
+        const escape = event => { if (event.key === 'Escape') cancel(); };
+        row.addEventListener('pointermove', move);
+        row.addEventListener('pointerup', finish);
+        row.addEventListener('pointercancel', cancel, { once: true });
+        window.addEventListener('keydown', escape, true);
+    });
+};
+
 window.novaSharp.focusEditorGroup = function (workbench, dotNet, direction) {
     const current = workbench?.querySelector('.editor-group.focused');
     if (!current) return;
@@ -378,7 +441,7 @@ window.novaSharp.runPhase3Smoke = async function (explorer, dotNet) {
             && !explorer.querySelector('[role="menu"]');
         const renderedRows = tree.querySelectorAll('[role="treeitem"]').length;
         const viewportHeight = tree.clientHeight || Math.max(0, explorer.clientHeight - 71);
-        const rowLimit = Math.max(64, Math.ceil(viewportHeight / 26) + 18);
+        const rowLimit = Math.max(64, Math.ceil(viewportHeight / 20) + 18);
         await dotNet.invokeMethodAsync("CompletePhase3SmokeAsync", {
             treePresent: !!tree && renderedRows > 0,
             rowsBounded: renderedRows > 0 && renderedRows <= rowLimit,

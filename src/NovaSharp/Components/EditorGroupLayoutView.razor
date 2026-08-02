@@ -5,9 +5,11 @@
     <div class="editor-split @OrientationClass(split)" style="@SplitStyle(split)"
          data-ratio="@split.Ratio.ToString(System.Globalization.CultureInfo.InvariantCulture)">
         <EditorGroupLayoutView @key="split.First.Id" Node="split.First" Workspace="Workspace" WordWrap="WordWrap"
+                               ExternalDragActive="ExternalDragActive"
                                ActiveChanged="ActiveChanged" ContentEdited="ContentEdited" CloseRequested="CloseRequested" />
         <EditorSplitter @key="split.Id" Split="split" Workspace="Workspace" Resized="ActiveChanged" />
         <EditorGroupLayoutView @key="split.Second.Id" Node="split.Second" Workspace="Workspace" WordWrap="WordWrap"
+                               ExternalDragActive="ExternalDragActive"
                                ActiveChanged="ActiveChanged" ContentEdited="ContentEdited" CloseRequested="CloseRequested" />
     </div>
 }
@@ -33,13 +35,12 @@ else if (Node is EditorGroup group)
                          role="tab" aria-selected="@ReferenceEquals(tab, group.ActiveTab)" tabindex="@(ReferenceEquals(tab, group.ActiveTab) ? 0 : -1)"
                          aria-label="@AccessibleLabel(tab)" title="@tab.Document.FilePath"
                          data-tab-id="@tab.Id" data-tab-index="@index"
-                         @onclick="() => Activate(group, tab)" @onmousedown="args => MiddleClose(args, tab)"
+                         @onclick="() => Activate(group, tab)" @ondblclick="() => Pin(tab)"
+                         @onmousedown="args => MiddleClose(args, tab)"
                          @oncontextmenu="args => ShowContextMenu(args, group, tab)"
                          @oncontextmenu:preventDefault>
                         <span class="tab-label">@DisplayName(group, tab)</span>
                         @if (tab.Document.IsDirty) { <span class="tab-dirty" aria-label="Unsaved changes">●</span> }
-                        <button class="tab-pin" aria-label="@(tab.IsPinned ? "Unpin" : "Pin") @DisplayName(group, tab)"
-                                @onclick="() => TogglePin(tab)" @onclick:stopPropagation>◆</button>
                         <button class="tab-close" aria-label="Close @DisplayName(group, tab)"
                                 @onclick="() => RequestClose(group, tab)" @onclick:stopPropagation>×</button>
                     </div>
@@ -50,8 +51,6 @@ else if (Node is EditorGroup group)
         {
             <div class="context-menu-dismiss" @onclick="HideContextMenu"></div>
             <div class="explorer-context-menu tab-context-menu" role="menu" style="left:@(_contextX)px;top:@(_contextY)px" @onclick:stopPropagation>
-                <button role="menuitem" @onclick="ToggleContextPin">@(_contextTab.IsPinned ? "Unpin" : "Pin")</button>
-                <hr />
                 <button role="menuitem" @onclick="() => SplitContext(SplitDirection.Left)">Split left</button>
                 <button role="menuitem" @onclick="() => SplitContext(SplitDirection.Right)">Split right</button>
                 <button role="menuitem" @onclick="() => SplitContext(SplitDirection.Up)">Split up</button>
@@ -72,7 +71,7 @@ else if (Node is EditorGroup group)
                             WordWrap="WordWrap" ViewState="active.ViewState" ViewStateChanged="ActiveChanged"
                             @key="(active.Id, WordWrap)" />
             }
-            @if (Workspace.DraggedTab is not null)
+            @if (Workspace.DraggedTab is not null || ExternalDragActive)
             {
                 <div class="group-drop-zones" aria-label="Editor drop zones">
                     <div class="drop-zone left" data-direction="left" aria-label="Drop left"></div>
@@ -90,6 +89,7 @@ else if (Node is EditorGroup group)
     [Parameter, EditorRequired] public EditorLayoutNode Node { get; set; } = null!;
     [Parameter, EditorRequired] public EditorGroupWorkspace Workspace { get; set; } = null!;
     [Parameter] public bool WordWrap { get; set; }
+    [Parameter] public bool ExternalDragActive { get; set; }
     [Parameter] public EventCallback ActiveChanged { get; set; }
     [Parameter] public EventCallback ContentEdited { get; set; }
     [Parameter] public EventCallback<CloseViewRequest> CloseRequested { get; set; }
@@ -116,14 +116,13 @@ else if (Node is EditorGroup group)
         Workspace.Focus(group.Id);
         await ActiveChanged.InvokeAsync();
     }
-    private void TogglePin(DocumentTab tab) { if (tab.IsPinned) tab.SetPreview(true); else Workspace.Promote(tab); }
+    private void Pin(DocumentTab tab) { if (!tab.IsPinned) Workspace.Promote(tab); }
     private Task RequestClose(EditorGroup group, DocumentTab tab) => RequestClose([tab]);
     private Task MiddleClose(MouseEventArgs args, DocumentTab tab) => args.Button == 1 ? RequestClose([tab]) : Task.CompletedTask;
     private Task RequestClose(DocumentTab[] tabs) { HideContextMenu(); return CloseRequested.InvokeAsync(new(tabs)); }
     private void ShowContextMenu(MouseEventArgs args, EditorGroup group, DocumentTab tab)
     { _contextGroup = group; _contextTab = tab; _contextX = args.ClientX; _contextY = args.ClientY; }
     private void HideContextMenu() { _contextGroup = null; _contextTab = null; }
-    private void ToggleContextPin() { if (_contextTab is { } tab) TogglePin(tab); HideContextMenu(); }
     private async Task SplitContext(SplitDirection direction)
     {
         if (_contextGroup is { } group && _contextTab is { } tab

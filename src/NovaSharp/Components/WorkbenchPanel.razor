@@ -5,16 +5,46 @@
 
 <main @ref="_workbench" class="workbench" @onkeydown="HandleKeyAsync">
     <header class="toolbar">
-        <div class="main-menu">
-            <button class="menu-trigger" @onclick="ToggleMenu" aria-label="Main menu" aria-expanded="@_showMenu">☰</button>
-            @if (_showMenu)
-            {
-                <div class="menu-dismiss" @onclick="ToggleMenu"></div>
+        <nav class="menu-bar" aria-label="Application menu">
+            @if (_openMenu is not null) { <div class="menu-dismiss" @onclick="CloseMenu"></div> }
+            <div class="main-menu">
+                <button class="menu-trigger" @onclick='() => ToggleMenu("file")' aria-expanded="@(_openMenu == "file")">File</button>
+                @if (_openMenu == "file")
+                {
                 <div class="menu-popup" role="menu" @onclick:stopPropagation>
                     <button role="menuitem" @onclick="OpenFileAsync">Open <kbd>Ctrl+O</kbd></button>
                     <button role="menuitem" @onclick="SaveAsync" disabled="@(!_document.IsDirty)">Save <kbd>Ctrl+S</kbd></button>
                     <button role="menuitem" @onclick="SaveAsAsync" disabled="@(_document.FilePath is null)">Save As</button>
+                </div>
+                }
+            </div>
+            <div class="main-menu">
+                <button class="menu-trigger" @onclick='() => ToggleMenu("edit")' aria-expanded="@(_openMenu == "edit")">Edit</button>
+                @if (_openMenu == "edit")
+                {
+                <div class="menu-popup" role="menu" @onclick:stopPropagation>
+                    <button role="menuitem" @onclick="Undo" disabled="@(!_document.CanUndo)">Undo <kbd>Ctrl+Z</kbd></button>
+                    <button role="menuitem" @onclick="Redo" disabled="@(!_document.CanRedo)">Redo <kbd>Ctrl+Y</kbd></button>
                     <hr />
+                    <button role="menuitem" @onclick="ToggleFind">Find <kbd>Ctrl+F</kbd></button>
+                </div>
+                }
+            </div>
+            <div class="main-menu">
+                <button class="menu-trigger" @onclick='() => ToggleMenu("view")' aria-expanded="@(_openMenu == "view")">View</button>
+                @if (_openMenu == "view")
+                {
+                <div class="menu-popup" role="menu" @onclick:stopPropagation>
+                    <button role="menuitem" @onclick="ToggleExplorerAsync">Explorer</button>
+                    <button role="menuitem" @onclick="ToggleWrapAsync">Word wrap <span>@(_wordWrap ? "On" : "Off")</span></button>
+                </div>
+                }
+            </div>
+            <div class="main-menu">
+                <button class="menu-trigger" @onclick='() => ToggleMenu("groups")' aria-expanded="@(_openMenu == "groups")">Groups</button>
+                @if (_openMenu == "groups")
+                {
+                <div class="menu-popup" role="menu" @onclick:stopPropagation>
                     <button role="menuitem" @onclick="() => Split(SplitDirection.Left)">Split left</button>
                     <button role="menuitem" @onclick="() => Split(SplitDirection.Right)">Split right <kbd>Ctrl+\</kbd></button>
                     <button role="menuitem" @onclick="() => Split(SplitDirection.Up)">Split up</button>
@@ -27,14 +57,10 @@
                     <button role="menuitem" @onclick='() => FocusDirectionAsync("right")' disabled="@(_workspace.Layout.Groups.Count < 2)">Focus right</button>
                     <button role="menuitem" @onclick='() => FocusDirectionAsync("up")' disabled="@(_workspace.Layout.Groups.Count < 2)">Focus up</button>
                     <button role="menuitem" @onclick='() => FocusDirectionAsync("down")' disabled="@(_workspace.Layout.Groups.Count < 2)">Focus down</button>
-                    <hr />
-                    <button role="menuitem" @onclick="Undo" disabled="@(!_document.CanUndo)">Undo <kbd>Ctrl+Z</kbd></button>
-                    <button role="menuitem" @onclick="Redo" disabled="@(!_document.CanRedo)">Redo <kbd>Ctrl+Y</kbd></button>
-                    <button role="menuitem" @onclick="ToggleFind">Find <kbd>Ctrl+F</kbd></button>
-                    <button role="menuitem" @onclick="ToggleWrapAsync">Word wrap <span>@(_wordWrap ? "On" : "Off")</span></button>
                 </div>
-            }
-        </div>
+                }
+            </div>
+        </nav>
     </header>
     @if (_showFind)
     {
@@ -57,6 +83,7 @@
     <div class="workbench-body">
         <div class="editor-area">
             <EditorGroupLayoutView @key="_workspace.Layout.Root.Id" Node="_workspace.Layout.Root" Workspace="_workspace" WordWrap="_wordWrap"
+                                   ExternalDragActive="_explorerFileDrag is not null"
                                    ActiveChanged="ActiveChangedAsync" ContentEdited="ContentEditedAsync"
                                    CloseRequested="CloseRequestedAsync" />
         </div>
@@ -83,8 +110,10 @@
     private ElementReference _workbench;
     private DotNetObjectReference<WorkbenchPanel>? _self;
     private string? _status;
+    private string? _explorerFileDrag;
     private string _query = "", _replacement = "";
-    private bool _showMenu, _showFind, _wordWrap, _externalChange, _leftMouseDown, _explorerOpen = true;
+    private string? _openMenu;
+    private bool _showFind, _wordWrap, _externalChange, _leftMouseDown, _explorerOpen = true;
     private DocumentTab? ActiveTab => _workspace.FocusedGroup.ActiveTab;
     private EditorDocumentState _document => ActiveTab?.Document ?? _emptyDocument;
     private string Status => _status ?? _workspace.LastError ?? (_document.IsReadOnly ? "Read-only" : _document.FilePath ?? "Ready");
@@ -119,6 +148,7 @@
         await JS.InvokeVoidAsync("novaSharp.initEditorDragCleanup", _workbench, _self);
         await JS.InvokeVoidAsync("novaSharp.initLeftMouseStatus", _workbench, _self);
         await JS.InvokeVoidAsync("novaSharp.initPointerTabDrag", _workbench, _self);
+        await JS.InvokeVoidAsync("novaSharp.initExplorerFileDrag", _workbench, _self);
         if (Program.Phase4Workspace is not null || Program.Phase5Workspace is not null)
             await JS.InvokeVoidAsync("novaSharp.startSmokePolling", _self,
                 Program.Phase4Workspace is not null, Program.Phase5Workspace is not null);
@@ -126,7 +156,7 @@
 
     private async Task OpenFileAsync()
     {
-        _showMenu = false;
+        _openMenu = null;
         var files = await Program.App.MainWindow.ShowOpenFileDialogAsync(title: "Open C# file", multiSelect: true,
             filterPatterns: [new FileFilter("C# source", "*.cs")]);
         UntrackActiveDocument();
@@ -175,11 +205,11 @@
 
     private async Task ActiveChangedAsync() { TrackActiveDocument(); await SaveLayoutAsync(); }
     private async Task ContentEditedAsync() { _status = null; StateHasChanged(); await SaveLayoutAsync(); }
-    private void Split(SplitDirection direction) { _showMenu = false; _status = null; _workspace.Split(_workspace.Layout.FocusedGroupId, direction); }
-    private void Equalize() { _showMenu = false; _workspace.Equalize(); _ = SaveLayoutAsync(); }
+    private void Split(SplitDirection direction) { _openMenu = null; _status = null; _workspace.Split(_workspace.Layout.FocusedGroupId, direction); }
+    private void Equalize() { _openMenu = null; _workspace.Equalize(); _ = SaveLayoutAsync(); }
     private async Task TransferToNextAsync(bool copy)
     {
-        _showMenu = false;
+        _openMenu = null;
         if (ActiveTab is not { } tab) return;
         var groups = _workspace.Layout.Groups;
         var source = _workspace.FocusedGroup;
@@ -190,7 +220,7 @@
     }
     private void FocusNext()
     {
-        _showMenu = false;
+        _openMenu = null;
         var groups = _workspace.Layout.Groups;
         var index = Array.IndexOf(groups.ToArray(), _workspace.FocusedGroup);
         _workspace.Focus(groups[(index + 1) % groups.Count].Id);
@@ -198,22 +228,23 @@
     }
     private async Task FocusDirectionAsync(string direction)
     {
-        _showMenu = false;
+        _openMenu = null;
         await JS.InvokeVoidAsync("novaSharp.focusEditorGroup", _workbench, _self, direction);
     }
-    private async Task SaveAsync() { _showMenu = false; try { await _document.SaveAsync(); _status = "Saved"; } catch (Exception ex) { _status = ex.Message; } }
+    private async Task SaveAsync() { _openMenu = null; try { await _document.SaveAsync(); _status = "Saved"; } catch (Exception ex) { _status = ex.Message; } }
     private async Task SaveAsAsync()
     {
-        _showMenu = false;
+        _openMenu = null;
         var path = await Program.App.MainWindow.ShowSaveFileDialogAsync("Save C# file", _document.FilePath ?? "Untitled.cs", [new FileFilter("C# source", "*.cs")]);
         if (!string.IsNullOrWhiteSpace(path)) try { await _document.SaveAsync(path); _status = "Saved"; } catch (Exception ex) { _status = ex.Message; }
     }
-    private void Undo() { _showMenu = false; _document.Undo(); StateHasChanged(); }
-    private void Redo() { _showMenu = false; _document.Redo(); StateHasChanged(); }
+    private void Undo() { _openMenu = null; _document.Undo(); StateHasChanged(); }
+    private void Redo() { _openMenu = null; _document.Redo(); StateHasChanged(); }
     private void ReplaceAll() { _document.ReplaceAll(_query, _replacement); StateHasChanged(); }
-    private void ToggleFind() { _showMenu = false; _showFind = !_showFind; }
-    private void ToggleMenu() => _showMenu = !_showMenu;
-    private async Task ToggleWrapAsync() { _showMenu = false; _wordWrap = !_wordWrap; await Program.Configuration.SaveUserAsync(Program.Configuration.Current with { WordWrap = _wordWrap }); }
+    private void ToggleFind() { _openMenu = null; _showFind = !_showFind; }
+    private void ToggleMenu(string menu) => _openMenu = _openMenu == menu ? null : menu;
+    private void CloseMenu() => _openMenu = null;
+    private async Task ToggleWrapAsync() { _openMenu = null; _wordWrap = !_wordWrap; await Program.Configuration.SaveUserAsync(Program.Configuration.Current with { WordWrap = _wordWrap }); }
     private async Task ReloadAsync() { await _document.ReloadAsync(); _externalChange = false; StateHasChanged(); }
     private void KeepBuffer() { _document.KeepBuffer(); _externalChange = false; }
     private Task ToggleExplorerAsync() => _explorer?.ToggleCollapsedAsync() ?? Task.CompletedTask;
@@ -271,6 +302,32 @@
         if (Guid.TryParse(id, out var tabId) && _workspace.Layout.Groups
             .SelectMany(group => group.Tabs).FirstOrDefault(tab => tab.Id == tabId) is { } tab)
             _workspace.BeginDrag(tab);
+    }
+
+    [JSInvokable]
+    public void BeginExplorerFileDrag(string path)
+    {
+        _explorerFileDrag = path;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void CancelExplorerFileDrag()
+    {
+        _explorerFileDrag = null;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task DropExplorerFile(string groupId, string? direction)
+    {
+        var path = _explorerFileDrag;
+        _explorerFileDrag = null;
+        if (path is null || !Guid.TryParse(groupId, out var targetId)) { StateHasChanged(); return; }
+        if (Enum.TryParse<SplitDirection>(direction, true, out var split))
+            targetId = _workspace.Split(targetId, split)?.Id ?? targetId;
+        await _workspace.OpenAsync(path, groupId: targetId);
+        await ActiveChangedAsync();
     }
 
     [JSInvokable]
