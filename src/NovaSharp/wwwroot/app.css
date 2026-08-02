@@ -72,12 +72,14 @@ button:disabled { opacity: .45; cursor: default; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .modal-actions .danger { border-color: #a84f57; background: #873d45; }
 .modal-actions .danger:hover { background: #a34852; }
-.explorer-context-menu { position: fixed; z-index: 100; top: 0; left: 0; display: flex; width: 180px; max-height: calc(100vh - 16px); overflow-y: auto; flex-direction: column; padding: 5px; border: 1px solid #4c566a; border-radius: 5px; background: #252932; box-shadow: 0 10px 30px rgba(0, 0, 0, .45); }
+.explorer-context-menu { position: fixed; z-index: 100; top: 0; left: 0; display: flex; width: max-content; min-width: 180px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow-x: hidden; overflow-y: auto; flex-direction: column; padding: 5px; border: 1px solid #4c566a; border-radius: 5px; background: #252932; box-shadow: 0 10px 30px rgba(0, 0, 0, .45); }
 .explorer-context-menu button { display: flex; width: 100%; justify-content: space-between; padding: 8px 10px; border: 0; background: transparent; text-align: left; }
 .explorer-context-menu button:hover { background: #3b4252; }
 .explorer-context-menu hr { width: 100%; margin: 4px 0; border: 0; border-top: 1px solid #454b57; }
 .explorer-context-menu kbd { color: #8792a3; font: inherit; font-size: 11px; }
-.app-context-menu { position: fixed; z-index: 300; top: 0; left: 0; display: flex; width: 190px; max-height: calc(100vh - 16px); overflow-y: auto; flex-direction: column; padding: 5px; border: 1px solid #4c566a; border-radius: 5px; color: #d8dee9; background: #252932; box-shadow: 0 10px 30px rgba(0, 0, 0, .45); }
+.context-menu-hint { display: flex; justify-content: space-between; gap: 12px; padding: 7px 10px; color: #8792a3; font-size: 11px; white-space: nowrap; }
+.context-menu-hint kbd { color: #aeb6c4; font: inherit; }
+.app-context-menu { position: fixed; z-index: 300; top: 0; left: 0; display: flex; width: max-content; min-width: 190px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow-x: hidden; overflow-y: auto; flex-direction: column; padding: 5px; border: 1px solid #4c566a; border-radius: 5px; color: #d8dee9; background: #252932; box-shadow: 0 10px 30px rgba(0, 0, 0, .45); }
 .app-context-menu button { display: flex; width: 100%; justify-content: space-between; padding: 8px 10px; border: 0; background: transparent; text-align: left; }
 .app-context-menu button:hover { background: #3b4252; }
 .app-context-menu button:disabled { opacity: .4; }

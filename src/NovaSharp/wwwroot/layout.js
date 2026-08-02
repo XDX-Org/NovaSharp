@@ -62,14 +62,21 @@ window.novaSharp.initAppContextMenu = function () {
         button.addEventListener("click", () => act(action));
         menu.appendChild(button);
     };
+    const addBrowserOptionsHint = () => {
+        menu.appendChild(document.createElement("hr"));
+        const hint = document.createElement("div");
+        hint.className = "context-menu-hint";
+        hint.innerHTML = "<span>Browser options</span><kbd>Shift+Right-click</kbd>";
+        menu.appendChild(hint);
+    };
 
     document.addEventListener("contextmenu", event => {
-        if (event.target.closest(".explorer,.menu-popup,.explorer-context-menu")) return;
+        if (event.shiftKey) { close(); return; }
+        if (event.target.closest(".explorer")) { event.preventDefault(); return; }
+        if (event.target.closest(".menu-popup,.explorer-context-menu")) return;
         const editable = event.target.closest("textarea,input:not([type=button]):not([type=submit])");
         const selectionTarget = editable || event.target;
         const selection = selectedText(selectionTarget);
-        if (!editable && !selection) return;
-
         event.preventDefault();
         close();
         target = selectionTarget;
@@ -89,8 +96,9 @@ window.novaSharp.initAppContextMenu = function () {
             menu.appendChild(document.createElement("hr"));
             addItem("Select all", "selectAll", "Ctrl+A");
         } else {
-            addItem("Copy", "copy", "Ctrl+C");
+            if (selection) addItem("Copy", "copy", "Ctrl+C");
         }
+        addBrowserOptionsHint();
         window.novaSharp.positionContextMenu(menu, event.clientX + menu.offsetWidth, event.clientY);
     });
     document.addEventListener("pointerdown", event => {
@@ -196,6 +204,14 @@ window.novaSharp.runPhase3Smoke = async function (explorer, dotNet) {
         const bounds = edgeMenu?.getBoundingClientRect();
         const contextMenuInsideViewport = !!bounds && bounds.left >= -1 && bounds.top >= -1
             && bounds.right <= window.innerWidth + 1 && bounds.bottom <= window.innerHeight + 1;
+        key(tree, "Escape");
+        await wait();
+        const shiftContext = new MouseEvent("contextmenu", {
+            bubbles: true, cancelable: true, shiftKey: true,
+            clientX: window.innerWidth - 1, clientY: window.innerHeight - 1
+        });
+        const nativeContextBypass = renderedFile?.dispatchEvent(shiftContext) === true
+            && !explorer.querySelector('[role="menu"]');
         const renderedRows = tree.querySelectorAll('[role="treeitem"]').length;
         const viewportHeight = tree.clientHeight || Math.max(0, explorer.clientHeight - 71);
         const rowLimit = Math.max(64, Math.ceil(viewportHeight / 26) + 18);
@@ -206,6 +222,7 @@ window.novaSharp.runPhase3Smoke = async function (explorer, dotNet) {
             contextActionsRelevant,
             contextMenuInsideViewport,
             contextMenuDismissed,
+            nativeContextBypass,
             renamePreservedDirtySelection,
             renderedRows
         });
@@ -213,7 +230,8 @@ window.novaSharp.runPhase3Smoke = async function (explorer, dotNet) {
         await dotNet.invokeMethodAsync("CompletePhase3SmokeAsync", {
             treePresent: false, rowsBounded: false, keyboardNavigation: false,
             contextActionsRelevant: false, contextMenuInsideViewport: false,
-            contextMenuDismissed: false, renamePreservedDirtySelection: false, renderedRows: 0,
+            contextMenuDismissed: false, nativeContextBypass: false,
+            renamePreservedDirtySelection: false, renderedRows: 0,
             error: `${error?.name ?? "Error"}: ${error?.message ?? String(error)}`
         });
     }

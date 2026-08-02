@@ -59,13 +59,13 @@
             }
             @if (_error is not null) { <div class="explorer-error" role="alert">@_error <button @onclick="ClearError">×</button></div> }
             <div class="tree" role="tree" aria-label="Workspace files" @onkeydown="HandleKeyAsync" @onkeydown:preventDefault
-                 @oncontextmenu="ShowRootContextMenu" @oncontextmenu:preventDefault>
+                 @oncontextmenu="ShowRootContextMenu">
                 <Virtualize Items="_visible" Context="row" ItemSize="26" OverscanCount="8">
                     <div class="tree-row @(IsSelected(row.Entry) ? "selected" : null)" role="treeitem"
                          aria-level="@(row.Depth + 1)" aria-expanded="@(row.Entry.IsDirectory ? _expanded.Contains(row.Entry.Path) : null)"
                          tabindex="@(IsSelected(row.Entry) ? 0 : -1)" style="padding-left:@(8 + row.Depth * 16)px"
                          @onclick="() => Select(row.Entry)" @ondblclick="() => ActivateAsync(row.Entry)"
-                         @oncontextmenu="args => ShowContextMenu(args, row.Entry)" @oncontextmenu:preventDefault @oncontextmenu:stopPropagation>
+                         @oncontextmenu="args => ShowContextMenu(args, row.Entry)" @oncontextmenu:stopPropagation>
                         @if (row.Entry.IsDirectory)
                         {
                             <button class="tree-toggle" tabindex="-1" @onclick="() => ToggleAsync(row.Entry)" @onclick:stopPropagation>@(_expanded.Contains(row.Entry.Path) ? "▾" : "▸")</button>
@@ -89,6 +89,8 @@
                     <button role="menuitem" @onclick="BeginDelete" disabled="@(_selected is null || IsRoot(_selected.Path))">Delete <kbd>Del</kbd></button>
                     <hr />
                     <button role="menuitem" @onclick="CloseWorkspaceAsync">Close workspace</button>
+                    <hr />
+                    <div class="context-menu-hint">Browser options <kbd>Shift+Right-click</kbd></div>
                 </div>
             }
         }
@@ -247,12 +249,14 @@
 
     private void ShowContextMenu(MouseEventArgs args, WorkspaceEntry entry)
     {
+        if (args.ShiftKey) return;
         _selected = entry;
         ShowContextMenu(args.ClientX, args.ClientY);
     }
 
     private void ShowRootContextMenu(MouseEventArgs args)
     {
+        if (args.ShiftKey) return;
         if (_workspace.RootPath is null) return;
         _selected = _visible.FirstOrDefault()?.Entry;
         ShowContextMenu(args.ClientX, args.ClientY);

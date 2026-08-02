@@ -81,7 +81,7 @@ jobs:
           if (-not $process.WaitForExit(60000)) { $process.Kill($true); throw 'Phase 3 native smoke timed out.' }
           if ($process.ExitCode -ne 0) { throw "Phase 3 native smoke exited with $($process.ExitCode)." }
           $result = Get-Content $report | ConvertFrom-Json
-          $required = 'TreePresent', 'RowsBounded', 'KeyboardNavigation', 'ContextActionsRelevant', 'ContextMenuInsideViewport', 'ContextMenuDismissed', 'RenamePreservedDirtySelection'
+          $required = 'TreePresent', 'RowsBounded', 'KeyboardNavigation', 'ContextActionsRelevant', 'ContextMenuInsideViewport', 'ContextMenuDismissed', 'NativeContextBypass', 'RenamePreservedDirtySelection'
           foreach ($name in $required) { if (-not $result.$name) { throw "Phase 3 smoke assertion failed: $name" } }
       - uses: actions/upload-artifact@v4
         if: always()

@@ -7,6 +7,7 @@ public sealed record Phase3SmokeResult(
     bool ContextActionsRelevant,
     bool ContextMenuInsideViewport,
     bool ContextMenuDismissed,
+    bool NativeContextBypass,
     bool RenamePreservedDirtySelection,
     int RenderedRows,
     string? Error = null);
