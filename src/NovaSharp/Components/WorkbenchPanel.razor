@@ -3,8 +3,7 @@
 @implements IDisposable
 @inject IJSRuntime JS
 
-<main class="workbench" data-phase4-smoke="@(Program.Phase4Workspace is not null ? "true" : "false")"
-      data-phase5-smoke="@(Program.Phase5Workspace is not null ? "true" : "false")" @onkeydown="HandleKeyAsync">
+<main class="workbench" @onkeydown="HandleKeyAsync">
     <header class="toolbar">
         <div class="main-menu">
             <button class="menu-trigger" @onclick="ToggleMenu" aria-label="Main menu" aria-expanded="@_showMenu">☰</button>
@@ -109,7 +108,8 @@
     {
         if (!firstRender) return;
         _self = DotNetObjectReference.Create(this);
-        await JS.InvokeVoidAsync("novaSharp.setSmokeBridge", _self);
+        await JS.InvokeVoidAsync("novaSharp.startSmokePolling", _self,
+            Program.Phase4Workspace is not null, Program.Phase5Workspace is not null);
     }
 
     private async Task OpenFileAsync()
