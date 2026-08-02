@@ -259,13 +259,14 @@ window.novaSharp.runPhase4Smoke = async function (workbench, dotNet) {
         let tabs = [...strip.querySelectorAll('.document-tab')];
         const tabsPresent = tabs.length > 2;
         const firstLabel = tabs[0]?.querySelector('.tab-label')?.textContent;
-        tabs[0]?.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true }));
+        const dataTransfer = new DataTransfer();
+        tabs[0]?.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer }));
         await wait(200);
         tabs = [...strip.querySelectorAll('.document-tab')];
-        tabs[2]?.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true }));
+        tabs[2]?.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer }));
         await wait(200);
         tabs = [...strip.querySelectorAll('.document-tab')];
-        tabs[2]?.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true }));
+        tabs[2]?.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer }));
         await wait();
         tabs = [...strip.querySelectorAll('.document-tab')];
         const pointerReordered = tabs[2]?.querySelector('.tab-label')?.textContent === firstLabel;
