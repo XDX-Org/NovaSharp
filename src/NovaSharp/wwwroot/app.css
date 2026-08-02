@@ -102,11 +102,14 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
 .explorer { position: relative; flex: 0 0 auto; min-width: 180px; max-width: 800px; overflow: hidden; border-left: 1px solid #343842; background: #202329; }
 .explorer-header { display: flex; height: 42px; align-items: center; gap: 8px; padding: 5px; text-transform: uppercase; font-size: var(--text-ui); }
 .explorer-header button, .explorer-actions button, .tree-toggle { padding: 4px 7px; border: 0; background: transparent; }
-.explorer-actions button.active { color: #fff; background: #3b4252; box-shadow: inset 0 -2px #8397c4; }
 .explorer-actions { display: flex; margin-left: auto; }
+.explorer-view-switch { display: grid; height: 34px; grid-template-columns: 1fr 1fr; gap: 2px; padding: 3px 5px; border-block: 1px solid #343842; background: #1c1f25; }
+.explorer-view-switch button { padding: 3px 8px; border: 0; background: transparent; color: #929cab; }
+.explorer-view-switch button.active { color: #fff; background: #343943; box-shadow: inset 0 -2px #8397c4; }
 .workspace-title { overflow: hidden; padding: 6px 10px; border-block: 1px solid #343842; color: #aeb6c4; font-size: var(--text-small); text-overflow: ellipsis; white-space: nowrap; }
 .explorer-empty { padding: 18px 8px; text-align: center; }
 .tree { height: calc(100% - 71px); overflow: auto; outline: none; }
+.explorer.has-view-switch .tree { height: calc(100% - 105px); }
 .tree-row { display: flex; height: 20px; align-items: center; overflow: hidden; cursor: pointer; user-select: none; }
 .tree-row:hover { background: #2b2f37; }
 .tree-row.selected { background: #35445e; outline: 1px solid #58709a; outline-offset: -1px; }
@@ -210,7 +213,7 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
 .status-message { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .pointer-status { margin-left: auto; }
 .document-info { flex: 0 0 auto; margin-left: auto; color: #929cab; }
-.solution-explorer { height: calc(100% - 42px); overflow: auto; background: #202329; }
+.solution-explorer { height: calc(100% - 76px); overflow: auto; background: #202329; }
 .solution-explorer > header { position: sticky; z-index: 2; top: 0; display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; background: #252931; font-size: var(--text-small); text-transform: uppercase; }
 .solution-explorer > header button { padding: 1px 5px; border: 0; background: transparent; }
 .project-tree { padding: 4px 5px 7px; font-size: var(--text-small); }

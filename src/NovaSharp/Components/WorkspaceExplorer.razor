@@ -4,15 +4,10 @@
 
 @if (!_state.SidebarCollapsed)
 {
-<aside @ref="_explorer" class="explorer" style="width:@_state.SidebarWidth.ToString(System.Globalization.CultureInfo.InvariantCulture)px" aria-label="Explorer" @onclick="HideContextMenu">
+<aside @ref="_explorer" class="explorer @(ProjectSystem?.State.Path is not null ? "has-view-switch" : null)" style="width:@_state.SidebarWidth.ToString(System.Globalization.CultureInfo.InvariantCulture)px" aria-label="Explorer" @onclick="HideContextMenu">
     <header class="explorer-header">
-        <strong>@(ShowSolution ? "Solution" : "Files")</strong>
+        <strong>Explorer</strong>
         <span class="explorer-actions">
-            @if (ProjectSystem?.State.Path is not null)
-            {
-                <button class="@(ShowSolution ? "active" : null)" @onclick="ShowSolutionView" title="Solution view" aria-label="Solution view">S</button>
-                <button class="@(!ShowSolution ? "active" : null)" @onclick="ShowFileView" title="File view" aria-label="File view">F</button>
-            }
             @if (!ShowSolution)
             {
                 <button @onclick="OpenFolderAsync" title="Open folder" aria-label="Open folder">＋</button>
@@ -21,6 +16,13 @@
             }
         </span>
     </header>
+        @if (ProjectSystem?.State.Path is not null)
+        {
+            <div class="explorer-view-switch" role="group" aria-label="Explorer view">
+                <button class="@(ShowSolution ? "active" : null)" aria-pressed="@ShowSolution" @onclick="ShowSolutionView">Solution</button>
+                <button class="@(!ShowSolution ? "active" : null)" aria-pressed="@(!ShowSolution)" @onclick="ShowFileView">Files</button>
+            </div>
+        }
         @if (ShowSolution)
         {
             <SolutionExplorer ProjectSystem="ProjectSystem!" FileOpened="FileOpened" />
