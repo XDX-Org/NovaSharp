@@ -6,11 +6,11 @@
          data-ratio="@split.Ratio.ToString(System.Globalization.CultureInfo.InvariantCulture)">
         <EditorGroupLayoutView Node="split.First" Workspace="Workspace" WordWrap="WordWrap"
                                ActiveChanged="ActiveChanged" ContentEdited="ContentEdited" CloseRequested="CloseRequested" />
-        <input class="editor-splitter" type="range" min="10" max="90" step="2"
-               value="@Math.Round(split.Ratio * 100)" aria-label="Resize editor groups"
+        <input class="editor-splitter" type="range" min="0.1" max="0.9" step="0.02"
+               @bind:get="split.Ratio" @bind:set="value => Resize(split, value)" @bind:event="oninput"
+               aria-label="Resize editor groups"
                aria-orientation="@(split.Orientation == SplitOrientation.Horizontal ? "vertical" : "horizontal")"
-               @oninput="args => Resize(split, args.Value?.ToString())"
-               @onchange="args => Resize(split, args.Value?.ToString())" />
+               />
         <EditorGroupLayoutView Node="split.Second" Workspace="Workspace" WordWrap="WordWrap"
                                ActiveChanged="ActiveChanged" ContentEdited="ContentEdited" CloseRequested="CloseRequested" />
     </div>
@@ -107,7 +107,7 @@ else if (Node is EditorGroup group)
             ? $"grid-template-columns:minmax(160px,{first}fr) 8px minmax(160px,{second}fr)"
             : $"grid-template-rows:minmax(160px,{first}fr) 8px minmax(160px,{second}fr)";
     }
-    private void Resize(EditorSplit split, string? value) { if (double.TryParse(value, out var ratio)) Workspace.Layout.Resize(split.Id, ratio / 100); }
+    private void Resize(EditorSplit split, double ratio) => Workspace.Layout.Resize(split.Id, ratio);
     private async Task Focus(EditorGroup group) { Workspace.Focus(group.Id); await ActiveChanged.InvokeAsync(); }
     private async Task Split(EditorGroup group, SplitDirection direction) { Workspace.Split(group.Id, direction); await ActiveChanged.InvokeAsync(); }
     private async Task Activate(EditorGroup group, DocumentTab tab) { group.Activate(tab); Workspace.Focus(group.Id); await ActiveChanged.InvokeAsync(); }

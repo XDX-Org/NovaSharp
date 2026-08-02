@@ -243,7 +243,7 @@ document.addEventListener('keydown', event => {
     if (!splitter || !event.shiftKey || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
     event.preventDefault();
     const decreasing = event.key === 'ArrowLeft' || event.key === 'ArrowUp';
-    splitter.value = Math.max(10, Math.min(90, Number(splitter.value) + (decreasing ? -10 : 10)));
+    splitter.value = Math.max(0.1, Math.min(0.9, Number(splitter.value) + (decreasing ? -0.1 : 0.1)));
     splitter.dispatchEvent(new Event('input', { bubbles: true }));
 });
 
@@ -336,9 +336,8 @@ window.novaSharp.runPhase5Smoke = async function (workbench, dotNet) {
         const splitter = workbench.querySelector('.editor-splitter');
         const splitterAccessible = splitter?.getAttribute('aria-label') === 'Resize editor groups'
             && splitter.getAttribute('aria-orientation') === 'vertical';
-        splitter.value = '65';
+        splitter.value = '0.65';
         splitter.dispatchEvent(new Event('input', { bubbles: true }));
-        splitter.dispatchEvent(new Event('change', { bubbles: true }));
         await wait();
         const splitterResized = workbench.querySelector('.editor-split')?.dataset.ratio === '0.65';
         const originalWidth = workbench.style.width;
