@@ -372,6 +372,9 @@ window.novaSharp.runPhase5Smoke = async function (workbench, dotNet) {
 window.novaSharp.schedulePhase5Smoke = function (workbench, dotNet) {
     setTimeout(() => window.novaSharp.runPhase5Smoke(workbench, dotNet), 0);
 };
+window.novaSharp.setSmokeBridge = function (bridge) {
+    window.novaSharp.smokeBridge = bridge;
+};
 
 const smokePoll = setInterval(() => {
     const workbench = document.querySelector('.workbench');
@@ -379,14 +382,11 @@ const smokePoll = setInterval(() => {
     const phase4 = workbench.dataset.phase4Smoke === 'true';
     const phase5 = workbench.dataset.phase5Smoke === 'true';
     if (!phase4 && !phase5) { clearInterval(smokePoll); return; }
+    if (!window.novaSharp.smokeBridge) return;
     if (phase4 && workbench.querySelectorAll('.document-tab').length < 3) return;
     if (phase5 && workbench.querySelectorAll('.editor-group').length < 2) return;
     workbench.dataset.smokeStarted = 'true';
     clearInterval(smokePoll);
-    const bridge = {
-        invokeMethodAsync: (name, result) => DotNet.invokeMethodAsync('NovaSharp',
-            name === 'CompletePhase4SmokeAsync' ? 'CompletePhase4SmokeReport' : 'CompletePhase5SmokeReport', result)
-    };
-    if (phase4) window.novaSharp.schedulePhase4Smoke(workbench, bridge);
-    else window.novaSharp.schedulePhase5Smoke(workbench, bridge);
+    if (phase4) window.novaSharp.schedulePhase4Smoke(workbench, window.novaSharp.smokeBridge);
+    else window.novaSharp.schedulePhase5Smoke(workbench, window.novaSharp.smokeBridge);
 }, 100);

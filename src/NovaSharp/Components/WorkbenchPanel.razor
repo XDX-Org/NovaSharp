@@ -1,6 +1,7 @@
 @using PhotinoEx.Core.Models
 @using Microsoft.AspNetCore.Components.Web
 @implements IDisposable
+@inject IJSRuntime JS
 
 <main class="workbench" data-phase4-smoke="@(Program.Phase4Workspace is not null ? "true" : "false")"
       data-phase5-smoke="@(Program.Phase5Workspace is not null ? "true" : "false")" @onkeydown="HandleKeyAsync">
@@ -73,6 +74,7 @@
     private readonly EditorDocumentState _emptyDocument = new();
     private EditorLayoutPersistence _persistence = null!;
     private WorkspaceExplorer? _explorer;
+    private DotNetObjectReference<WorkbenchPanel>? _self;
     private string? _status;
     private string _query = "", _replacement = "";
     private bool _showMenu, _showFind, _wordWrap, _externalChange, _explorerOpen = true;
@@ -101,6 +103,13 @@
         else if (Program.SmokeFile is not null) await OpenTabAsync(Program.SmokeFile);
         else await _workspace.RestoreAsync(await _persistence.LoadAsync());
         TrackActiveDocument();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        _self = DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("novaSharp.setSmokeBridge", _self);
     }
 
     private async Task OpenFileAsync()
@@ -218,6 +227,12 @@
         }
     }
 
+    [JSInvokable]
+    public Task CompletePhase4SmokeAsync(Phase4SmokeResult result) => Program.CompletePhase4SmokeAsync(result);
+
+    [JSInvokable]
+    public Task CompletePhase5SmokeAsync(Phase5SmokeResult result) => Program.CompletePhase5SmokeAsync(result);
+
     public void Dispose()
     {
         _ = SaveLayoutAsync();
@@ -225,6 +240,7 @@
         UntrackActiveDocument();
         _workspace.Dispose();
         _emptyDocument.Dispose();
+        _self?.Dispose();
         if (Program.ConfirmWorkbenchClose == ConfirmClose) Program.ConfirmWorkbenchClose = null;
     }
 
