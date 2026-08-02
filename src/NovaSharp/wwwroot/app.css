@@ -221,7 +221,7 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
 .project-leaf { width: 100%; padding: 0; border: 0; border-radius: 0; color: #c8ced8; background: transparent; text-align: left; }
 .project-leaf:disabled { opacity: .76; }
 .project-detail { margin-left: 5px; color: #687486; white-space: nowrap; }
-.project-progress, .project-summary, .project-diagnostics { padding: 5px 8px; color: #929cab; font-size: var(--text-small); }
+.project-progress, .project-diagnostics { padding: 5px 8px; color: #929cab; font-size: var(--text-small); }
 .project-diagnostics { color: #d6b875; }
 .project-diagnostics .error { padding: 3px 0; color: #ff8a8a; }
 .project-diagnostics .warning { padding: 3px 0; color: #d6b875; }

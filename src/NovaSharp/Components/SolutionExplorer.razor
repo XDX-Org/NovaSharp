@@ -8,7 +8,6 @@
         <div class="project-tree" role="tree">
             <ProjectTreeNodeView Node="root" FileOpened="FileOpened" ContextRequested="ContextRequested" />
         </div>
-        <div class="project-summary">@ProjectSystem.State.ProjectCount projects · @ProjectSystem.State.DocumentCount files · @ProjectSystem.State.Elapsed.TotalSeconds.ToString("0.0")s</div>
     }
     @if (ProjectSystem.Diagnostics.Entries.Count > 0)
     {
