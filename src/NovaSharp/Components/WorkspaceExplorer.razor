@@ -18,9 +18,14 @@
     </header>
         @if (ProjectSystem?.State.Path is not null)
         {
-            <div class="explorer-view-switch" role="group" aria-label="Explorer view">
-                <button class="@(ShowSolution ? "active" : null)" aria-pressed="@ShowSolution" @onclick="ShowSolutionView">Solution</button>
-                <button class="@(!ShowSolution ? "active" : null)" aria-pressed="@(!ShowSolution)" @onclick="ShowFileView">Files</button>
+            <div class="explorer-view-switch">
+                <select aria-label="Explorer view" value="@SelectedView" @onchange="ChangeViewAsync">
+                    <option value="solution">Solution</option>
+                    @foreach (var folder in SolutionFolders)
+                    {
+                        <option value="@folder.Path">@folder.Name</option>
+                    }
+                </select>
             </div>
         }
         @if (ShowSolution)
@@ -134,6 +139,7 @@
     private WorkspacePersistence _persistence = null!;
     private WorkspaceRestoreState _state = new();
     private string? _presentedSolution;
+    private string? _selectedFolder;
     private WorkspaceEntry? _selected, _deletePending;
     private string? _editMode, _error;
     private string _editName = "", _moveDestination = "";
@@ -145,16 +151,38 @@
     private bool _phase3SmokeStarted;
     private double _contextX, _contextY;
     private bool ShowSolution => _solutionView && ProjectSystem?.State.Path is not null;
+    private string SelectedView => ShowSolution ? "solution" : _selectedFolder ?? "solution";
+    private IReadOnlyList<FolderOption> SolutionFolders
+    {
+        get
+        {
+            if (ProjectSystem?.State.Path is not { } solutionPath) return [];
+            var solutionRoot = Path.GetDirectoryName(solutionPath)!;
+            var paths = new[] { solutionRoot }.Concat(ProjectSystem.CurrentSolution?.Projects
+                .Select(project => Path.GetDirectoryName(project.FilePath)).Where(path => path is not null).Select(path => path!) ?? []);
+            return paths.Distinct(PathComparer).Select(path => new FolderOption(path,
+                PathComparer.Equals(path, solutionRoot) ? $"Files — {Path.GetFileName(solutionRoot)}" : Path.GetFileName(path))).ToArray();
+        }
+    }
 
     protected override void OnParametersSet()
     {
         if (ProjectSystem?.State.Path == _presentedSolution) return;
         _presentedSolution = ProjectSystem?.State.Path;
         _solutionView = _presentedSolution is not null;
+        _selectedFolder = null;
     }
 
-    private void ShowSolutionView() { _solutionView = true; HideContextMenu(); }
-    private void ShowFileView() { _solutionView = false; HideContextMenu(); }
+    private async Task ChangeViewAsync(ChangeEventArgs args)
+    {
+        HideContextMenu();
+        var value = args.Value?.ToString();
+        if (value == "solution") { _solutionView = true; _selectedFolder = null; return; }
+        if (value is null || !SolutionFolders.Any(folder => PathComparer.Equals(folder.Path, value))) return;
+        _solutionView = false;
+        _selectedFolder = value;
+        await OpenFolderCoreAsync(value);
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -197,12 +225,14 @@
     {
         var folders = await Program.App.MainWindow.ShowOpenFolderDialogAsync("Open workspace", _workspace.RootPath, false);
         if (folders is not [var path]) return;
-        try
-        {
-            _workspace.Open(path); _children.Clear(); _expanded.Clear();
-            await LoadAsync(_workspace.RootPath!); Rebuild(); await SaveStateAsync();
-        }
+        try { await OpenFolderCoreAsync(path); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException) { _error = ex.Message; }
+    }
+
+    private async Task OpenFolderCoreAsync(string path)
+    {
+        _workspace.Open(path); _children.Clear(); _expanded.Clear();
+        await LoadAsync(_workspace.RootPath!); Rebuild(); await SaveStateAsync();
     }
 
     private async Task RestoreAsync()
@@ -469,6 +499,9 @@
         return extension.Length == 0 ? "none" : extension;
     }
     private sealed record TreeRow(WorkspaceEntry Entry, int Depth);
+    private sealed record FolderOption(string Path, string Name);
+    private static StringComparer PathComparer => OperatingSystem.IsWindows()
+        ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
 
     public async ValueTask DisposeAsync()
     {

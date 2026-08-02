@@ -103,9 +103,8 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
 .explorer-header { display: flex; height: 42px; align-items: center; gap: 8px; padding: 5px; text-transform: uppercase; font-size: var(--text-ui); }
 .explorer-header button, .explorer-actions button, .tree-toggle { padding: 4px 7px; border: 0; background: transparent; }
 .explorer-actions { display: flex; margin-left: auto; }
-.explorer-view-switch { display: grid; height: 34px; grid-template-columns: 1fr 1fr; gap: 2px; padding: 3px 5px; border-block: 1px solid #343842; background: #1c1f25; }
-.explorer-view-switch button { padding: 3px 8px; border: 0; background: transparent; color: #929cab; }
-.explorer-view-switch button.active { color: #fff; background: #343943; box-shadow: inset 0 -2px #8397c4; }
+.explorer-view-switch { height: 34px; padding: 4px 6px; border-block: 1px solid #343842; background: #1c1f25; }
+.explorer-view-switch select { width: 100%; height: 24px; padding: 1px 6px; border: 1px solid #454b57; color: #d8dee9; background: #292e37; }
 .workspace-title { overflow: hidden; padding: 6px 10px; border-block: 1px solid #343842; color: #aeb6c4; font-size: var(--text-small); text-overflow: ellipsis; white-space: nowrap; }
 .explorer-empty { padding: 18px 8px; text-align: center; }
 .tree { height: calc(100% - 71px); overflow: auto; outline: none; }
