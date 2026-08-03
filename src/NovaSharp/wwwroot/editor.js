@@ -210,6 +210,7 @@ export async function runPhase7Smoke(root) {
         input.setSelectionRange(completionPosition, completionPosition);
         await dotNet.invokeMethodAsync('InputChanged', input.value, input.selectionStart, null);
         await dotNet.invokeMethodAsync('EditorCommand', 'completion', input.selectionStart);
+        const completionItems = await dotNet.invokeMethodAsync('CompletionItemCount');
         const completionVisible = await waitFor(() => root.querySelectorAll('.completion-popup [role="option"]').length > 0);
         input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
         const completionKeyboardOwned = await waitFor(() => !root.querySelector('.completion-popup'));
@@ -240,7 +241,8 @@ export async function runPhase7Smoke(root) {
         await dotNet.invokeMethodAsync('EditorCommand', 'format', 0);
         const formattingApplied = await waitFor(() => input.value.startsWith('class C {'));
         return { completionVisible, completionKeyboardOwned, signatureVisible, hoverVisible, semanticTokensPresent,
-            autoIndent, commentToggle, formattingApplied, loadingStateCleared: !root.querySelector('.language-state') };
+            autoIndent, commentToggle, formattingApplied, loadingStateCleared: !root.querySelector('.language-state'),
+            error: completionVisible ? null : `Provider returned ${completionItems} completion items` };
     } catch (error) {
         return { error: String(error) };
     }
