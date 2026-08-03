@@ -61,6 +61,7 @@ public sealed class RoslynProjectSystem : IAsyncDisposable
     private readonly Dictionary<string, ProjectId> _activeContexts = new(PathComparer);
     private readonly Dictionary<string, EditorDocumentState> _trackedEditors = new(PathComparer);
     private readonly Dictionary<string, CancellationTokenSource> _editorUpdates = new(PathComparer);
+    private readonly Dictionary<string, Task> _editorUpdateTasks = new(PathComparer);
     private readonly List<string> _rawMsBuildLog = [];
     private CancellationTokenSource? _loadCancellation;
     private CancellationTokenSource? _reloadDebounce;
@@ -68,12 +69,13 @@ public sealed class RoslynProjectSystem : IAsyncDisposable
     private Solution? _solution;
     private readonly List<FileSystemWatcher> _watchers = [];
     private long _loadVersion;
+    private long _completedLoadVersion;
 
     internal RoslynProjectSystem(DiagnosticStore? diagnostics = null) => Diagnostics = diagnostics ?? new();
     internal DiagnosticStore Diagnostics { get; }
     internal ProjectLoadState State { get; private set; } = new(null, null, false, null, TimeSpan.Zero, 0, 0);
     internal IReadOnlyList<string> RawMsBuildLog { get { lock (_rawMsBuildLog) return _rawMsBuildLog.ToArray(); } }
-    internal long LoadVersion => Interlocked.Read(ref _loadVersion);
+    internal long CompletedLoadVersion => Interlocked.Read(ref _completedLoadVersion);
     internal IReadOnlyList<ProjectContextInfo> Contexts => _solution?.Projects.Select(project =>
     {
         var outputDirectory = project.OutputFilePath is null ? null : Path.GetDirectoryName(project.OutputFilePath);
@@ -107,7 +109,17 @@ public sealed class RoslynProjectSystem : IAsyncDisposable
     internal async Task ReloadAsync(CancellationToken cancellationToken = default)
     {
         if (State.Path is not { } path) return;
+        StopWatching();
+        _reloadDebounce?.Cancel();
+        _reloadDebounce?.Dispose();
+        _reloadDebounce = null;
         await OpenAsync(path, cancellationToken);
+    }
+
+    internal void StopWatching()
+    {
+        foreach (var watcher in _watchers) watcher.Dispose();
+        _watchers.Clear();
     }
 
     internal void Track(EditorDocumentState document)
@@ -155,6 +167,23 @@ public sealed class RoslynProjectSystem : IAsyncDisposable
         return ids.Select(id => _solution.GetDocument(id))
             .FirstOrDefault(document => document?.Project.Id == preferred)
             ?? ids.Select(id => _solution.GetDocument(id)).FirstOrDefault(document => document is not null);
+    }
+
+    internal async Task<Document?> GetLanguageDocumentAsync(string path, string? projectContext, long version,
+        CancellationToken cancellationToken)
+    {
+        path = Path.GetFullPath(path);
+        if (_editorUpdateTasks.GetValueOrDefault(path) is { } update) await update.WaitAsync(cancellationToken);
+        await _mutationGate.WaitAsync(cancellationToken);
+        try
+        {
+            if (_trackedEditors.GetValueOrDefault(path)?.Version != version || _solution is null
+                || !_documents.TryGetValue(path, out var ids)) return null;
+            return ids.Select(id => _solution.GetDocument(id)).FirstOrDefault(document => document is not null
+                && (projectContext is null || document.Project.Id.Id.ToString() == projectContext))
+                ?? ids.Select(id => _solution.GetDocument(id)).FirstOrDefault(document => document is not null);
+        }
+        finally { _mutationGate.Release(); }
     }
 
     private async Task LoadCoreAsync(string path, CancellationToken cancellationToken)
@@ -209,6 +238,7 @@ public sealed class RoslynProjectSystem : IAsyncDisposable
                         contextDiagnostics);
                 State = new(path, BuildTree(solution, path), false, "Loaded", stopwatch.Elapsed,
                     solution.ProjectIds.Count, solution.Projects.Sum(project => project.DocumentIds.Count));
+                Interlocked.Exchange(ref _completedLoadVersion, version);
                 StartWatching(path, solution);
             }
             finally { _mutationGate.Release(); }
@@ -339,7 +369,7 @@ public sealed class RoslynProjectSystem : IAsyncDisposable
         if (_editorUpdates.Remove(snapshot.Path, out var previous)) { previous.Cancel(); previous.Dispose(); }
         var cancellation = new CancellationTokenSource();
         _editorUpdates[snapshot.Path] = cancellation;
-        _ = ApplyEditorUpdateAsync(snapshot, cancellation.Token);
+        _editorUpdateTasks[snapshot.Path] = ApplyEditorUpdateAsync(snapshot, cancellation.Token);
     }
 
     private async Task ApplyEditorUpdateAsync(EditorSnapshot snapshot, CancellationToken cancellationToken)
@@ -411,7 +441,7 @@ public sealed class RoslynProjectSystem : IAsyncDisposable
 
     private async Task DebouncedReloadAsync(CancellationToken cancellationToken)
     {
-        try { await Task.Delay(300, cancellationToken); await ReloadAsync(cancellationToken); }
+        try { await Task.Delay(300, cancellationToken); await OpenAsync(State.Path!, cancellationToken); }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
     }
 

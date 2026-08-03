@@ -4,7 +4,7 @@ using System.Text.Json;
 namespace NovaSharp;
 
 internal sealed record EditorSettings(int SchemaVersion = 1, bool WordWrap = false, int TabSize = 4,
-    string[]? ExplorerIgnoredNames = null);
+    string[]? ExplorerIgnoredNames = null, bool AutoCompletion = true, bool SemanticHighlighting = true);
 
 internal sealed class ConfigurationService(string userPath, string? workspacePath = null)
 {

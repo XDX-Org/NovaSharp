@@ -28,6 +28,7 @@
                     <button role="menuitem" @onclick="Redo" disabled="@(!_document.CanRedo)">Redo <kbd>Ctrl+Y</kbd></button>
                     <hr />
                     <button role="menuitem" @onclick="ToggleFind">Find <kbd>Ctrl+F</kbd></button>
+                    <button role="menuitem" @onclick="ToggleSuggestionsAsync">Suggestions <span>@(_suggestions ? "On" : "Off")</span></button>
                 </div>
                 }
             </div>
@@ -84,6 +85,8 @@
     <div class="workbench-body">
         <div class="editor-area">
             <EditorGroupLayoutView @key="_workspace.Layout.Root.Id" Node="_workspace.Layout.Root" Workspace="_workspace" WordWrap="_wordWrap"
+                                   ProjectSystem="_projectSystem" LanguageProvider="_languageProvider"
+                                   SuggestionsEnabled="_suggestions" SemanticHighlighting="Program.Configuration.Current.SemanticHighlighting"
                                    ExternalDragActive="_explorerFileDrag is not null"
                                    ActiveChanged="ActiveChangedAsync" ContentEdited="ContentEditedAsync"
                                    CloseRequested="CloseRequestedAsync" />
@@ -112,6 +115,7 @@
 @code {
     private readonly EditorGroupWorkspace _workspace = new();
     private readonly RoslynProjectSystem _projectSystem = new();
+    private readonly CSharpLanguageProvider _languageProvider;
     private readonly HashSet<EditorDocumentState> _projectDocuments = [];
     private readonly EditorDocumentState _emptyDocument = new();
     private EditorLayoutPersistence _persistence = null!;
@@ -122,7 +126,7 @@
     private string? _explorerFileDrag;
     private string _query = "", _replacement = "";
     private string? _openMenu;
-    private bool _showFind, _wordWrap, _externalChange, _leftMouseDown, _explorerOpen = true;
+    private bool _showFind, _wordWrap, _externalChange, _leftMouseDown, _explorerOpen = true, _suggestions = true;
     private DocumentTab? ActiveTab => _workspace.FocusedGroup.ActiveTab;
     private EditorDocumentState _document => ActiveTab?.Document ?? _emptyDocument;
     private string Status => _status ?? _workspace.LastError ?? (_document.IsReadOnly ? "Read-only" : _document.FilePath ?? "Ready");
@@ -131,9 +135,12 @@
     private string? ActiveContextId => _document.FilePath is { } path
         ? _projectSystem.GetActiveDocument(path)?.Project.Id.Id.ToString() : null;
 
+    public WorkbenchPanel() => _languageProvider = new(_projectSystem);
+
     protected override async Task OnInitializedAsync()
     {
         _wordWrap = Program.Configuration.Current.WordWrap;
+        _suggestions = Program.Configuration.Current.AutoCompletion;
         _persistence = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "NovaSharp", "workbench-session.json"));
         _workspace.Changed += WorkspaceChanged;
@@ -159,6 +166,7 @@
                 await _projectSystem.OpenAsync(solutionPath);
         }
         if (Program.Phase6Solution is not null) await _projectSystem.OpenAsync(Program.Phase6Solution);
+        if (Program.Phase7Solution is not null) await _projectSystem.OpenAsync(Program.Phase7Solution);
         TrackActiveDocument();
     }
 
@@ -279,6 +287,7 @@
     private void ToggleMenu(string menu) => _openMenu = _openMenu == menu ? null : menu;
     private void CloseMenu() => _openMenu = null;
     private async Task ToggleWrapAsync() { _openMenu = null; _wordWrap = !_wordWrap; await Program.Configuration.SaveUserAsync(Program.Configuration.Current with { WordWrap = _wordWrap }); }
+    private async Task ToggleSuggestionsAsync() { _openMenu = null; _suggestions = !_suggestions; await Program.Configuration.SaveUserAsync(Program.Configuration.Current with { AutoCompletion = _suggestions }); }
     private async Task ReloadAsync() { await _document.ReloadAsync(); _externalChange = false; StateHasChanged(); }
     private void KeepBuffer() { _document.KeepBuffer(); _externalChange = false; }
     private Task ToggleExplorerAsync() => _explorer?.ToggleCollapsedAsync() ?? Task.CompletedTask;

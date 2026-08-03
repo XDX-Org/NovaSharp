@@ -1,5 +1,9 @@
 # Phase 7: C# IntelliSense
 
+## Status
+
+Implementation complete; local verification passes. The four-platform packaging matrix remains required before marking the phase complete.
+
 ## Goal
 
 Provide responsive, project-aware C# editing assistance from Roslyn through NovaSharp's Blazor editor.
@@ -40,6 +44,23 @@ Completion, signature-help, and hover popups are Blazor overlay components ancho
 - Hover and formatting failures are recoverable and do not interrupt typing.
 - Fixture tests assert semantic results; interaction tests cover cancellation and out-of-order responses.
 - Define performance budgets and measure them on a medium fixture solution before marking complete.
+
+## Performance budgets
+
+On the 200-document Phase 7 fixture, cold explicit completion must finish within 2 seconds, hover and signature help within 1 second each, and full-document semantic classification within 3 seconds. Background semantic work is debounced by 150 ms and does not count that intentional delay toward provider latency. CI measures on the Linux `ubuntu-24.04` x64 runner; other platforms report the same measurements without hard timing gates.
+
+## Implementation
+
+- Provider-neutral, capability-based contracts carry an opaque document path, explicit project context, editor version, position/range, and cancellation without exposing Roslyn types to editor components.
+- `CSharpLanguageProvider` supplies Roslyn completion with lazy descriptions and commit metadata, signature help, plain-text hover including project/assembly provenance, formatting, and semantic classifications.
+- One latest-request coordinator per capability cancels superseded work and rejects responses whose sequence or source version is stale. Language requests await pending dirty-buffer synchronization before resolving their Roslyn document.
+- The editor owns popup navigation and acceptance keys while overlays are open. Explicit completion/signature and formatting start immediately; semantic work is debounced. Hover and descriptions render as Blazor text, so markup is escaped rather than interpreted.
+- Cached line presentations retain unchanged rows when semantic results are merged. Automatic indentation, delimiter pairing, line-comment toggling, and document/selection formatting are editor commands.
+- Suggestion and semantic-highlighting behavior is persisted in editor settings. A visible loading state replaces language results while project evaluation is incomplete.
+
+## Verification
+
+The local Release suite covers project-aware completion, accessibility, unsaved versions, lazy details, signature parameters, hover provenance, semantic classification, formatting, cancellation, out-of-order responses, and the medium-fixture budgets. Native interaction and four-platform package verification run in CI before the status changes to complete.
 
 ## Next phase
 

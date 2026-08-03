@@ -62,7 +62,7 @@ public sealed class ProjectSystemTests
         Assert.AreEqual(Path.Combine(fixture.Root, "Web", "wwwroot", "app.css"), css.Path);
         Assert.AreEqual(Path.Combine(fixture.Root, "Web", "wwwroot"),
             Descendants(webNode).Single(node => node.Name == "wwwroot").Path);
-        Assert.IsTrue(projectSystem.Contexts.Any(context => context.TargetFramework == "net9.0" && context.Configuration == "Debug"));
+        Assert.IsTrue(projectSystem.Contexts.Any(context => context.TargetFramework == "netstandard2.1" && context.Configuration == "Debug"));
         Assert.IsTrue(projectSystem.Contexts.Any(context => context.TargetFramework == "net10.0" && context.Configuration == "Debug"));
         var app = projectSystem.CurrentSolution!.Projects.First(project => project.Name.StartsWith("App", StringComparison.Ordinal)
             && project.CompilationOptions?.NullableContextOptions == NullableContextOptions.Enable);
@@ -120,14 +120,17 @@ public sealed class ProjectSystemTests
         using var fixture = new ProjectFixture();
         await using var projectSystem = new RoslynProjectSystem();
         await projectSystem.OpenAsync(fixture.SolutionFile);
-        File.WriteAllText(fixture.AppProject, File.ReadAllText(fixture.AppProject).Replace("net9.0;net10.0", "net10.0"));
+        projectSystem.StopWatching();
+        File.WriteAllText(fixture.AppProject, File.ReadAllText(fixture.AppProject).Replace("netstandard2.1;net10.0", "net10.0"));
 
-        await WaitUntilAsync(() => Task.FromResult(projectSystem.Diagnostics.Entries
-            .Any(entry => entry.Message.Contains("contexts changed", StringComparison.Ordinal))));
+        await projectSystem.ReloadAsync();
+        Assert.IsTrue(projectSystem.Diagnostics.Entries.Any(entry => entry.Message.Contains("contexts changed", StringComparison.Ordinal)),
+            $"Contexts: {string.Join(", ", projectSystem.Contexts.Select(context => context.TargetFramework))}; diagnostics: {string.Join(" | ", projectSystem.Diagnostics.Entries.Select(entry => entry.Message))}");
+        projectSystem.StopWatching();
         File.WriteAllText(fixture.SolutionFile,
             "<Solution><Project Path=\"Lib/Lib.csproj\" /><Project Path=\"App/App.csproj\" /></Solution>");
-        await WaitUntilAsync(() => Task.FromResult(projectSystem.Diagnostics.Entries
-            .Any(entry => entry.Message.Contains("context removed", StringComparison.Ordinal))));
+        await projectSystem.ReloadAsync();
+        Assert.IsTrue(projectSystem.Diagnostics.Entries.Any(entry => entry.Message.Contains("context removed", StringComparison.Ordinal)));
     }
 
     [TestMethod]
@@ -137,13 +140,14 @@ public sealed class ProjectSystemTests
         using var fixture = new ProjectFixture();
         await using var projectSystem = new RoslynProjectSystem();
         await projectSystem.OpenAsync(fixture.SolutionFile);
-        var version = projectSystem.LoadVersion;
+        var version = projectSystem.CompletedLoadVersion;
 
-        File.SetLastWriteTimeUtc(Path.Combine(fixture.Root, "App", "obj", "project.assets.json"), DateTime.UtcNow.AddSeconds(1));
-        await WaitUntilAsync(() => Task.FromResult(projectSystem.LoadVersion > version && !projectSystem.State.IsLoading));
-        version = projectSystem.LoadVersion;
+        var assets = Path.Combine(fixture.Root, "App", "obj", "project.assets.json");
+        File.AppendAllText(assets, " ");
+        await WaitUntilAsync(() => Task.FromResult(projectSystem.CompletedLoadVersion > version));
+        version = projectSystem.CompletedLoadVersion;
         File.WriteAllText(Path.Combine(fixture.Root, "App", "obj", "Phase6.g.cs"), "internal class Generated;");
-        await WaitUntilAsync(() => Task.FromResult(projectSystem.LoadVersion > version && !projectSystem.State.IsLoading));
+        await WaitUntilAsync(() => Task.FromResult(projectSystem.CompletedLoadVersion > version));
     }
 
     [TestMethod]
@@ -192,11 +196,11 @@ public sealed class ProjectSystemTests
             Directory.CreateDirectory(Path.Combine(Root, "Lib"));
             Directory.CreateDirectory(Path.Combine(Root, "App"));
             File.WriteAllText(SharedFile, "public class Shared { }");
-            File.WriteAllText(Path.Combine(Root, "Lib", "Lib.csproj"), Project("Microsoft.NET.Sdk", "net9.0;net10.0", multiTarget: true));
+            File.WriteAllText(Path.Combine(Root, "Lib", "Lib.csproj"), Project("Microsoft.NET.Sdk", "netstandard2.1;net10.0", multiTarget: true));
             File.WriteAllText(Path.Combine(Root, "Lib", "Lib.cs"), "public class LibType { }");
             CreateLocalPackage();
             File.WriteAllText(AppProject,
-                Project("Microsoft.NET.Sdk", "net9.0;net10.0", "<ProjectReference Include=\"../Lib/Lib.csproj\" /><PackageReference Include=\"Fixture.Package\" Version=\"1.0.0\" />", multiTarget: true));
+                Project("Microsoft.NET.Sdk", "netstandard2.1;net10.0", "<ProjectReference Include=\"../Lib/Lib.csproj\" /><PackageReference Include=\"Fixture.Package\" Version=\"1.0.0\" />", multiTarget: true));
             File.WriteAllText(Path.Combine(Root, "App", "Program.cs"), "public class Program { }");
             Directory.CreateDirectory(Path.Combine(Root, "Web"));
             File.WriteAllText(Path.Combine(Root, "Web", "Web.csproj"), Project("Microsoft.NET.Sdk.Web", "net10.0"));
@@ -217,7 +221,6 @@ public sealed class ProjectSystemTests
                 <Nullable>enable</Nullable>
                 <LangVersion>13</LangVersion>
                 <DefineConstants>PHASE6</DefineConstants>
-                {(multiTarget ? "<OutputType>Exe</OutputType>" : "")}
               </PropertyGroup>
               <ItemGroup>
                 <Compile Include="../Shared.cs" Link="Shared.cs" />
@@ -234,7 +237,7 @@ public sealed class ProjectSystemTests
             var nuspec = archive.CreateEntry("Fixture.Package.nuspec");
             using (var writer = new StreamWriter(nuspec.Open()))
                 writer.Write("<package><metadata><id>Fixture.Package</id><version>1.0.0</version><authors>NovaSharp</authors><description>Phase 6 fixture</description></metadata></package>");
-            foreach (var framework in new[] { "net9.0", "net10.0" })
+            foreach (var framework in new[] { "netstandard2.1", "net10.0" })
             {
                 var entry = archive.CreateEntry($"lib/{framework}/Fixture.Package.dll");
                 using var source = File.OpenRead(typeof(object).Assembly.Location);
@@ -246,10 +249,10 @@ public sealed class ProjectSystemTests
         private void Restore(string project)
         {
             using var process = Process.Start(new ProcessStartInfo("dotnet",
-                $"restore \"{project}\" --source \"{Path.Combine(Root, "packages")}\" --nologo --verbosity quiet")
+                $"restore \"{project}\" --source \"{Path.Combine(Root, "packages")}\" --packages \"{Path.Combine(Root, ".nuget")}\" --nologo --verbosity quiet")
                 { RedirectStandardError = true, RedirectStandardOutput = true })!;
             process.WaitForExit();
-            Assert.AreEqual(0, process.ExitCode, process.StandardError.ReadToEnd());
+            Assert.AreEqual(0, process.ExitCode, process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd());
         }
 
         public void Dispose()

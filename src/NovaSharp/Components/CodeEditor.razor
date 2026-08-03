@@ -14,20 +14,89 @@
             </Virtualize>
         }
     </div>
-    <textarea class="editor-input" aria-label="File contents" spellcheck="false" wrap="off"
-        value="@Value" @oninput="OnInput"></textarea>
+    <textarea class="editor-input" aria-label="File contents" spellcheck="false" wrap="off" value="@Value"></textarea>
+    @if (ProjectLoading)
+    {
+        <div class="language-state" role="status">C# services loading…</div>
+    }
+    @if (_completion is { Items.Count: > 0 })
+    {
+        <div class="language-popup completion-popup" role="listbox" style="@PopupStyle">
+            @for (var index = 0; index < _completion.Items.Count; index++)
+            {
+                var item = _completion.Items[index];
+                <button class="@(index == _selectedCompletion ? "selected" : null)" role="option"
+                        data-commit="@(new string(item.CommitCharacters.ToArray()))"
+                        aria-selected="@(index == _selectedCompletion)" @onmouseenter="() => FocusCompletionAsync(index)"
+                        @onclick="() => CommitCompletionAsync(item)">
+                    <span>@item.DisplayText</span><small>@item.Kind</small>
+                </button>
+            }
+            @if (_completion.Items[_selectedCompletion].Detail is { } detail)
+            {
+                <div class="language-detail">@detail</div>
+            }
+        </div>
+    }
+    @if (_signature is { Signatures.Count: > 0 })
+    {
+        <div class="language-popup signature-popup" style="@PopupStyle" role="status">
+            <span>@(_signature.ActiveSignature + 1)/@_signature.Signatures.Count</span>
+            <code>@_signature.Signatures[_signature.ActiveSignature]</code>
+            <small>parameter @(_signature.ActiveParameter + 1)</small>
+        </div>
+    }
+    @if (_hover is { Sections.Count: > 0 })
+    {
+        <div class="language-popup hover-popup" style="@PopupStyle" role="tooltip">
+            @foreach (var section in _hover.Sections) { <div>@section</div> }
+        </div>
+    }
 </div>
 
 @code {
     [Parameter, EditorRequired] public string Value { get; set; } = string.Empty;
     [Parameter, EditorRequired] public EventCallback<string> ValueChanged { get; set; }
+    [Parameter, EditorRequired] public EditorDocumentState Document { get; set; } = null!;
+    [Parameter, EditorRequired] public ILanguageProvider LanguageProvider { get; set; } = null!;
+    [Parameter] public string? ProjectContext { get; set; }
+    [Parameter] public bool ProjectLoading { get; set; }
+    [Parameter] public bool SuggestionsEnabled { get; set; } = true;
+    [Parameter] public bool SemanticHighlighting { get; set; } = true;
     [Parameter] public bool WordWrap { get; set; }
     [Parameter, EditorRequired] public EditorViewState ViewState { get; set; } = null!;
     [Parameter] public EventCallback ViewStateChanged { get; set; }
+    private readonly LatestLanguageRequest _completionRequest = new();
+    private readonly LatestLanguageRequest _signatureRequest = new();
+    private readonly LatestLanguageRequest _hoverRequest = new();
+    private readonly LatestLanguageRequest _semanticRequest = new();
     private ElementReference _root;
     private IJSObjectReference? _module;
     private DotNetObjectReference<CodeEditor>? _self;
-    private ICollection<EditorLine> Lines => CSharpTokenizer.Tokenize(Value).ToArray();
+    private CompletionResult? _completion;
+    private SignatureResult? _signature;
+    private HoverResult? _hover;
+    private IReadOnlyList<SemanticSpan> _semanticSpans = [];
+    private IReadOnlyList<EditorLine> _lines = [];
+    private string? _linesValue;
+    private int _semanticRevision, _renderedSemanticRevision;
+    private int _selectedCompletion;
+    private double _popupX = 72, _popupY = 24;
+    private ICollection<EditorLine> Lines
+    {
+        get
+        {
+            if (_linesValue == Value && _renderedSemanticRevision == _semanticRevision) return (ICollection<EditorLine>)_lines;
+            var updated = CSharpTokenizer.Tokenize(Value, _semanticSpans).ToArray();
+            if (_lines.Count == updated.Length)
+                for (var index = 0; index < updated.Length; index++)
+                    if (_lines[index].Text == updated[index].Text && _lines[index].Spans.SequenceEqual(updated[index].Spans))
+                        updated[index] = _lines[index];
+            _lines = updated; _linesValue = Value; _renderedSemanticRevision = _semanticRevision;
+            return updated;
+        }
+    }
+    private string PopupStyle => $"left:{_popupX}px;top:{_popupY}px";
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -36,6 +105,12 @@
         _self = DotNetObjectReference.Create(this);
         await _module.InvokeVoidAsync("createEditor", _root, WordWrap, _self, ViewState.SelectionStart,
             ViewState.SelectionEnd, ViewState.ScrollTop, ViewState.ScrollLeft);
+        _ = RefreshSemanticAsync();
+        if (Program.Phase7Solution is not null)
+        {
+            var result = await _module.InvokeAsync<Phase7SmokeResult>("runPhase7Smoke", _root);
+            await Program.CompletePhase7SmokeAsync(result);
+        }
         if (Program.Phase2SmokeFile is not null)
         {
             var result = await _module.InvokeAsync<EditorSmokeResult>("runSmokeChecks", _root);
@@ -43,7 +118,129 @@
         }
     }
 
-    private Task OnInput(ChangeEventArgs args) => ValueChanged.InvokeAsync(args.Value?.ToString() ?? string.Empty);
+    [JSInvokable]
+    public async Task InputChanged(string value, int caret, string? trigger)
+    {
+        await ValueChanged.InvokeAsync(value);
+        ViewState.SetSelection(caret, caret, value.Length);
+        if (ProjectLoading || Document.FilePath is null) return;
+        if (SuggestionsEnabled && (trigger is "." or " " || trigger?.Length == 1 && char.IsLetterOrDigit(trigger[0])))
+            await RequestCompletionAsync(caret, false);
+        else CloseCompletion();
+        if (trigger is "(" or ",") await RequestSignatureAsync(caret);
+        else if (trigger == ")") _signature = null;
+        _hover = null;
+        _ = RefreshSemanticAsync();
+    }
+
+    [JSInvokable]
+    public async Task EditorCommand(string command, int caret)
+    {
+        switch (command)
+        {
+            case "completion": await RequestCompletionAsync(caret, true); break;
+            case "signature": await RequestSignatureAsync(caret); break;
+            case "hover": await RequestHoverAsync(caret); break;
+            case "completion-next": MoveCompletion(1); break;
+            case "completion-previous": MoveCompletion(-1); break;
+            case "completion-accept" when _completion is { Items.Count: > 0 }:
+                await CommitCompletionAsync(_completion.Items[_selectedCompletion]); break;
+            case "escape": _completion = null; _signature = null; _hover = null; break;
+            case "format": await FormatAsync(); break;
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private LanguageRequest Request(int position, TextRange? range = null) =>
+        new(Document.FilePath!, ProjectContext, Document.Version, Math.Clamp(position, 0, Value.Length), range);
+
+    private async Task RequestCompletionAsync(int caret, bool explicitInvocation)
+    {
+        var version = Document.Version;
+        _completion = await _completionRequest.RunAsync(
+            token => LanguageProvider.GetCompletionsAsync(Request(caret), explicitInvocation, token), version);
+        _selectedCompletion = 0;
+        await UpdateAnchorAsync(caret);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task FocusCompletionAsync(int index)
+    {
+        if (_completion is null) return;
+        _selectedCompletion = index;
+        var item = _completion.Items[index];
+        var detail = await LanguageProvider.GetCompletionDetailsAsync(Request(ViewState.SelectionStart), item.Id, default);
+        if (detail.SourceVersion != Document.Version || detail.Value is null) return;
+        var items = _completion.Items.ToArray();
+        items[index] = detail.Value;
+        _completion = new(items);
+    }
+
+    private async Task CommitCompletionAsync(CompletionEntry item, char? commitCharacter = null)
+    {
+        if (_module is null) return;
+        var response = await LanguageProvider.GetCompletionEditAsync(Request(ViewState.SelectionStart), item.Id,
+            commitCharacter, default);
+        if (response.SourceVersion != Document.Version || response.Value is not { } edit) return;
+        _completion = null;
+        await _module.InvokeVoidAsync("applyEditorEdit", _root, edit.Replacement.Start, edit.Replacement.Length,
+            edit.NewText, edit.NewPosition);
+    }
+
+    private async Task RequestSignatureAsync(int caret)
+    {
+        var version = Document.Version;
+        _signature = await _signatureRequest.RunAsync(
+            token => LanguageProvider.GetSignatureHelpAsync(Request(caret), token), version);
+        await UpdateAnchorAsync(caret);
+    }
+
+    private async Task RequestHoverAsync(int caret)
+    {
+        var version = Document.Version;
+        _hover = await _hoverRequest.RunAsync(token => LanguageProvider.GetHoverAsync(Request(caret), token), version);
+        await UpdateAnchorAsync(caret);
+    }
+
+    private async Task RefreshSemanticAsync()
+    {
+        if (ProjectLoading || Document.FilePath is null || !SemanticHighlighting) return;
+        var version = Document.Version;
+        try { await Task.Delay(150); } catch (OperationCanceledException) { return; }
+        var spans = await _semanticRequest.RunAsync(
+            token => LanguageProvider.GetSemanticSpansAsync(Request(Value.Length), token), version);
+        if (spans is not null) { _semanticSpans = spans; _semanticRevision++; await InvokeAsync(StateHasChanged); }
+    }
+
+    private async Task FormatAsync()
+    {
+        if (_module is null || Document.FilePath is null) return;
+        try
+        {
+            TextRange? range = ViewState.SelectionStart == ViewState.SelectionEnd ? null
+                : new TextRange(ViewState.SelectionStart, ViewState.SelectionEnd - ViewState.SelectionStart);
+            var response = await LanguageProvider.FormatAsync(Request(ViewState.SelectionStart, range), default);
+            if (response.SourceVersion == Document.Version && response.Value is { } formatted)
+                await _module.InvokeVoidAsync("replaceEditorText", _root, formatted.Text,
+                    formatted.SelectionStart, formatted.SelectionLength);
+        }
+        catch (Exception) { }
+    }
+
+    private async Task UpdateAnchorAsync(int caret)
+    {
+        if (_module is null) return;
+        var anchor = await _module.InvokeAsync<double[]>("getEditorAnchor", _root, caret);
+        if (anchor.Length == 2) { _popupX = anchor[0]; _popupY = anchor[1]; }
+    }
+
+    private void MoveCompletion(int delta)
+    {
+        if (_completion is not { Items.Count: > 0 }) return;
+        _selectedCompletion = (_selectedCompletion + delta + _completion.Items.Count) % _completion.Items.Count;
+        _ = FocusCompletionAsync(_selectedCompletion);
+    }
+    private void CloseCompletion() { _completion = null; _selectedCompletion = 0; }
 
     [JSInvokable]
     public Task SelectionChanged(int start, int end)
@@ -61,6 +258,7 @@
 
     public async ValueTask DisposeAsync()
     {
+        _completionRequest.Dispose(); _signatureRequest.Dispose(); _hoverRequest.Dispose(); _semanticRequest.Dispose();
         if (_module is not null)
         {
             try { await _module.InvokeVoidAsync("disposeEditor", _root); }

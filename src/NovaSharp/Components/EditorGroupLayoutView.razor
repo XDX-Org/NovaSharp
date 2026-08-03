@@ -5,10 +5,14 @@
     <div class="editor-split @OrientationClass(split)" style="@SplitStyle(split)"
          data-ratio="@split.Ratio.ToString(System.Globalization.CultureInfo.InvariantCulture)">
         <EditorGroupLayoutView @key="split.First.Id" Node="split.First" Workspace="Workspace" WordWrap="WordWrap"
+                               ProjectSystem="ProjectSystem" LanguageProvider="LanguageProvider"
+                               SuggestionsEnabled="SuggestionsEnabled" SemanticHighlighting="SemanticHighlighting"
                                ExternalDragActive="ExternalDragActive"
                                ActiveChanged="ActiveChanged" ContentEdited="ContentEdited" CloseRequested="CloseRequested" />
         <EditorSplitter @key="split.Id" Split="split" Workspace="Workspace" Resized="ActiveChanged" />
         <EditorGroupLayoutView @key="split.Second.Id" Node="split.Second" Workspace="Workspace" WordWrap="WordWrap"
+                               ProjectSystem="ProjectSystem" LanguageProvider="LanguageProvider"
+                               SuggestionsEnabled="SuggestionsEnabled" SemanticHighlighting="SemanticHighlighting"
                                ExternalDragActive="ExternalDragActive"
                                ActiveChanged="ActiveChanged" ContentEdited="ContentEdited" CloseRequested="CloseRequested" />
     </div>
@@ -69,6 +73,10 @@ else if (Node is EditorGroup group)
                 @if (active.Document.Error is not null) { <div class="error" role="alert">@active.Document.Error</div> }
                 <CodeEditor Value="@(active.Document.Content ?? string.Empty)" ValueChanged="value => Edit(active, value)"
                             WordWrap="WordWrap" ViewState="active.ViewState" ViewStateChanged="ActiveChanged"
+                            Document="active.Document" LanguageProvider="LanguageProvider"
+                            ProjectContext="@(active.Document.FilePath is { } path ? ProjectSystem.GetActiveDocument(path)?.Project.Id.Id.ToString() : null)"
+                            ProjectLoading="ProjectSystem.State.IsLoading"
+                            SuggestionsEnabled="SuggestionsEnabled" SemanticHighlighting="SemanticHighlighting"
                             @key="(active.Id, WordWrap)" />
             }
             @if (Workspace.DraggedTab is not null || ExternalDragActive)
@@ -90,6 +98,10 @@ else if (Node is EditorGroup group)
     [Parameter, EditorRequired] public EditorGroupWorkspace Workspace { get; set; } = null!;
     [Parameter] public bool WordWrap { get; set; }
     [Parameter] public bool ExternalDragActive { get; set; }
+    [Parameter, EditorRequired] public RoslynProjectSystem ProjectSystem { get; set; } = null!;
+    [Parameter, EditorRequired] public ILanguageProvider LanguageProvider { get; set; } = null!;
+    [Parameter] public bool SuggestionsEnabled { get; set; } = true;
+    [Parameter] public bool SemanticHighlighting { get; set; } = true;
     [Parameter] public EventCallback ActiveChanged { get; set; }
     [Parameter] public EventCallback ContentEdited { get; set; }
     [Parameter] public EventCallback<CloseViewRequest> CloseRequested { get; set; }

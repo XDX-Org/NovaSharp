@@ -12,11 +12,11 @@ internal readonly record struct TextEdit(int Start, int Length, string NewText)
     }
 }
 
-internal readonly record struct TextRange(int Start, int Length);
+public readonly record struct TextRange(int Start, int Length);
 public readonly record struct EditorLine(int Number, string Text, IReadOnlyList<ClassifiedSpan> Spans);
 public readonly record struct ClassifiedSpan(int Start, int Length, TokenKind Kind);
 
-public enum TokenKind { Text, Keyword, String, Comment, Number, Type }
+public enum TokenKind { Text, Keyword, String, Comment, Number, Type, Method, Property, Field, Namespace }
 
 internal static partial class CSharpTokenizer
 {
@@ -93,6 +93,44 @@ internal static partial class CSharpTokenizer
         }
         return result;
     }
+
+    internal static IReadOnlyList<EditorLine> Tokenize(string text, IReadOnlyList<SemanticSpan> semanticSpans)
+    {
+        var lines = Tokenize(text).ToArray();
+        if (semanticSpans.Count == 0) return lines;
+        var lineStart = 0;
+        for (var index = 0; index < lines.Length; index++)
+        {
+            var line = lines[index];
+            var lineEnd = lineStart + line.Text.Length;
+            var semantic = semanticSpans.Where(span => span.Start >= lineStart && span.Start + span.Length <= lineEnd)
+                .Select(span => new ClassifiedSpan(span.Start - lineStart, span.Length, SemanticKind(span.Classification))).ToArray();
+            if (semantic.Length > 0)
+            {
+                var baseline = line.Spans.Where(span => !semantic.Any(item => item.Start < span.Start + span.Length
+                    && item.Start + item.Length > span.Start));
+                lines[index] = line with { Spans = baseline.Concat(semantic).OrderBy(span => span.Start).ToArray() };
+            }
+            lineStart = lineEnd + NewLineLength(text, lineEnd);
+        }
+        return lines;
+    }
+
+    private static int NewLineLength(string text, int position) => position >= text.Length ? 0
+        : text[position] == '\r' && position + 1 < text.Length && text[position + 1] == '\n' ? 2 : 1;
+
+    private static TokenKind SemanticKind(string classification) => classification switch
+    {
+        var value when value.Contains("method", StringComparison.OrdinalIgnoreCase) => TokenKind.Method,
+        var value when value.Contains("property", StringComparison.OrdinalIgnoreCase) => TokenKind.Property,
+        var value when value.Contains("field", StringComparison.OrdinalIgnoreCase) => TokenKind.Field,
+        var value when value.Contains("namespace", StringComparison.OrdinalIgnoreCase) => TokenKind.Namespace,
+        var value when value.Contains("class", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("struct", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("interface", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("type", StringComparison.OrdinalIgnoreCase) => TokenKind.Type,
+        _ => TokenKind.Text
+    };
 }
 
 internal static class TextSearch
