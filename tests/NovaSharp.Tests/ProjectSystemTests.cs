@@ -1,6 +1,7 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using System.Diagnostics;
+using System.IO.Compression;
 
 namespace NovaSharp.Tests;
 
@@ -67,8 +68,9 @@ public sealed class ProjectSystemTests
             && project.CompilationOptions?.NullableContextOptions == NullableContextOptions.Enable);
         Assert.IsTrue(app.ProjectReferences.Any());
         Assert.IsTrue(((CSharpParseOptions)app.ParseOptions!).PreprocessorSymbolNames.Contains("PHASE6"));
+        Assert.AreEqual(LanguageVersion.CSharp13, ((CSharpParseOptions)app.ParseOptions!).LanguageVersion);
         Assert.AreEqual(NullableContextOptions.Enable, app.CompilationOptions!.NullableContextOptions);
-        Assert.IsTrue(app.MetadataReferences.Any());
+        Assert.IsTrue(app.MetadataReferences.Any(reference => reference.Display?.EndsWith("Fixture.Package.dll", StringComparison.OrdinalIgnoreCase) == true));
         Assert.IsTrue(projectSystem.CurrentSolution.Projects.Any(project => project.AnalyzerReferences.Any()));
 
         var contexts = projectSystem.GetContexts(fixture.SharedFile);
@@ -108,6 +110,40 @@ public sealed class ProjectSystemTests
 
         Assert.IsTrue(document.IsDirty);
         Assert.IsTrue(projectSystem.GetContexts(fixture.SharedFile).Count >= 2);
+        Assert.IsTrue(projectSystem.RetainedSolutionSnapshotCount <= 3);
+    }
+
+    [TestMethod]
+    [Timeout(30000)]
+    public async Task ReloadReportsChangedAndRemovedProjectContexts()
+    {
+        using var fixture = new ProjectFixture();
+        await using var projectSystem = new RoslynProjectSystem();
+        await projectSystem.OpenAsync(fixture.SolutionFile);
+        File.WriteAllText(fixture.AppProject, File.ReadAllText(fixture.AppProject).Replace("net9.0;net10.0", "net10.0"));
+
+        await WaitUntilAsync(() => Task.FromResult(projectSystem.Diagnostics.Entries
+            .Any(entry => entry.Message.Contains("contexts changed", StringComparison.Ordinal))));
+        File.WriteAllText(fixture.SolutionFile,
+            "<Solution><Project Path=\"Lib/Lib.csproj\" /><Project Path=\"App/App.csproj\" /></Solution>");
+        await WaitUntilAsync(() => Task.FromResult(projectSystem.Diagnostics.Entries
+            .Any(entry => entry.Message.Contains("context removed", StringComparison.Ordinal))));
+    }
+
+    [TestMethod]
+    [Timeout(30000)]
+    public async Task RestoreAndGeneratedFileChangesRefreshTheWorkspace()
+    {
+        using var fixture = new ProjectFixture();
+        await using var projectSystem = new RoslynProjectSystem();
+        await projectSystem.OpenAsync(fixture.SolutionFile);
+        var version = projectSystem.LoadVersion;
+
+        File.SetLastWriteTimeUtc(Path.Combine(fixture.Root, "App", "obj", "project.assets.json"), DateTime.UtcNow.AddSeconds(1));
+        await WaitUntilAsync(() => Task.FromResult(projectSystem.LoadVersion > version && !projectSystem.State.IsLoading));
+        version = projectSystem.LoadVersion;
+        File.WriteAllText(Path.Combine(fixture.Root, "App", "obj", "Phase6.g.cs"), "internal class Generated;");
+        await WaitUntilAsync(() => Task.FromResult(projectSystem.LoadVersion > version && !projectSystem.State.IsLoading));
     }
 
     [TestMethod]
@@ -126,6 +162,13 @@ public sealed class ProjectSystemTests
         if (OperatingSystem.IsLinux())
             Assert.IsTrue(stopwatch.Elapsed < TimeSpan.FromSeconds(10),
                 $"Phase 6 fixture load took {stopwatch.Elapsed}.");
+        stopwatch.Restart();
+        await projectSystem.ReloadAsync();
+        stopwatch.Stop();
+        if (OperatingSystem.IsLinux())
+            Assert.IsTrue(stopwatch.Elapsed < TimeSpan.FromSeconds(5),
+                $"Phase 6 fixture reload took {stopwatch.Elapsed}.");
+        Assert.IsTrue(projectSystem.RetainedSolutionSnapshotCount <= 3);
     }
 
     private static async Task WaitUntilAsync(Func<Task<bool>> condition)
@@ -142,16 +185,18 @@ public sealed class ProjectSystemTests
         internal string Root { get; } = Path.Combine(Path.GetTempPath(), "NovaSharp.ProjectSystem.Tests", Guid.NewGuid().ToString("N"));
         internal string SharedFile => Path.Combine(Root, "Shared.cs");
         internal string SolutionFile => Path.Combine(Root, "Fixture.slnx");
+        internal string AppProject => Path.Combine(Root, "App", "App.csproj");
 
         internal ProjectFixture()
         {
             Directory.CreateDirectory(Path.Combine(Root, "Lib"));
             Directory.CreateDirectory(Path.Combine(Root, "App"));
             File.WriteAllText(SharedFile, "public class Shared { }");
-            File.WriteAllText(Path.Combine(Root, "Lib", "Lib.csproj"), Project("Microsoft.NET.Sdk", "net10.0"));
+            File.WriteAllText(Path.Combine(Root, "Lib", "Lib.csproj"), Project("Microsoft.NET.Sdk", "net9.0;net10.0", multiTarget: true));
             File.WriteAllText(Path.Combine(Root, "Lib", "Lib.cs"), "public class LibType { }");
-            File.WriteAllText(Path.Combine(Root, "App", "App.csproj"),
-                Project("Microsoft.NET.Sdk", "net9.0;net10.0", "<ProjectReference Include=\"../Lib/Lib.csproj\" />", multiTarget: true));
+            CreateLocalPackage();
+            File.WriteAllText(AppProject,
+                Project("Microsoft.NET.Sdk", "net9.0;net10.0", "<ProjectReference Include=\"../Lib/Lib.csproj\" /><PackageReference Include=\"Fixture.Package\" Version=\"1.0.0\" />", multiTarget: true));
             File.WriteAllText(Path.Combine(Root, "App", "Program.cs"), "public class Program { }");
             Directory.CreateDirectory(Path.Combine(Root, "Web"));
             File.WriteAllText(Path.Combine(Root, "Web", "Web.csproj"), Project("Microsoft.NET.Sdk.Web", "net10.0"));
@@ -161,6 +206,7 @@ public sealed class ProjectSystemTests
             File.WriteAllText(Path.Combine(Root, "Web", "wwwroot", "app.css"), "body { color: white; }");
             File.WriteAllText(SolutionFile,
                 "<Solution><Project Path=\"Lib/Lib.csproj\" /><Project Path=\"App/App.csproj\" /><Project Path=\"Web/Web.csproj\" /></Solution>");
+            Restore(AppProject);
         }
 
         private static string Project(string sdk, string framework, string reference = "", bool multiTarget = false) =>
@@ -169,6 +215,7 @@ public sealed class ProjectSystemTests
               <PropertyGroup>
                 <{(multiTarget ? "TargetFrameworks" : "TargetFramework")}>{framework}</{(multiTarget ? "TargetFrameworks" : "TargetFramework")}>
                 <Nullable>enable</Nullable>
+                <LangVersion>13</LangVersion>
                 <DefineConstants>PHASE6</DefineConstants>
                 {(multiTarget ? "<OutputType>Exe</OutputType>" : "")}
               </PropertyGroup>
@@ -178,6 +225,32 @@ public sealed class ProjectSystemTests
               </ItemGroup>
             </Project>
             """;
+
+        private void CreateLocalPackage()
+        {
+            var package = Path.Combine(Root, "packages", "Fixture.Package.1.0.0.nupkg");
+            Directory.CreateDirectory(Path.GetDirectoryName(package)!);
+            using var archive = ZipFile.Open(package, ZipArchiveMode.Create);
+            var nuspec = archive.CreateEntry("Fixture.Package.nuspec");
+            using (var writer = new StreamWriter(nuspec.Open()))
+                writer.Write("<package><metadata><id>Fixture.Package</id><version>1.0.0</version><authors>NovaSharp</authors><description>Phase 6 fixture</description></metadata></package>");
+            foreach (var framework in new[] { "net9.0", "net10.0" })
+            {
+                var entry = archive.CreateEntry($"lib/{framework}/Fixture.Package.dll");
+                using var source = File.OpenRead(typeof(object).Assembly.Location);
+                using var target = entry.Open();
+                source.CopyTo(target);
+            }
+        }
+
+        private void Restore(string project)
+        {
+            using var process = Process.Start(new ProcessStartInfo("dotnet",
+                $"restore \"{project}\" --source \"{Path.Combine(Root, "packages")}\" --nologo --verbosity quiet")
+                { RedirectStandardError = true, RedirectStandardOutput = true })!;
+            process.WaitForExit();
+            Assert.AreEqual(0, process.ExitCode, process.StandardError.ReadToEnd());
+        }
 
         public void Dispose()
         {

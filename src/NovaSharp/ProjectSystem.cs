@@ -73,6 +73,7 @@ public sealed class RoslynProjectSystem : IAsyncDisposable
     internal DiagnosticStore Diagnostics { get; }
     internal ProjectLoadState State { get; private set; } = new(null, null, false, null, TimeSpan.Zero, 0, 0);
     internal IReadOnlyList<string> RawMsBuildLog { get { lock (_rawMsBuildLog) return _rawMsBuildLog.ToArray(); } }
+    internal long LoadVersion => Interlocked.Read(ref _loadVersion);
     internal IReadOnlyList<ProjectContextInfo> Contexts => _solution?.Projects.Select(project =>
     {
         var outputDirectory = project.OutputFilePath is null ? null : Path.GetDirectoryName(project.OutputFilePath);
@@ -82,6 +83,8 @@ public sealed class RoslynProjectSystem : IAsyncDisposable
         return new ProjectContextInfo(project.Id, project.Name, targetFramework, configuration);
     }).ToArray() ?? [];
     internal Solution? CurrentSolution => _solution;
+    internal int RetainedSolutionSnapshotCount => _solution is null ? 0
+        : _workspace is null || ReferenceEquals(_solution, _workspace.CurrentSolution) ? 1 : 2;
     internal bool HasLinkedDocuments => _documents.Values.Any(ids => ids.Length > 1);
     internal event Action? Changed;
 
@@ -159,7 +162,7 @@ public sealed class RoslynProjectSystem : IAsyncDisposable
         var version = Interlocked.Increment(ref _loadVersion);
         var stopwatch = Stopwatch.StartNew();
         var previousState = State;
-        var previousContexts = _solution?.Projects.Select(ContextKey).ToHashSet(PathComparer) ?? [];
+        var previousContexts = ContextsByProject(_solution);
         State = new(path, previousState.Path == path ? previousState.Root : null, true, "Discovering MSBuild",
             TimeSpan.Zero, previousState.Path == path ? previousState.ProjectCount : 0,
             previousState.Path == path ? previousState.DocumentCount : 0);
@@ -194,10 +197,16 @@ public sealed class RoslynProjectSystem : IAsyncDisposable
                 candidate = null;
                 _solution = solution;
                 RebuildMappings(solution);
-                var removedContexts = previousContexts.Except(solution.Projects.Select(ContextKey), PathComparer).ToArray();
-                if (removedContexts.Length > 0)
+                var currentContexts = ContextsByProject(solution);
+                var contextDiagnostics = previousContexts.Keys.Except(currentContexts.Keys, PathComparer)
+                    .Select(project => (NotificationSeverity.Warning, $"Project context removed during reload: {project}"))
+                    .Concat(previousContexts.Keys.Intersect(currentContexts.Keys, PathComparer)
+                        .Where(project => !previousContexts[project].SetEquals(currentContexts[project]))
+                        .Select(project => (NotificationSeverity.Warning, $"Project contexts changed during reload: {project}")))
+                    .ToArray();
+                if (contextDiagnostics.Length > 0)
                     Diagnostics.Replace(DiagnosticSource.ProjectSystem, path, version,
-                        removedContexts.Select(context => (NotificationSeverity.Warning, $"Project context removed during reload: {context}")));
+                        contextDiagnostics);
                 State = new(path, BuildTree(solution, path), false, "Loaded", stopwatch.Elapsed,
                     solution.ProjectIds.Count, solution.Projects.Sum(project => project.DocumentIds.Count));
                 StartWatching(path, solution);
@@ -318,6 +327,11 @@ public sealed class RoslynProjectSystem : IAsyncDisposable
     private sealed record ProjectFile(string RelativePath, string FullPath);
 
     private static string ContextKey(Project project) => $"{project.FilePath}|{project.OutputFilePath}";
+
+    private static Dictionary<string, HashSet<string>> ContextsByProject(Solution? solution) => solution?.Projects
+        .Where(project => project.FilePath is not null)
+        .GroupBy(project => Path.GetFullPath(project.FilePath!), PathComparer)
+        .ToDictionary(group => group.Key, group => group.Select(ContextKey).ToHashSet(PathComparer), PathComparer) ?? new(PathComparer);
 
     private void QueueEditorUpdate(EditorSnapshot snapshot)
     {
