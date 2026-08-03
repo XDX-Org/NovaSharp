@@ -106,11 +106,7 @@
         await _module.InvokeVoidAsync("createEditor", _root, WordWrap, _self, ViewState.SelectionStart,
             ViewState.SelectionEnd, ViewState.ScrollTop, ViewState.ScrollLeft);
         _ = RefreshSemanticAsync();
-        if (Program.Phase7Solution is not null)
-        {
-            var result = await _module.InvokeAsync<Phase7SmokeResult>("runPhase7Smoke", _root);
-            await Program.CompletePhase7SmokeAsync(result);
-        }
+        if (Program.Phase7Solution is not null) _ = RunPhase7SmokeAsync();
         if (Program.Phase2SmokeFile is not null)
         {
             var result = await _module.InvokeAsync<EditorSmokeResult>("runSmokeChecks", _root);
@@ -153,6 +149,13 @@
 
     private LanguageRequest Request(int position, TextRange? range = null) =>
         new(Document.FilePath!, ProjectContext, Document.Version, Math.Clamp(position, 0, Value.Length), range);
+
+    private async Task RunPhase7SmokeAsync()
+    {
+        await Task.Yield();
+        var result = await _module!.InvokeAsync<Phase7SmokeResult>("runPhase7Smoke", _root);
+        await Program.CompletePhase7SmokeAsync(result);
+    }
 
     private async Task RequestCompletionAsync(int caret, bool explicitInvocation)
     {
