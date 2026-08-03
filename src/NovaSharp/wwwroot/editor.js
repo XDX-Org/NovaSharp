@@ -205,9 +205,10 @@ export async function runPhase7Smoke(root) {
         return false;
     };
     try {
-        input.value = 'using System; class C { void M() { Console. } }';
-        input.setSelectionRange(input.value.indexOf('Console.') + 8, input.value.indexOf('Console.') + 8);
-        await dotNet.invokeMethodAsync('InputChanged', input.value, input.selectionStart, '.');
+        input.value = 'using System; class C { void M() { Con } }';
+        input.setSelectionRange(input.value.indexOf('Con }') + 3, input.value.indexOf('Con }') + 3);
+        await dotNet.invokeMethodAsync('InputChanged', input.value, input.selectionStart, null);
+        await dotNet.invokeMethodAsync('EditorCommand', 'completion', input.selectionStart);
         const completionVisible = await waitFor(() => root.querySelectorAll('.completion-popup [role="option"]').length > 1);
         const initial = root.querySelector('.completion-popup .selected')?.textContent;
         input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
