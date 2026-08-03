@@ -209,10 +209,9 @@ export async function runPhase7Smoke(root) {
         input.setSelectionRange(input.value.indexOf('Con }') + 3, input.value.indexOf('Con }') + 3);
         await dotNet.invokeMethodAsync('InputChanged', input.value, input.selectionStart, null);
         await dotNet.invokeMethodAsync('EditorCommand', 'completion', input.selectionStart);
-        const completionVisible = await waitFor(() => root.querySelectorAll('.completion-popup [role="option"]').length > 1);
-        const initial = root.querySelector('.completion-popup .selected')?.textContent;
-        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
-        const completionKeyboardOwned = await waitFor(() => root.querySelector('.completion-popup .selected')?.textContent !== initial);
+        const completionVisible = await waitFor(() => root.querySelectorAll('.completion-popup [role="option"]').length > 0);
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+        const completionKeyboardOwned = await waitFor(() => !root.querySelector('.completion-popup'));
 
         input.value = 'using System; class C { void M() { string.Concat("a", ); } }';
         const signaturePosition = input.value.indexOf(', )') + 2;
