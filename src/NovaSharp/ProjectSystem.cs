@@ -421,10 +421,12 @@ public sealed class RoslynProjectSystem : IAsyncDisposable
         }
     }
 
-    private void OnProjectFileChanged(object sender, FileSystemEventArgs args)
+    private void OnProjectFileChanged(object sender, FileSystemEventArgs args) => NotifyProjectInputChanged(args.FullPath);
+
+    internal void NotifyProjectInputChanged(string path)
     {
-        var name = Path.GetFileName(args.FullPath);
-        var extension = Path.GetExtension(args.FullPath);
+        var name = Path.GetFileName(path);
+        var extension = Path.GetExtension(path);
         if (!extension.Equals(".csproj", StringComparison.OrdinalIgnoreCase)
             && !extension.Equals(".props", StringComparison.OrdinalIgnoreCase)
             && !extension.Equals(".targets", StringComparison.OrdinalIgnoreCase)

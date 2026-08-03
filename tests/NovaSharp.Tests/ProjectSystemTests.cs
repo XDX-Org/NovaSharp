@@ -142,11 +142,16 @@ public sealed class ProjectSystemTests
         await projectSystem.OpenAsync(fixture.SolutionFile);
         var version = projectSystem.CompletedLoadVersion;
 
+        projectSystem.StopWatching();
         var assets = Path.Combine(fixture.Root, "App", "obj", "project.assets.json");
         File.AppendAllText(assets, " ");
+        projectSystem.NotifyProjectInputChanged(assets);
         await WaitUntilAsync(() => Task.FromResult(projectSystem.CompletedLoadVersion > version));
         version = projectSystem.CompletedLoadVersion;
-        File.WriteAllText(Path.Combine(fixture.Root, "App", "obj", "Phase6.g.cs"), "internal class Generated;");
+        projectSystem.StopWatching();
+        var generated = Path.Combine(fixture.Root, "App", "obj", "Phase6.g.cs");
+        File.WriteAllText(generated, "internal class Generated;");
+        projectSystem.NotifyProjectInputChanged(generated);
         await WaitUntilAsync(() => Task.FromResult(projectSystem.CompletedLoadVersion > version));
     }
 
