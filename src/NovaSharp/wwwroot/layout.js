@@ -1,16 +1,16 @@
 window.novaSharp = window.novaSharp || {};
 
-window.novaSharp.initTerminal = function (host, dotNet) {
+window.novaSharp.initTerminal = function (host, dotNet, terminalId) {
     if (!host || host.dataset.terminalReady) return;
     host.dataset.terminalReady = "true";
     const resize = () => {
         const terminal = host.querySelector(".xterm");
         if (!terminal) return;
         const style = getComputedStyle(terminal);
-        const measure = terminal.querySelector(".xterm-char-measure-element");
-        const measured = measure?.getBoundingClientRect();
-        const cellWidth = Math.max(1, measured?.width || parseFloat(style.fontSize) * .6);
-        const cellHeight = Math.max(1, measured?.height || parseFloat(style.lineHeight) || 20);
+        const xterm = globalThis.XtermBlazor?._terminals?.get(terminalId)?.terminal;
+        const cell = xterm?._core?._renderService?.dimensions?.css?.cell;
+        const cellWidth = Math.max(1, cell?.width || parseFloat(style.fontSize) * .6);
+        const cellHeight = Math.max(1, cell?.height || parseFloat(style.lineHeight) || 20);
         const viewport = terminal.querySelector(".xterm-viewport");
         const scrollbarWidth = viewport ? Math.max(0, viewport.offsetWidth - viewport.clientWidth) : 0;
         const columns = Math.max(2, Math.floor((host.clientWidth - scrollbarWidth) / cellWidth));
@@ -20,6 +20,7 @@ window.novaSharp.initTerminal = function (host, dotNet) {
     host.addEventListener("keydown", event => event.stopPropagation());
     new ResizeObserver(resize).observe(host);
     resize();
+    requestAnimationFrame(resize);
 };
 
 window.novaSharp.positionContextMenu = function (menu, x, y) {

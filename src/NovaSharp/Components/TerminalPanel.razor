@@ -32,7 +32,7 @@
         {
             <div @key="active.Id" @ref="_host" class="terminal-host" role="application"
                  aria-label="Terminal @active.Name, @active.State" data-terminal-id="@active.Id">
-                <Xterm @ref="_xterm" Options="_options" Class="terminal-xterm" OnFirstRender="XtermReadyAsync"
+                <Xterm @ref="_xterm" Id="@XtermId(active)" Options="_options" Class="terminal-xterm" OnFirstRender="XtermReadyAsync"
                        OnData="SendTerminalInput" OnBinary="SendTerminalBinary" OnResize="XtermResized" />
             </div>
             <footer>
@@ -124,7 +124,7 @@
             foreach (var chunk in session.Transcript.Chunks) await WriteChunkAsync(session, chunk);
         }
         finally { _renderGate.Release(); }
-        await JS.InvokeVoidAsync("novaSharp.initTerminal", _host, _self);
+        await JS.InvokeVoidAsync("novaSharp.initTerminal", _host, _self, XtermId(session));
         await _xterm.Focus();
     }
 
@@ -167,6 +167,7 @@
         if (!Open || _xterm is null || _renderedSession != session.Id || chunk.Sequence <= _lastWrittenSequence) return;
         await _xterm.Write(chunk.Data); _lastWrittenSequence = chunk.Sequence;
     }
+    private static string XtermId(TerminalSession session) => $"terminal-{session.Id:N}";
 
     [JSInvokable]
     public async Task ResizeTerminal(int columns, int rows)
