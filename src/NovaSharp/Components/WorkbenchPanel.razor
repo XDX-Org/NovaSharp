@@ -153,14 +153,12 @@
         </nav>
     </div>
     <footer class="statusbar">
-        <span class="status-message" aria-live="polite">@Status</span>
         @if (ActiveContexts.Count > 1)
         {
             <select aria-label="Active project context" value="@ActiveContextId" @onchange="SelectContext">
                 @foreach (var context in ActiveContexts) { <option value="@context.Id.Id">@context.Name</option> }
             </select>
         }
-        <span class="pointer-status" aria-live="polite">LMB: @(_leftMouseDown ? "Down" : "Up")</span>
     </footer>
     @if (_renamePosition is not null)
     {
@@ -249,10 +247,9 @@
     private bool _restoringNavigation, _symbolSearchOpen, _searchOpen;
     private bool _quickAccessOpen, _quickAccessCommands, _quickAccessBusy;
     private bool _projectReloading, _outputOpen;
-    private bool _showFind, _wordWrap, _externalChange, _leftMouseDown, _explorerOpen = true, _problemsOpen, _suggestions = true;
+    private bool _showFind, _wordWrap, _externalChange, _explorerOpen = true, _problemsOpen, _suggestions = true;
     private DocumentTab? ActiveTab => _workspace.FocusedGroup.ActiveTab;
     private EditorDocumentState _document => ActiveTab?.Document ?? _emptyDocument;
-    private string Status => _status ?? _workspace.LastError ?? (_document.IsReadOnly ? "Read-only" : _document.FilePath ?? "Ready");
     private IReadOnlyList<(Microsoft.CodeAnalysis.ProjectId Id, string Name)> ActiveContexts =>
         _document.FilePath is { } path ? _projectSystem.GetContexts(path) : [];
     private string? ActiveContextId => _document.FilePath is { } path
@@ -318,7 +315,6 @@
         if (!firstRender) return;
         _self = DotNetObjectReference.Create(this);
         await JS.InvokeVoidAsync("novaSharp.initEditorDragCleanup", _workbench, _self);
-        await JS.InvokeVoidAsync("novaSharp.initLeftMouseStatus", _workbench, _self);
         await JS.InvokeVoidAsync("novaSharp.initPointerTabDrag", _workbench, _self);
         await JS.InvokeVoidAsync("novaSharp.initExplorerFileDrag", _workbench, _self);
         await JS.InvokeVoidAsync("novaSharp.initBottomPanelResize", _workbench);
@@ -801,14 +797,6 @@
         var split = Enum.TryParse<SplitDirection>(direction, true, out var parsed) ? parsed : (SplitDirection?)null;
         await _workspace.DropAsync(targetId, index, split, copy);
         await ActiveChangedAsync();
-    }
-
-    [JSInvokable]
-    public void LeftMouseChanged(bool down)
-    {
-        if (_leftMouseDown == down) return;
-        _leftMouseDown = down;
-        StateHasChanged();
     }
 
     [JSInvokable]

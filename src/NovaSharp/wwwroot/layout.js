@@ -206,24 +206,6 @@ window.novaSharp.initEditorDragCleanup = function (workbench, dotNet) {
     });
 };
 
-window.novaSharp.initLeftMouseStatus = function (workbench, dotNet) {
-    if (!workbench || workbench.dataset.leftMouseStatusReady) return;
-    workbench.dataset.leftMouseStatusReady = 'true';
-    let down = false;
-    const update = value => {
-        if (down === value) return;
-        down = value;
-        dotNet?.invokeMethodAsync('LeftMouseChanged', value);
-    };
-    window.addEventListener('pointerdown', event => { if (event.button === 0) update(true); }, true);
-    window.addEventListener('mousedown', event => { if (event.button === 0) update(true); }, true);
-    window.addEventListener('pointerup', event => { if (event.button === 0) update(false); }, true);
-    window.addEventListener('mouseup', event => { if (event.button === 0) update(false); }, true);
-    window.addEventListener('drop', () => update(false), true);
-    window.addEventListener('dragend', () => update(false), true);
-    window.addEventListener('blur', () => update(false));
-};
-
 window.novaSharp.initPointerTabDrag = function (workbench, dotNet) {
     if (!workbench || workbench.dataset.pointerTabDragReady) return;
     workbench.dataset.pointerTabDragReady = 'true';
