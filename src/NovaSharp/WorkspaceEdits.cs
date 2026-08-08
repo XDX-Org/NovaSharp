@@ -25,6 +25,8 @@ internal sealed class WorkspaceEditTransaction
             var current = document?.Content ?? await File.ReadAllTextAsync(path, cancellationToken);
             if (document is not null && item.ExpectedVersion is { } version && document.Version != version)
                 throw new InvalidOperationException($"{Path.GetFileName(path)} changed since the edit was computed.");
+            if (document is null && item.ExpectedDiskStamp is { } stamp && DiskStamp.Read(path) != stamp)
+                throw new InvalidOperationException($"{Path.GetFileName(path)} changed since the edit was computed.");
             if (!string.Equals(current, item.ExpectedText, StringComparison.Ordinal))
                 throw new InvalidOperationException($"{Path.GetFileName(path)} no longer matches the edit preview.");
             pending.Add((item with { DocumentPath = path }, document));
@@ -38,7 +40,7 @@ internal sealed class WorkspaceEditTransaction
                 cancellationToken.ThrowIfCancellationRequested();
                 var directory = Path.GetDirectoryName(item.DocumentPath)!;
                 var stage = Path.Combine(directory, $".{Path.GetFileName(item.DocumentPath)}.{Guid.NewGuid():N}.novasharp");
-                await File.WriteAllTextAsync(stage, item.NewText, cancellationToken);
+                await File.WriteAllBytesAsync(stage, EncodeLikeFile(item.DocumentPath, item.NewText), cancellationToken);
                 staged.Add((item.DocumentPath, stage, null));
             }
             for (var index = 0; index < staged.Count; index++)
@@ -81,5 +83,26 @@ internal sealed class WorkspaceEditTransaction
         while (suffix < before.Length - prefix && suffix < after.Length - prefix
                && before[^(suffix + 1)] == after[^(suffix + 1)]) suffix++;
         return before.Length + after.Length - prefix * 2 - suffix * 2;
+    }
+
+    private static byte[] EncodeLikeFile(string path, string text)
+    {
+        using var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        Span<byte> bom = stackalloc byte[3];
+        var count = stream.Read(bom);
+        if (count >= 2 && bom[0] == 0xff && bom[1] == 0xfe)
+            return WithPreamble(System.Text.Encoding.Unicode, text);
+        if (count >= 2 && bom[0] == 0xfe && bom[1] == 0xff)
+            return WithPreamble(System.Text.Encoding.BigEndianUnicode, text);
+        if (count == 3 && bom.SequenceEqual(new byte[] { 0xef, 0xbb, 0xbf }))
+            return WithPreamble(new System.Text.UTF8Encoding(true), text);
+        return new System.Text.UTF8Encoding(false).GetBytes(text);
+    }
+
+    private static byte[] WithPreamble(System.Text.Encoding encoding, string text)
+    {
+        var preamble = encoding.GetPreamble();
+        var content = encoding.GetBytes(text);
+        return [.. preamble, .. content];
     }
 }

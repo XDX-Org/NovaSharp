@@ -2,7 +2,7 @@ name: Workbench verification
 
 on:
   push:
-    branches: [main, phase-3, phase-4, phase-5, phase-6, phase-7, phase-8]
+    branches: [main, phase-3, phase-4, phase-5, phase-6, phase-7, phase-8, phase-9]
   pull_request:
   workflow_dispatch:
 
@@ -205,6 +205,34 @@ jobs:
           $result = Get-Content $report | ConvertFrom-Json
           $required = 'DiagnosticSquiggle', 'DiagnosticGlyph', 'ProblemsPanel', 'DefinitionPeek', 'Breadcrumbs', 'Outline', 'CodeActions'
           foreach ($name in $required) { if (-not $result.$name) { throw "Phase 8 smoke assertion failed: $name ($($result.Error))" } }
+      - name: Run packaged Linux Phase 9 native-host smoke
+        if: runner.os == 'Linux'
+        shell: pwsh
+        env:
+          GTK_A11Y: none
+          GSK_RENDERER: cairo
+          LIBGL_ALWAYS_SOFTWARE: 1
+          WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: 1
+          WEBKIT_DISABLE_DMABUF_RENDERER: 1
+        run: |
+          $workspace = Join-Path $PWD 'phase9-workspace'
+          $report = Join-Path $PWD 'phase9-smoke.json'
+          New-Item -ItemType Directory -Path (Join-Path $workspace 'One') -Force | Out-Null
+          New-Item -ItemType Directory -Path (Join-Path $workspace 'Two') -Force | Out-Null
+          '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>' | Set-Content -Encoding utf8 (Join-Path $workspace 'Fixture.csproj')
+          'class Program { string Value = "needle"; }' | Set-Content -Encoding utf8 (Join-Path $workspace 'Program.cs')
+          'class Shared { string Value = "needle"; }' | Set-Content -Encoding utf8 (Join-Path $workspace 'One/Shared.cs')
+          'class Shared { string Value = "needle"; }' | Set-Content -Encoding utf8 (Join-Path $workspace 'Two/Shared.cs')
+          '<Solution><Project Path="Fixture.csproj" /></Solution>' | Set-Content -Encoding utf8 (Join-Path $workspace 'Fixture.slnx')
+          dotnet restore (Join-Path $workspace 'Fixture.csproj')
+          $binary = 'artifacts/app/NovaSharp'
+          $arguments = @("--phase9-smoke=$(Join-Path $workspace 'Fixture.slnx')", "--smoke-report=$report")
+          $process = Start-Process xvfb-run -ArgumentList (@('-a', $binary) + $arguments) -PassThru
+          if (-not $process.WaitForExit(60000)) { $process.Kill($true); throw 'Phase 9 native smoke timed out.' }
+          if ($process.ExitCode -ne 0 -and -not (Test-Path $report)) { throw "Phase 9 native smoke exited with $($process.ExitCode) before reporting." }
+          $result = Get-Content $report | ConvertFrom-Json
+          $required = 'QuickOpenVisible', 'DuplicateFilesVisible', 'SearchVisible', 'ResultsStreamed', 'ReplacePreview'
+          foreach ($name in $required) { if (-not $result.$name) { throw "Phase 9 smoke assertion failed: $name ($($result.Error))" } }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -217,4 +245,5 @@ jobs:
             phase6-smoke.json
             phase7-smoke.json
             phase8-smoke.json
+            phase9-smoke.json
             artifacts/app

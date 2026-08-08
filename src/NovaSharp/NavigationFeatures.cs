@@ -12,7 +12,8 @@ public sealed record NavigationTarget(string DocumentPath, TextRange Range, int 
     string DisplayText, string ProjectName, NavigationKind Kind, string? Preview = null);
 public sealed record SymbolEntry(string Name, string Kind, string DocumentPath, TextRange Range,
     int Line, int Column, string ProjectName, string? Container);
-public sealed record WorkspaceDocumentEdit(string DocumentPath, long? ExpectedVersion, string ExpectedText, string NewText);
+public sealed record WorkspaceDocumentEdit(string DocumentPath, long? ExpectedVersion, string ExpectedText,
+    string NewText, DiskStamp? ExpectedDiskStamp = null, IReadOnlyList<TextRange>? ExpectedRanges = null);
 public sealed record WorkspaceEdit(string Title, IReadOnlyList<WorkspaceDocumentEdit> Documents);
 public sealed record CodeActionEntry(string Title, string Kind, WorkspaceEdit Edit, bool IsPreferred = false);
 

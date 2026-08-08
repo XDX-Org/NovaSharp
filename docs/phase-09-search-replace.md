@@ -32,3 +32,14 @@ Build, run, output, and terminals move to phases 10 and 11.
 ## Next phase
 
 Use the command, diagnostic, and process boundaries to build and run projects.
+
+## Verification budgets
+
+The named performance fixture contains 5,000 UTF-8 C# files on the local Linux x64 development host:
+
+- first search result under 2 seconds;
+- complete search under 8 seconds;
+- retained search memory under 64 MiB;
+- at most 10,000 retained results, streamed in batches of 64 by default.
+
+See `PHASE9_HANDOFF.md` for current verification evidence and known limitations.

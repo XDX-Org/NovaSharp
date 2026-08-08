@@ -1,0 +1,87 @@
+@implements IDisposable
+@using Microsoft.AspNetCore.Components.Web
+
+@if (Open)
+{
+<aside class="search-panel" aria-label="Search">
+    <header><strong>Search</strong><button aria-label="Close search" @onclick="async () => await Close.InvokeAsync()">×</button></header>
+    <form @onsubmit="StartAsync" @onsubmit:preventDefault>
+        <input aria-label="Search workspace" @bind="_query" placeholder="Search" />
+        <input aria-label="Replace workspace" @bind="_replacement" placeholder="Replace" />
+        <div class="search-options">
+            <label><input type="checkbox" @bind="_matchCase" /> Aa</label>
+            <label><input type="checkbox" @bind="_wholeWord" /> Word</label>
+            <label><input type="checkbox" @bind="_regex" /> .*</label>
+        </div>
+        <input aria-label="Files to include" @bind="_include" placeholder="Include, e.g. src/**" />
+        <input aria-label="Files to exclude" @bind="_exclude" placeholder="Exclude, e.g. **/*.g.cs" />
+        <div class="search-actions"><button type="submit" disabled="@(_running || RootPath is null)">Search</button>
+            @if (_running) { <button type="button" @onclick="Cancel">Cancel</button> }
+            <button type="button" disabled="@(_running || _matches.Count == 0)" @onclick="PreviewReplaceAsync">Replace all</button>
+        </div>
+    </form>
+    <p class="search-summary" aria-live="polite">@Summary</p>
+    <div class="search-results">
+        @foreach (var group in _matches.GroupBy(item => item.Path))
+        {
+            <section><h3>@group.First().RelativePath <small>@group.Count()</small></h3>
+            @foreach (var match in group)
+            {
+                <button @onclick="() => Activated.InvokeAsync(match)"><span>@match.Line:@match.Column</span><code>@match.Preview</code></button>
+            }
+            </section>
+        }
+        @foreach (var issue in _issues) { <p class="search-issue" title="@issue.Path">@Path.GetFileName(issue.Path): @issue.Message</p> }
+    </div>
+</aside>
+}
+
+@code {
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public string? RootPath { get; set; }
+    [Parameter] public IReadOnlyList<EditorDocumentState> OpenDocuments { get; set; } = [];
+    [Parameter] public EventCallback<WorkspaceSearchMatch> Activated { get; set; }
+    [Parameter] public EventCallback<WorkspaceEdit> PreviewRequested { get; set; }
+    [Parameter] public EventCallback Close { get; set; }
+    private readonly List<WorkspaceSearchMatch> _matches = [];
+    private readonly List<WorkspaceSearchIssue> _issues = [];
+    private string _query = "", _replacement = "", _include = "", _exclude = "";
+    private bool _matchCase, _wholeWord, _regex, _running, _limitReached;
+    private CancellationTokenSource? _cancellation;
+    private string Summary => RootPath is null ? "Open a workspace or solution to search."
+        : _running ? $"Searching… {_matches.Count} results" : $"{_matches.Count} results" + (_limitReached ? " (limit reached)" : "");
+
+    private WorkspaceSearchOptions Options() => new(_query, _regex, _matchCase, _wholeWord,
+        Split(_include), Split(_exclude));
+    private async Task StartAsync()
+    {
+        Cancel(); _matches.Clear(); _issues.Clear(); _limitReached = false;
+        if (RootPath is null || string.IsNullOrEmpty(_query)) return;
+        _running = true; _cancellation = new();
+        try
+        {
+            await foreach (var batch in new WorkspaceSearchService(RootPath).SearchAsync(Options(), OpenDocuments, _cancellation.Token))
+            {
+                _matches.AddRange(batch.Matches); _issues.AddRange(batch.Issues); _limitReached |= batch.IsLimitReached;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception exception) { _issues.Add(new(RootPath, exception.Message)); }
+        finally { _running = false; await InvokeAsync(StateHasChanged); }
+    }
+    private async Task PreviewReplaceAsync()
+    {
+        if (RootPath is null) return;
+        try
+        {
+            var edit = await new WorkspaceSearchService(RootPath).CreateReplaceEditAsync(Options(), _replacement, OpenDocuments);
+            await PreviewRequested.InvokeAsync(edit);
+        }
+        catch (Exception exception) { _issues.Add(new(RootPath, exception.Message)); }
+    }
+    private void Cancel() { _cancellation?.Cancel(); _cancellation?.Dispose(); _cancellation = null; }
+    private static string[]? Split(string value) => string.IsNullOrWhiteSpace(value) ? null
+        : value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+    public void Dispose() => Cancel();
+}

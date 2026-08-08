@@ -18,7 +18,7 @@ internal enum LineEnding
     Cr
 }
 
-internal readonly record struct DiskStamp(long Length, DateTime LastWriteUtc, string ContentHash)
+public readonly record struct DiskStamp(long Length, DateTime LastWriteUtc, string ContentHash)
 {
     internal static DiskStamp Read(string path)
     {

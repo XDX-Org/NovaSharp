@@ -669,3 +669,36 @@ window.novaSharp.runPhase6Smoke = async function (bridge) {
             `${error?.name ?? 'Error'}: ${error?.message ?? String(error)}`);
     }
 };
+
+window.novaSharp.runPhase9Smoke = async function (workbench, bridge) {
+    const waitFor = async (predicate, attempts = 200) => {
+        for (let attempt = 0; attempt < attempts; attempt++) {
+            if (predicate()) return true;
+            await new Promise(resolve => setTimeout(resolve, 50));
+        }
+        return false;
+    };
+    try {
+        workbench.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', ctrlKey: true, bubbles: true }));
+        const quickOpenVisible = await waitFor(() => !!workbench.querySelector('.quick-access'));
+        const quickInput = workbench.querySelector('.quick-access input');
+        quickInput.value = 'Shared';
+        quickInput.dispatchEvent(new Event('input', { bubbles: true }));
+        const duplicateFilesVisible = await waitFor(() => workbench.querySelectorAll('.quick-access-results button').length === 2);
+        workbench.querySelector('.quick-access-backdrop')?.click();
+        workbench.querySelector('[aria-label="Search"]')?.click();
+        const searchVisible = await waitFor(() => !!workbench.querySelector('.search-panel'));
+        const searchInput = workbench.querySelector('[aria-label="Search workspace"]');
+        searchInput.value = 'needle';
+        searchInput.dispatchEvent(new Event('change', { bubbles: true }));
+        workbench.querySelector('.search-panel form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+        const resultsStreamed = await waitFor(() => workbench.querySelectorAll('.search-results button').length >= 2);
+        workbench.querySelector('.search-actions button:last-child')?.click();
+        const replacePreview = await waitFor(() => !!workbench.querySelector('.edit-preview'));
+        await bridge.invokeMethodAsync('CompletePhase9SmokeAsync', quickOpenVisible, duplicateFilesVisible,
+            searchVisible, resultsStreamed, replacePreview, null);
+    } catch (error) {
+        await bridge.invokeMethodAsync('CompletePhase9SmokeAsync', false, false, false, false, false,
+            `${error?.name ?? 'Error'}: ${error?.message ?? String(error)}`);
+    }
+};

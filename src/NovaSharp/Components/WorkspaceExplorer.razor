@@ -110,6 +110,7 @@
     [Parameter] public EventCallback<string> FilePreviewed { get; set; }
     [Parameter] public EventCallback<bool> OpenChanged { get; set; }
     [Parameter] public RoslynProjectSystem? ProjectSystem { get; set; }
+    internal string? RootPath => _workspace.RootPath;
     private readonly WorkspaceService _workspace = new(Program.Configuration.Current.ExplorerIgnoredNames);
     private readonly Dictionary<string, IReadOnlyList<WorkspaceEntry>> _children = new();
     private readonly HashSet<string> _expanded = new(StringComparer.Ordinal);

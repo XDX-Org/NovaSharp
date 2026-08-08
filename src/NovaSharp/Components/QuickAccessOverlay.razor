@@ -1,0 +1,46 @@
+@using Microsoft.AspNetCore.Components.Web
+
+@if (Open)
+{
+    <div class="quick-access-backdrop" @onclick="async () => await Close.InvokeAsync()">
+        <div class="quick-access" role="dialog" aria-modal="true" aria-label="@(Commands ? "Command palette" : "Quick Open")"
+             @onclick:stopPropagation @onkeydown="HandleKeyAsync">
+            <input aria-label="@(Commands ? "Search commands" : "Search files")" value="@Query"
+                   @oninput="QueryChangedAsync" autofocus placeholder="@(Commands ? "Type a command" : "Type a file name")" />
+            <div class="quick-access-results" role="listbox">
+                @if (Busy) { <p>Searching…</p> }
+                @foreach (var item in Items.Select((value, index) => (value, index)))
+                {
+                    <button type="button" role="option" aria-selected="@(item.index == Selected)"
+                            class="@(item.index == Selected ? "selected" : null)" @onclick="() => Activate.InvokeAsync(item.value)">
+                        <span>@item.value.Label</span><small>@item.value.Detail</small>
+                        @if (item.value.Keybinding is not null) { <kbd>@item.value.Keybinding</kbd> }
+                    </button>
+                }
+                @if (!Busy && Items.Count == 0) { <p>No results</p> }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public bool Commands { get; set; }
+    [Parameter] public string Query { get; set; } = "";
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public IReadOnlyList<QuickAccessItem> Items { get; set; } = [];
+    [Parameter] public int Selected { get; set; }
+    [Parameter] public EventCallback<string> QueryChanged { get; set; }
+    [Parameter] public EventCallback<int> SelectedChanged { get; set; }
+    [Parameter] public EventCallback<QuickAccessItem> Activate { get; set; }
+    [Parameter] public EventCallback Close { get; set; }
+
+    private Task QueryChangedAsync(ChangeEventArgs args) => QueryChanged.InvokeAsync(args.Value?.ToString() ?? "");
+    private async Task HandleKeyAsync(KeyboardEventArgs args)
+    {
+        if (args.Key == "Escape") await Close.InvokeAsync();
+        else if (args.Key == "ArrowDown" && Items.Count > 0) await SelectedChanged.InvokeAsync((Selected + 1) % Items.Count);
+        else if (args.Key == "ArrowUp" && Items.Count > 0) await SelectedChanged.InvokeAsync((Selected - 1 + Items.Count) % Items.Count);
+        else if (args.Key == "Enter" && Selected >= 0 && Selected < Items.Count) await Activate.InvokeAsync(Items[Selected]);
+    }
+}

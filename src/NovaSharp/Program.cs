@@ -17,6 +17,7 @@ internal static class Program
     internal static string? Phase6Solution { get; private set; }
     internal static string? Phase7Solution { get; private set; }
     internal static string? Phase8Solution { get; private set; }
+    internal static string? Phase9Solution { get; private set; }
     internal static Func<bool>? ConfirmWorkbenchClose { get; set; }
     private static string? SmokeReport { get; set; }
 
@@ -30,8 +31,9 @@ internal static class Program
         Phase6Solution = ReadOption(args, "--phase6-smoke");
         Phase7Solution = ReadOption(args, "--phase7-smoke");
         Phase8Solution = ReadOption(args, "--phase8-smoke");
+        Phase9Solution = ReadOption(args, "--phase9-smoke");
         SmokeFile = Phase2SmokeFile ?? (Phase3Workspace is null ? null : Path.Combine(Phase3Workspace, "active.cs"))
-            ?? ((Phase8Solution ?? Phase7Solution) is not { } languageSolution ? null
+            ?? ((Phase9Solution ?? Phase8Solution ?? Phase7Solution) is not { } languageSolution ? null
                 : Path.Combine(Path.GetDirectoryName(languageSolution)!, "Program.cs"));
         SmokeReport = ReadOption(args, "--smoke-report");
         var builder = PhotinoExBlazorAppBuilder.CreateDefault(args);
@@ -111,6 +113,13 @@ internal static class Program
     }
 
     internal static async Task CompletePhase8SmokeAsync(Phase8SmokeResult result)
+    {
+        if (SmokeReport is null) return;
+        await File.WriteAllTextAsync(SmokeReport, JsonSerializer.Serialize(result));
+        App.MainWindow.Close();
+    }
+
+    internal static async Task CompletePhase9SmokeAsync(Phase9SmokeResult result)
     {
         if (SmokeReport is null) return;
         await File.WriteAllTextAsync(SmokeReport, JsonSerializer.Serialize(result));

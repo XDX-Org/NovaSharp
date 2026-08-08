@@ -17,6 +17,7 @@
                 {
                 <div class="menu-popup" role="menu" @onclick:stopPropagation>
                     <button role="menuitem" @onclick="OpenFileAsync">Open <kbd>Ctrl+O</kbd></button>
+                    <button role="menuitem" @onclick="OpenQuickOpen">Quick Open <kbd>Ctrl+P</kbd></button>
                     <button role="menuitem" @onclick="OpenSolutionAsync">Open Solution</button>
                     <button role="menuitem" @onclick="SaveAsync" disabled="@(!_document.IsDirty)">Save <kbd>Ctrl+S</kbd></button>
                     <button role="menuitem" @onclick="SaveAsAsync" disabled="@(_document.FilePath is null)">Save As</button>
@@ -32,6 +33,8 @@
                     <button role="menuitem" @onclick="Redo" disabled="@(!_document.CanRedo)">Redo <kbd>Ctrl+Y</kbd></button>
                     <hr />
                     <button role="menuitem" @onclick="ToggleFind">Find <kbd>Ctrl+F</kbd></button>
+                    <button role="menuitem" @onclick="ToggleSearch">Search workspace <kbd>Ctrl+Shift+F</kbd></button>
+                    <button role="menuitem" @onclick="OpenCommandPalette">Command palette <kbd>Ctrl+Shift+P</kbd></button>
                     <button role="menuitem" @onclick="ToggleSuggestionsAsync">Suggestions <span>@(_suggestions ? "On" : "Off")</span></button>
                 </div>
                 }
@@ -98,6 +101,9 @@
             <ProblemsPanel Open="_problemsOpen" Diagnostics="_languageProvider.Diagnostics.Entries"
                            Activated="OpenProblemAsync" Close="ToggleProblems" />
         </div>
+        <SearchPanel Open="_searchOpen" RootPath="WorkspaceRoot" OpenDocuments="OpenDocuments"
+                     Activated="OpenSearchMatchAsync" PreviewRequested="PreviewSearchReplace"
+                     Close="ToggleSearch" />
         <WorkspaceExplorer @ref="_explorer" Document="_document" ProjectSystem="_projectSystem" FileOpened="OpenWorkspaceFileAsync"
                            FilePreviewed="PreviewWorkspaceFileAsync" OpenChanged="ExplorerOpenChanged" />
         <nav class="activity-bar" aria-label="Tool windows">
@@ -110,6 +116,8 @@
                 <span class="activity-problems" aria-hidden="true">!</span>
                 @if (_languageProvider.Diagnostics.Entries.Count > 0) { <small>@_languageProvider.Diagnostics.Entries.Count</small> }
             </button>
+            <button class="@(_searchOpen ? "active" : null)" @onclick="ToggleSearch" aria-label="Search"
+                    title="Search" aria-pressed="@_searchOpen"><span aria-hidden="true">⌕</span></button>
         </nav>
     </div>
     <footer class="statusbar">
@@ -139,7 +147,15 @@
             <div class="modal-dialog edit-preview" role="dialog" aria-modal="true" aria-labelledby="preview-title" @onclick:stopPropagation>
                 <h2 id="preview-title">@_editPreview.Title</h2>
                 <p>@_editPreview.ChangedFileCount files · @_editPreview.ChangedCharacterCount changed characters</p>
-                <ul>@foreach (var item in _editPreview.Documents) { <li>@item.DocumentPath</li> }</ul>
+                <ul>@foreach (var item in _editPreview.Documents)
+                    {
+                        <li>@item.DocumentPath
+                            @if (item.ExpectedRanges is { Count: > 0 })
+                            {
+                                <small> — @string.Join(", ", item.ExpectedRanges.Select(range => $"{range.Start}–{range.Start + range.Length}"))</small>
+                            }
+                        </li>
+                    }</ul>
                 <div class="modal-actions"><button @onclick="ApplyWorkspaceEditAsync">Apply</button><button @onclick="CancelEditPreview">Cancel</button></div>
             </div>
         </div>
@@ -161,6 +177,10 @@
             </form>
         </div>
     }
+    <QuickAccessOverlay Open="_quickAccessOpen" Commands="_quickAccessCommands" Query="_quickAccessQuery"
+                        Busy="_quickAccessBusy" Items="_quickAccessItems" Selected="_quickAccessSelected"
+                        QueryChanged="UpdateQuickAccessAsync" SelectedChanged="value => _quickAccessSelected = value"
+                        Activate="ActivateQuickAccessAsync" Close="CloseQuickAccess" />
 </main>
 
 @code {
@@ -169,6 +189,8 @@
     private readonly CSharpLanguageProvider _languageProvider;
     private readonly HashSet<EditorDocumentState> _projectDocuments = [];
     private readonly WorkspaceEditTransaction _workspaceEdits = new();
+    private readonly CommandRegistry _commands = new();
+    private readonly QuickAccessService _quickAccess;
     private readonly List<NavigationState> _navigationHistory = [];
     private readonly EditorDocumentState _emptyDocument = new();
     private EditorLayoutPersistence _persistence = null!;
@@ -181,11 +203,16 @@
     private string? _openMenu;
     private int? _renamePosition;
     private string _renameName = "", _symbolQuery = "";
+    private string _quickAccessQuery = "";
     private WorkspaceEdit? _pendingWorkspaceEdit;
     private WorkspaceEditPreview? _editPreview;
     private IReadOnlyList<SymbolEntry> _workspaceSymbols = [];
+    private IReadOnlyList<QuickAccessItem> _quickAccessItems = [];
+    private CancellationTokenSource? _quickAccessCancellation;
+    private int _quickAccessSelected;
     private int _navigationIndex = -1;
-    private bool _restoringNavigation, _symbolSearchOpen;
+    private bool _restoringNavigation, _symbolSearchOpen, _searchOpen;
+    private bool _quickAccessOpen, _quickAccessCommands, _quickAccessBusy;
     private bool _projectReloading;
     private bool _showFind, _wordWrap, _externalChange, _leftMouseDown, _explorerOpen = true, _problemsOpen, _suggestions = true;
     private DocumentTab? ActiveTab => _workspace.FocusedGroup.ActiveTab;
@@ -197,8 +224,16 @@
         ? _projectSystem.GetActiveDocument(path)?.Project.Id.Id.ToString() : null;
     private bool CanNavigateBack => _navigationIndex > 0;
     private bool CanNavigateForward => _navigationIndex >= 0 && _navigationIndex < _navigationHistory.Count - 1;
+    private string? WorkspaceRoot => _explorer?.RootPath ?? (_projectSystem.State.Path is { } path ? Path.GetDirectoryName(path) : null);
+    private IReadOnlyList<EditorDocumentState> OpenDocuments => _workspace.Layout.Groups.SelectMany(group => group.Tabs)
+        .Select(tab => tab.Document).Distinct().ToArray();
 
-    public WorkbenchPanel() => _languageProvider = new(_projectSystem);
+    public WorkbenchPanel()
+    {
+        _languageProvider = new(_projectSystem);
+        _quickAccess = new(_commands);
+        RegisterCommands();
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -232,6 +267,7 @@
         if (Program.Phase6Solution is not null) await _projectSystem.OpenAsync(Program.Phase6Solution);
         if (Program.Phase7Solution is not null) await _projectSystem.OpenAsync(Program.Phase7Solution);
         if (Program.Phase8Solution is not null) await _projectSystem.OpenAsync(Program.Phase8Solution);
+        if (Program.Phase9Solution is not null) await _projectSystem.OpenAsync(Program.Phase9Solution);
         TrackActiveDocument();
     }
 
@@ -248,6 +284,8 @@
                 Program.Phase4Workspace is not null, Program.Phase5Workspace is not null);
         if (Program.Phase6Solution is not null)
             await JS.InvokeVoidAsync("novaSharp.runPhase6Smoke", _self);
+        if (Program.Phase9Solution is not null)
+            await JS.InvokeVoidAsync("novaSharp.runPhase9Smoke", _workbench, _self);
     }
 
     private async Task OpenFileAsync()
@@ -350,6 +388,7 @@
     private void Redo() { _openMenu = null; _document.Redo(); StateHasChanged(); }
     private void ReplaceAll() { _document.ReplaceAll(_query, _replacement); StateHasChanged(); }
     private void ToggleFind() { _openMenu = null; _showFind = !_showFind; }
+    private void ToggleSearch() { _openMenu = null; _searchOpen = !_searchOpen; }
     private void ToggleMenu(string menu) => _openMenu = _openMenu == menu ? null : menu;
     private void CloseMenu() => _openMenu = null;
     private async Task ToggleWrapAsync() { _openMenu = null; _wordWrap = !_wordWrap; await Program.Configuration.SaveUserAsync(Program.Configuration.Current with { WordWrap = _wordWrap }); }
@@ -358,6 +397,66 @@
     private void KeepBuffer() { _document.KeepBuffer(); _externalChange = false; }
     private Task ToggleExplorerAsync() => _explorer?.ToggleCollapsedAsync() ?? Task.CompletedTask;
     private void ToggleProblems() => _problemsOpen = !_problemsOpen;
+    private async Task OpenSearchMatchAsync(WorkspaceSearchMatch match) => await NavigateToAsync(new(match.Path,
+        new(match.Start, match.Length), match.Line, match.Column, match.Preview, "Search", NavigationKind.Reference));
+    private void PreviewSearchReplace(WorkspaceEdit edit)
+    {
+        _pendingWorkspaceEdit = edit;
+        _editPreview = _workspaceEdits.Preview(edit);
+    }
+
+    private void RegisterCommands()
+    {
+        _commands.Register(new("workbench.action.quickOpen", "Quick Open", "Ctrl+P", () => WorkspaceRoot is not null,
+            _ => { OpenQuickOpen(); return Task.CompletedTask; }));
+        _commands.Register(new("workbench.action.showCommands", "Command Palette", "Ctrl+Shift+P", () => true,
+            _ => { OpenCommandPalette(); return Task.CompletedTask; }));
+        _commands.Register(new("workbench.action.findInFiles", "Search Workspace", "Ctrl+Shift+F", () => WorkspaceRoot is not null,
+            _ => { if (!_searchOpen) ToggleSearch(); return Task.CompletedTask; }));
+        _commands.Register(new("workbench.action.problems", "Toggle Problems", null, () => true,
+            _ => { ToggleProblems(); return Task.CompletedTask; }));
+        _commands.Register(new("workbench.action.files.save", "Save", "Ctrl+S", () => _document.IsDirty,
+            _ => SaveAsync()));
+        _commands.Register(new("workbench.action.splitEditor", "Split Editor Right", "Ctrl+\\", () => true,
+            _ => { Split(SplitDirection.Right); return Task.CompletedTask; }));
+    }
+
+    private void OpenQuickOpen()
+    {
+        _openMenu = null;
+        if (WorkspaceRoot is null) { _status = "Open a workspace or solution to use Quick Open."; return; }
+        _quickAccessCommands = false; _quickAccessOpen = true; _quickAccessQuery = "";
+        _ = UpdateQuickAccessAsync("");
+    }
+    private void OpenCommandPalette()
+    {
+        _openMenu = null; _quickAccessCommands = true; _quickAccessOpen = true; _quickAccessQuery = "";
+        _quickAccessItems = _quickAccess.FindCommands(""); _quickAccessSelected = 0;
+    }
+    private void CloseQuickAccess()
+    {
+        _quickAccessCancellation?.Cancel(); _quickAccessCancellation?.Dispose(); _quickAccessCancellation = null;
+        _quickAccessOpen = false; _quickAccessBusy = false;
+    }
+    private async Task UpdateQuickAccessAsync(string query)
+    {
+        _quickAccessQuery = query; _quickAccessSelected = 0;
+        if (_quickAccessCommands) { _quickAccessItems = _quickAccess.FindCommands(query); return; }
+        if (WorkspaceRoot is not { } root) return;
+        _quickAccessCancellation?.Cancel(); _quickAccessCancellation?.Dispose();
+        _quickAccessCancellation = new(); var cancellationToken = _quickAccessCancellation.Token;
+        _quickAccessBusy = true;
+        try { _quickAccessItems = await _quickAccess.FindFilesAsync(root, query,
+            Program.Configuration.Current.ExplorerIgnoredNames, cancellationToken: cancellationToken); }
+        catch (OperationCanceledException) { }
+        finally { if (!cancellationToken.IsCancellationRequested) _quickAccessBusy = false; }
+    }
+    private async Task ActivateQuickAccessAsync(QuickAccessItem item)
+    {
+        CloseQuickAccess();
+        if (item.Kind == QuickAccessKind.File) await OpenTabAsync(item.Id);
+        else await _commands.ExecuteAsync(item.Id);
+    }
     private async Task OpenProblemAsync(LanguageDiagnostic diagnostic)
     {
         await NavigateToAsync(new(diagnostic.DocumentPath, diagnostic.Range, diagnostic.StartLine,
@@ -527,6 +626,9 @@
         if (!(args.CtrlKey || args.MetaKey)) return;
         switch (args.Key.ToLowerInvariant())
         {
+            case "p" when args.ShiftKey: OpenCommandPalette(); break;
+            case "p": OpenQuickOpen(); break;
+            case "f" when args.ShiftKey: if (!_searchOpen) ToggleSearch(); break;
             case "o": await OpenFileAsync(); break;
             case "s" when args.ShiftKey: await SaveAsAsync(); break;
             case "s": await SaveAsync(); break;
@@ -565,6 +667,12 @@
             _projectSystem.HasLinkedDocuments,
             _projectSystem.Contexts.Any(context => context.TargetFramework is not null && context.Configuration is not null),
             projectFileEditable, contextMenuPresent, dragSourcePresent, error));
+
+    [JSInvokable]
+    public Task CompletePhase9SmokeAsync(bool quickOpenVisible, bool duplicateFilesVisible, bool searchVisible,
+        bool resultsStreamed, bool replacePreview, string? error = null) =>
+        Program.CompletePhase9SmokeAsync(new(quickOpenVisible, duplicateFilesVisible, searchVisible,
+            resultsStreamed, replacePreview, error));
 
     [JSInvokable]
     public void CancelEditorDrag() => _workspace.CancelDrag();
@@ -632,6 +740,7 @@
 
     public void Dispose()
     {
+        CloseQuickAccess();
         _ = SaveLayoutAsync();
         _workspace.Changed -= WorkspaceChanged;
         _projectSystem.Changed -= ProjectSystemChanged;
