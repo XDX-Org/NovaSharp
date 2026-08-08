@@ -561,7 +561,14 @@
         try { _quickAccessItems = await _quickAccess.FindFilesAsync(root, query,
             Program.Configuration.Current.ExplorerIgnoredNames, cancellationToken: cancellationToken); }
         catch (OperationCanceledException) { }
-        finally { if (!cancellationToken.IsCancellationRequested) _quickAccessBusy = false; }
+        finally
+        {
+            if (!cancellationToken.IsCancellationRequested)
+            {
+                _quickAccessBusy = false;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
     }
     private async Task ActivateQuickAccessAsync(QuickAccessItem item)
     {
