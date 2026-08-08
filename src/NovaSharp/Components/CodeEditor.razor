@@ -2,19 +2,48 @@
 @implements IAsyncDisposable
 
 <div class="code-editor @(WordWrap ? "word-wrap" : null)" @ref="_root">
+    <nav class="editor-breadcrumbs" aria-label="Code breadcrumbs">
+        <span>@Document.DisplayName</span>
+        @foreach (var symbol in Breadcrumbs) { <span>› @symbol.Name</span> }
+        <button aria-label="Document outline" title="Document outline (Ctrl+Shift+O)" @onclick="ToggleOutline">☷</button>
+    </nav>
+    @if (_outlineOpen)
+    {
+        <div class="outline-popup language-popup" role="dialog" aria-label="Document outline">
+            @foreach (var symbol in _symbols)
+            {
+                <button @onclick="() => NavigateSymbolAsync(symbol)"><span>@symbol.Name</span><small>@symbol.Kind</small></button>
+            }
+        </div>
+    }
     <div class="presentation" aria-hidden="true">
         @if (WordWrap)
         {
-            @foreach (var line in Lines) { <SourceLineView Line="line" @key="line.Number" /> }
+            @foreach (var line in Lines) { <SourceLineView Line="line" Diagnostics="DiagnosticsFor(line)" @key="line.Number" /> }
         }
         else
         {
             <Virtualize TItem="EditorLine" Items="@Lines" Context="line" ItemSize="20" OverscanCount="8">
-                <SourceLineView Line="line" />
+                <SourceLineView Line="line" Diagnostics="DiagnosticsFor(line)" />
             </Virtualize>
         }
     </div>
     <textarea class="editor-input" aria-label="File contents" spellcheck="false" wrap="off" value="@Value"></textarea>
+    <div class="diagnostic-overview" aria-hidden="true">
+        @foreach (var diagnostic in _diagnostics)
+        {
+            <span class="overview-mark @diagnostic.Severity.ToString().ToLowerInvariant()"
+                  style="top:@OverviewTop(diagnostic)"></span>
+        }
+    </div>
+    <div class="diagnostic-accessibility" aria-label="Editor diagnostics">
+        @foreach (var diagnostic in _diagnostics.Where(item => item.Severity != LanguageDiagnosticSeverity.Hidden))
+        {
+            <button title="Navigate to diagnostic" @onclick="() => NavigateDiagnosticAsync(diagnostic)">
+                @diagnostic.Severity @diagnostic.Id at line @(diagnostic.StartLine + 1), column @(diagnostic.StartColumn + 1): @diagnostic.Message
+            </button>
+        }
+    </div>
     @if (ProjectLoading)
     {
         <div class="language-state" role="status">C# services loading…</div>
@@ -56,6 +85,25 @@
             }
         </div>
     }
+    @if (_navigationTargets.Count > 0)
+    {
+        <div class="navigation-popup language-popup" style="@PopupStyle" role="dialog" aria-label="Navigation results">
+            <span class="visually-hidden" aria-live="polite">@_navigationTargets.Count navigation results</span>
+            @foreach (var target in _navigationTargets)
+            {
+                <button @onclick="() => NavigateAsync(target)"><span>@target.DisplayText</span><small>@Path.GetFileName(target.DocumentPath):@(target.Line + 1)</small>@if (target.Preview is not null) { <code>@target.Preview</code> }</button>
+            }
+        </div>
+    }
+    @if (_codeActions.Count > 0)
+    {
+        <div class="code-actions-popup navigation-popup language-popup" style="@PopupStyle" role="menu" aria-label="Code actions">
+            @foreach (var action in _codeActions)
+            {
+                <button role="menuitem" @onclick="() => ApplyCodeActionAsync(action)"><span>@action.Title</span><small>@action.Kind</small></button>
+            }
+        </div>
+    }
 </div>
 
 @code {
@@ -70,6 +118,7 @@
     [Parameter] public bool WordWrap { get; set; }
     [Parameter, EditorRequired] public EditorViewState ViewState { get; set; } = null!;
     [Parameter] public EventCallback ViewStateChanged { get; set; }
+    [Parameter] public EventCallback<EditorLanguageCommand> LanguageCommand { get; set; }
     private readonly LatestLanguageRequest _completionRequest = new();
     private readonly LatestLanguageRequest _signatureRequest = new();
     private readonly LatestLanguageRequest _hoverRequest = new();
@@ -82,10 +131,15 @@
     private SignatureResult? _signature;
     private HoverResult? _hover;
     private IReadOnlyList<SemanticSpan> _semanticSpans = [];
+    private IReadOnlyList<SymbolEntry> _symbols = [];
+    private IReadOnlyList<NavigationTarget> _navigationTargets = [];
+    private IReadOnlyList<LanguageDiagnostic> _diagnostics = [];
+    private IReadOnlyList<CodeActionEntry> _codeActions = [];
     private IReadOnlyList<EditorLine> _lines = [];
     private string? _linesValue;
     private int _semanticRevision, _renderedSemanticRevision;
     private int _selectedCompletion;
+    private bool _outlineOpen;
     private double _popupX = 72, _popupY = 24;
     private ICollection<EditorLine> Lines
     {
@@ -102,6 +156,10 @@
         }
     }
     private string PopupStyle => $"left:{_popupX}px;top:{_popupY}px";
+    private string OverviewTop(LanguageDiagnostic diagnostic) => $"{Math.Clamp((diagnostic.StartLine + .5) / Math.Max(1, Lines.Count) * 100, 0, 99).ToString(System.Globalization.CultureInfo.InvariantCulture)}%";
+    private IEnumerable<SymbolEntry> Breadcrumbs => _symbols.Where(item =>
+        item.Range.Start <= ViewState.SelectionStart && item.Range.Start + item.Range.Length >= ViewState.SelectionStart)
+        .OrderByDescending(item => item.Range.Length).Take(4);
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -113,7 +171,8 @@
                 ViewState.SelectionEnd, ViewState.ScrollTop, ViewState.ScrollLeft);
             _ = RefreshSemanticAsync();
             _ = RefreshDiagnosticsAsync();
-            if (Program.Phase7Solution is not null) _ = RunPhase7SmokeAsync();
+            if (Program.Phase8Solution is not null) _ = RunPhase8SmokeAsync();
+            else if (Program.Phase7Solution is not null) _ = RunPhase7SmokeAsync();
             if (Program.Phase2SmokeFile is not null)
             {
                 var result = await _module.InvokeAsync<EditorSmokeResult>("runSmokeChecks", _root);
@@ -129,6 +188,8 @@
     {
         await ValueChanged.InvokeAsync(value);
         ViewState.SetSelection(caret, caret, value.Length);
+        _diagnostics = [];
+        if (Document.FilePath is { } diagnosticPath) ((CSharpLanguageProvider)LanguageProvider).Diagnostics.Remove(diagnosticPath);
         if (ProjectLoading || Document.FilePath is null) return;
         if (SuggestionsEnabled && (trigger is "." or " " || trigger?.Length == 1 && char.IsLetterOrDigit(trigger[0])))
             await RequestCompletionAsync(caret, false);
@@ -155,6 +216,17 @@
                 await CommitCompletionAsync(_completion.Items[_selectedCompletion]); break;
             case "escape": _completion = null; _signature = null; _hover = null; break;
             case "format": await FormatAsync(); break;
+            case "definition": await RequestNavigationAsync(caret, "definition"); break;
+            case "type-definition": await RequestNavigationAsync(caret, "type-definition"); break;
+            case "implementation": await RequestNavigationAsync(caret, "implementation"); break;
+            case "references": await RequestNavigationAsync(caret, "references"); break;
+            case "peek": await RequestNavigationAsync(caret, "peek"); break;
+            case "outline": _outlineOpen = !_outlineOpen; break;
+            case "rename": case "back": case "forward":
+                await LanguageCommand.InvokeAsync(new(command, caret)); break;
+            case "code-actions":
+                _codeActions = await ((CSharpLanguageProvider)LanguageProvider).GetCodeActionsAsync(Request(caret), default);
+                await UpdateAnchorAsync(caret); break;
         }
         await InvokeAsync(StateHasChanged);
     }
@@ -174,6 +246,12 @@
         await Task.Yield();
         var result = await _module!.InvokeAsync<Phase7SmokeResult>("runPhase7Smoke", _root);
         await Program.CompletePhase7SmokeAsync(result);
+    }
+    private async Task RunPhase8SmokeAsync()
+    {
+        await Task.Yield();
+        var result = await _module!.InvokeAsync<Phase8SmokeResult>("runPhase8Smoke", _root);
+        await Program.CompletePhase8SmokeAsync(result);
     }
 
     private async Task RequestCompletionAsync(int caret, bool explicitInvocation)
@@ -232,6 +310,51 @@
         var spans = await _semanticRequest.RunAsync(
             token => LanguageProvider.GetSemanticSpansAsync(Request(Value.Length), token), version);
         if (spans is not null) { _semanticSpans = spans; _semanticRevision++; await InvokeAsync(StateHasChanged); }
+        var symbols = await ((CSharpLanguageProvider)LanguageProvider).GetDocumentSymbolsAsync(Request(Value.Length), default);
+        if (Document.Version == version) _symbols = symbols;
+    }
+
+    private async Task RequestNavigationAsync(int caret, string command)
+    {
+        var provider = (CSharpLanguageProvider)LanguageProvider;
+        var request = Request(caret);
+        IReadOnlyList<NavigationTarget> targets = command switch
+        {
+            "type-definition" => await provider.GetDefinitionsAsync(request, true, default),
+            "implementation" => await provider.GetImplementationsAsync(request, default),
+            "references" => await provider.FindReferencesAsync(request, default),
+            _ => await provider.GetDefinitionsAsync(request, false, default)
+        };
+        if (targets.Count == 1 && command != "peek") await NavigateAsync(targets[0]);
+        else
+        {
+            _navigationTargets = targets;
+            if (targets.Count == 0) await LanguageCommand.InvokeAsync(new("navigation-empty", caret));
+            await UpdateAnchorAsync(caret);
+        }
+    }
+
+    private Task NavigateAsync(NavigationTarget target)
+    {
+        _navigationTargets = [];
+        return LanguageCommand.InvokeAsync(new("navigate", ViewState.SelectionStart, target));
+    }
+
+    private Task NavigateSymbolAsync(SymbolEntry symbol)
+    {
+        _outlineOpen = false;
+        return LanguageCommand.InvokeAsync(new("navigate", ViewState.SelectionStart,
+            new(symbol.DocumentPath, symbol.Range, symbol.Line, symbol.Column, symbol.Name,
+                symbol.ProjectName, NavigationKind.Definition)));
+    }
+    private void ToggleOutline() => _outlineOpen = !_outlineOpen;
+    private Task NavigateDiagnosticAsync(LanguageDiagnostic diagnostic) => LanguageCommand.InvokeAsync(new("navigate",
+        ViewState.SelectionStart, new(diagnostic.DocumentPath, diagnostic.Range, diagnostic.StartLine,
+            diagnostic.StartColumn, diagnostic.Message, diagnostic.ProjectName ?? "", NavigationKind.Reference)));
+    private Task ApplyCodeActionAsync(CodeActionEntry action)
+    {
+        _codeActions = [];
+        return LanguageCommand.InvokeAsync(new("workspace-edit", ViewState.SelectionStart, Edit: action.Edit));
     }
 
     private async Task RefreshDiagnosticsAsync()
@@ -239,9 +362,13 @@
         if (ProjectLoading || Document.FilePath is null) return;
         var version = Document.Version;
         try { await Task.Delay(300); } catch (OperationCanceledException) { return; }
-        await _diagnosticRequest.RunAsync(
+        var diagnostics = await _diagnosticRequest.RunAsync(
             token => LanguageProvider.GetDiagnosticsAsync(Request(Value.Length), token), version);
+        if (diagnostics is not null) { _diagnostics = diagnostics; await InvokeAsync(StateHasChanged); }
     }
+    private IReadOnlyList<LanguageDiagnostic> DiagnosticsFor(EditorLine line) => _diagnostics
+        .Where(item => item.StartLine <= line.Number - 1 && (item.EndLine < 0 ? item.StartLine : item.EndLine) >= line.Number - 1)
+        .ToArray();
 
     private async Task FormatAsync()
     {
@@ -300,3 +427,5 @@
         _self?.Dispose();
     }
 }
+
+@code { public sealed record EditorLanguageCommand(string Command, int Position, NavigationTarget? Target = null, WorkspaceEdit? Edit = null); }

@@ -16,7 +16,9 @@ Source control UI, remote development, collaboration, notebooks, AI completion, 
 | 4. Documents and movable tabs | Complete | Four-platform build/test/package and Linux interaction gates pass in run 30750653723 |
 | 5. Editor groups and split views | Complete | Four-platform build/test/package and Linux Phase 2–5 interaction gates pass in run 30760456811 |
 | 6. Solution model and Roslyn | Complete | Four-platform build/test/package and Linux Phase 2–6 interaction gates pass in run 30764773602 |
-| 7–17 | Planned | Completion criteria not yet met |
+| 7. C# IntelliSense | Complete | Phase 7 handoff records 65 tests and four-platform verification run 31266586068 |
+| 8. Diagnostics and code navigation | In progress | Implementation and 68 local tests pass; four-platform and packaged Phase 8 gate pending |
+| 9–17 | Planned | Completion criteria not yet met |
 
 Status values are `planned`, `in progress`, `blocked`, and `complete`. Update this table only from test or release evidence; documentation or partial UI alone does not complete a phase.
 

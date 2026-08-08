@@ -1,22 +1,39 @@
-<div class="source-line" @key="Line.Number"><span class="line-number">@Line.Number</span><code>@RenderLine()</code></div>
+<div class="source-line @SeverityClass" @key="Line.Number"><span class="line-number"><span class="diagnostic-glyph" aria-hidden="true">@Glyph</span>@Line.Number</span><code>@RenderLine()</code></div>
 
 @code {
     [Parameter, EditorRequired] public EditorLine Line { get; set; }
+    [Parameter] public IReadOnlyList<LanguageDiagnostic> Diagnostics { get; set; } = [];
+    private LanguageDiagnosticSeverity? Highest => Diagnostics.Select(item => (LanguageDiagnosticSeverity?)item.Severity).Max();
+    private string? SeverityClass => Highest is { } severity ? $"diagnostic-line {severity.ToString().ToLowerInvariant()}" : null;
+    private string Glyph => Highest switch { LanguageDiagnosticSeverity.Error => "●", LanguageDiagnosticSeverity.Warning => "▲", LanguageDiagnosticSeverity.Information => "◆", _ => "" };
 
     private RenderFragment RenderLine() => builder =>
     {
         var position = 0;
         var sequence = 0;
-        foreach (var span in Line.Spans)
+        var boundaries = Line.Spans.SelectMany(span => new[] { span.Start, span.Start + span.Length })
+            .Concat(Diagnostics.SelectMany(item => new[] { LocalStart(item), LocalEnd(item) }))
+            .Append(0).Append(Line.Text.Length).Where(value => value >= 0 && value <= Line.Text.Length)
+            .Distinct().Order().ToArray();
+        foreach (var end in boundaries.Skip(1))
         {
-            if (span.Start > position) builder.AddContent(sequence++, Line.Text[position..span.Start]);
+            if (end <= position) continue;
+            var token = Line.Spans.FirstOrDefault(span => span.Start <= position && span.Start + span.Length >= end);
+            var diagnostic = Diagnostics.FirstOrDefault(item => LocalStart(item) < end && LocalEnd(item) > position);
+            if (token.Length == 0 && diagnostic is null) { builder.AddContent(sequence++, Line.Text[position..end]); position = end; continue; }
             builder.OpenElement(sequence++, "span");
-            builder.AddAttribute(sequence++, "class", $"token-{span.Kind.ToString().ToLowerInvariant()}");
-            builder.AddContent(sequence++, Line.Text.Substring(span.Start, span.Length));
+            var classes = token.Length > 0 ? $"token-{token.Kind.ToString().ToLowerInvariant()}" : "";
+            if (diagnostic is not null) classes += $" diagnostic diagnostic-{diagnostic.Severity.ToString().ToLowerInvariant()}";
+            builder.AddAttribute(sequence++, "class", classes);
+            if (diagnostic is not null) builder.AddAttribute(sequence++, "title", $"{diagnostic.Id}: {diagnostic.Message}");
+            builder.AddContent(sequence++, Line.Text[position..end]);
             builder.CloseElement();
-            position = span.Start + span.Length;
+            position = end;
         }
         if (position < Line.Text.Length) builder.AddContent(sequence, Line.Text[position..]);
         if (Line.Text.Length == 0) builder.AddContent(sequence, " ");
     };
+    private int LocalStart(LanguageDiagnostic item) => item.StartLine == Line.Number - 1 ? item.StartColumn : 0;
+    private int LocalEnd(LanguageDiagnostic item) => (item.EndLine < 0 ? item.StartLine : item.EndLine) == Line.Number - 1
+        ? (item.EndColumn < 0 ? item.StartColumn + item.Range.Length : item.EndColumn) : Line.Text.Length;
 }

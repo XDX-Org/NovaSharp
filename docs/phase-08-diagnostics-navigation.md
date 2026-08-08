@@ -35,3 +35,16 @@ Turn language analysis into an IDE workflow for finding, understanding, and fixi
 ## Next phase
 
 Connect editing to [workspace-wide search and replacement](phase-09-search-replace.md).
+
+## Implementation status
+
+Implemented on `phase-8`:
+
+- versioned compiler/analyzer diagnostics with merged squiggles, gutter glyphs, overview marks, accessible details, and a non-virtualized Problems store;
+- Problems filtering/grouping and exact-range activation;
+- definition, type definition, implementation, Peek, references, document outline/breadcrumbs, and workspace symbols;
+- Back/Forward view restoration across groups and project-context-aware navigation;
+- rename and code-action previews, formatting, supported quick fixes/fix-all, and conflict-checked multi-file transactions with staged disk rollback;
+- unit/acceptance coverage and a packaged Linux Phase 8 smoke gate.
+
+Local Release tests and warning-as-error build pass. Completion remains pending until the four-platform workflow and packaged native smoke pass.

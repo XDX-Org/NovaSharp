@@ -173,6 +173,9 @@ public sealed class RoslynProjectSystem : IAsyncDisposable
             ?? ids.Select(id => _solution.GetDocument(id)).FirstOrDefault(document => document is not null);
     }
 
+    internal EditorSnapshot? GetTrackedSnapshot(string path) =>
+        _trackedEditors.GetValueOrDefault(Path.GetFullPath(path))?.CreateSnapshot();
+
     internal async Task<Document?> GetLanguageDocumentAsync(string path, string? projectContext, long version,
         CancellationToken cancellationToken)
     {

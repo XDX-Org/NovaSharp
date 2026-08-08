@@ -24,7 +24,8 @@ public sealed record FormatResult(string Text, int SelectionStart, int Selection
 public enum LanguageDiagnosticSeverity { Hidden, Information, Warning, Error }
 public enum LanguageDiagnosticSource { Compiler, Analyzer }
 public sealed record LanguageDiagnostic(string Id, LanguageDiagnosticSource Source, LanguageDiagnosticSeverity Severity,
-    string Message, string DocumentPath, TextRange Range, int StartLine, int StartColumn, string? ProjectName);
+    string Message, string DocumentPath, TextRange Range, int StartLine, int StartColumn, string? ProjectName,
+    int EndLine = -1, int EndColumn = -1);
 
 public interface ILanguageProvider
 {
@@ -43,7 +44,7 @@ public interface ILanguageProvider
     Task<LanguageResponse<FormatResult>> FormatAsync(LanguageRequest request, CancellationToken cancellationToken);
 }
 
-internal sealed class CSharpLanguageProvider(RoslynProjectSystem projectSystem, LanguageDiagnosticStore? diagnosticStore = null) : ILanguageProvider
+internal sealed partial class CSharpLanguageProvider(RoslynProjectSystem projectSystem, LanguageDiagnosticStore? diagnosticStore = null) : ILanguageProvider
 {
     internal LanguageDiagnosticStore Diagnostics { get; } = diagnosticStore ?? new();
     private readonly Dictionary<string, (long Version, Document Document, CompletionItem Item)> _completionItems = [];
@@ -205,7 +206,8 @@ internal sealed class CSharpLanguageProvider(RoslynProjectSystem projectSystem, 
     private static LanguageDiagnostic ToDiagnostic(Diagnostic diagnostic, LanguageDiagnosticSource source, Document document)
     {
         var span = diagnostic.Location.SourceSpan;
-        var line = diagnostic.Location.GetLineSpan().StartLinePosition;
+        var lines = diagnostic.Location.GetLineSpan();
+        var line = lines.StartLinePosition;
         var severity = diagnostic.Severity switch
         {
             DiagnosticSeverity.Error => LanguageDiagnosticSeverity.Error,
@@ -214,7 +216,8 @@ internal sealed class CSharpLanguageProvider(RoslynProjectSystem projectSystem, 
             _ => LanguageDiagnosticSeverity.Hidden
         };
         return new(diagnostic.Id, source, severity, diagnostic.GetMessage(), document.FilePath!,
-            new(span.Start, span.Length), line.Line, line.Character, document.Project.Name);
+            new(span.Start, span.Length), line.Line, line.Character, document.Project.Name,
+            lines.EndLinePosition.Line, lines.EndLinePosition.Character);
     }
     private static LanguageResponse<T> Degraded<T>(LanguageRequest request) => new(request.Version, default, true);
 }

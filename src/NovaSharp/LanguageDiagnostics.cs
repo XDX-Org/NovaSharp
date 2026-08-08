@@ -41,4 +41,10 @@ internal sealed class LanguageDiagnosticStore
                 _entries.Remove(key);
         Changed?.Invoke();
     }
+
+    internal void Clear()
+    {
+        lock (_gate) _entries.Clear();
+        Changed?.Invoke();
+    }
 }

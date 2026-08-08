@@ -5,6 +5,10 @@
 
 <main @ref="_workbench" class="workbench" @onkeydown="HandleKeyAsync">
     <header class="toolbar">
+        <div class="navigation-controls" aria-label="Navigation history">
+            <button title="Back (Alt+Left)" aria-label="Back" disabled="@(!CanNavigateBack)" @onclick="NavigateBackAsync">←</button>
+            <button title="Forward (Alt+Right)" aria-label="Forward" disabled="@(!CanNavigateForward)" @onclick="NavigateForwardAsync">→</button>
+        </div>
         <nav class="menu-bar" aria-label="Application menu">
             @if (_openMenu is not null) { <div class="menu-dismiss" @onclick="CloseMenu"></div> }
             <div class="main-menu">
@@ -39,6 +43,7 @@
                 <div class="menu-popup" role="menu" @onclick:stopPropagation>
                     <button role="menuitem" @onclick="ToggleExplorerAsync">Explorer</button>
                     <button role="menuitem" @onclick="ToggleWrapAsync">Word wrap <span>@(_wordWrap ? "On" : "Off")</span></button>
+                    <button role="menuitem" @onclick="OpenWorkspaceSymbols">Workspace symbols <kbd>Ctrl+T</kbd></button>
                 </div>
                 }
             </div>
@@ -89,7 +94,7 @@
                                    SuggestionsEnabled="_suggestions" SemanticHighlighting="Program.Configuration.Current.SemanticHighlighting"
                                    ExternalDragActive="_explorerFileDrag is not null"
                                    ActiveChanged="ActiveChangedAsync" ContentEdited="ContentEditedAsync"
-                                   CloseRequested="CloseRequestedAsync" />
+                                   CloseRequested="CloseRequestedAsync" LanguageCommand="HandleLanguageCommandAsync" />
             <ProblemsPanel Open="_problemsOpen" Diagnostics="_languageProvider.Diagnostics.Entries"
                            Activated="OpenProblemAsync" Close="ToggleProblems" />
         </div>
@@ -108,7 +113,7 @@
         </nav>
     </div>
     <footer class="statusbar">
-        <span class="status-message">@Status</span>
+        <span class="status-message" aria-live="polite">@Status</span>
         @if (ActiveContexts.Count > 1)
         {
             <select aria-label="Active project context" value="@ActiveContextId" @onchange="SelectContext">
@@ -117,6 +122,45 @@
         }
         <span class="pointer-status" aria-live="polite">LMB: @(_leftMouseDown ? "Down" : "Up")</span>
     </footer>
+    @if (_renamePosition is not null)
+    {
+        <div class="modal-backdrop" @onclick="CancelRename">
+            <form class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="rename-title"
+                  @onclick:stopPropagation @onsubmit="PreviewRenameAsync" @onsubmit:preventDefault>
+                <h2 id="rename-title">Rename symbol</h2>
+                <label class="modal-field"><span>New name</span><input @bind="_renameName" autofocus /></label>
+                <div class="modal-actions"><button type="submit">Preview</button><button type="button" @onclick="CancelRename">Cancel</button></div>
+            </form>
+        </div>
+    }
+    @if (_editPreview is not null)
+    {
+        <div class="modal-backdrop" @onclick="CancelEditPreview">
+            <div class="modal-dialog edit-preview" role="dialog" aria-modal="true" aria-labelledby="preview-title" @onclick:stopPropagation>
+                <h2 id="preview-title">@_editPreview.Title</h2>
+                <p>@_editPreview.ChangedFileCount files · @_editPreview.ChangedCharacterCount changed characters</p>
+                <ul>@foreach (var item in _editPreview.Documents) { <li>@item.DocumentPath</li> }</ul>
+                <div class="modal-actions"><button @onclick="ApplyWorkspaceEditAsync">Apply</button><button @onclick="CancelEditPreview">Cancel</button></div>
+            </div>
+        </div>
+    }
+    @if (_symbolSearchOpen)
+    {
+        <div class="modal-backdrop" @onclick="CloseWorkspaceSymbols">
+            <form class="modal-dialog symbol-search" role="dialog" aria-modal="true" aria-labelledby="symbols-title"
+                  @onclick:stopPropagation @onsubmit="SearchWorkspaceSymbolsAsync" @onsubmit:preventDefault>
+                <h2 id="symbols-title">Workspace symbols</h2>
+                <label class="modal-field"><span>Symbol name</span><input @bind="_symbolQuery" autofocus /></label>
+                <div class="symbol-results">
+                    @foreach (var symbol in _workspaceSymbols)
+                    {
+                        <button type="button" @onclick="() => OpenSymbolAsync(symbol)"><span>@symbol.Name</span><small>@symbol.ProjectName · @Path.GetFileName(symbol.DocumentPath)</small></button>
+                    }
+                </div>
+                <div class="modal-actions"><button type="submit">Search</button><button type="button" @onclick="CloseWorkspaceSymbols">Close</button></div>
+            </form>
+        </div>
+    }
 </main>
 
 @code {
@@ -124,6 +168,8 @@
     private readonly RoslynProjectSystem _projectSystem = new();
     private readonly CSharpLanguageProvider _languageProvider;
     private readonly HashSet<EditorDocumentState> _projectDocuments = [];
+    private readonly WorkspaceEditTransaction _workspaceEdits = new();
+    private readonly List<NavigationState> _navigationHistory = [];
     private readonly EditorDocumentState _emptyDocument = new();
     private EditorLayoutPersistence _persistence = null!;
     private WorkspaceExplorer? _explorer;
@@ -133,6 +179,14 @@
     private string? _explorerFileDrag;
     private string _query = "", _replacement = "";
     private string? _openMenu;
+    private int? _renamePosition;
+    private string _renameName = "", _symbolQuery = "";
+    private WorkspaceEdit? _pendingWorkspaceEdit;
+    private WorkspaceEditPreview? _editPreview;
+    private IReadOnlyList<SymbolEntry> _workspaceSymbols = [];
+    private int _navigationIndex = -1;
+    private bool _restoringNavigation, _symbolSearchOpen;
+    private bool _projectReloading;
     private bool _showFind, _wordWrap, _externalChange, _leftMouseDown, _explorerOpen = true, _problemsOpen, _suggestions = true;
     private DocumentTab? ActiveTab => _workspace.FocusedGroup.ActiveTab;
     private EditorDocumentState _document => ActiveTab?.Document ?? _emptyDocument;
@@ -141,6 +195,8 @@
         _document.FilePath is { } path ? _projectSystem.GetContexts(path) : [];
     private string? ActiveContextId => _document.FilePath is { } path
         ? _projectSystem.GetActiveDocument(path)?.Project.Id.Id.ToString() : null;
+    private bool CanNavigateBack => _navigationIndex > 0;
+    private bool CanNavigateForward => _navigationIndex >= 0 && _navigationIndex < _navigationHistory.Count - 1;
 
     public WorkbenchPanel() => _languageProvider = new(_projectSystem);
 
@@ -175,6 +231,7 @@
         }
         if (Program.Phase6Solution is not null) await _projectSystem.OpenAsync(Program.Phase6Solution);
         if (Program.Phase7Solution is not null) await _projectSystem.OpenAsync(Program.Phase7Solution);
+        if (Program.Phase8Solution is not null) await _projectSystem.OpenAsync(Program.Phase8Solution);
         TrackActiveDocument();
     }
 
@@ -210,6 +267,7 @@
             filterPatterns: [new FileFilter("Solution", "*.sln"), new FileFilter("XML solution", "*.slnx"),
                 new FileFilter("C# project", "*.csproj")]);
         if (files is not [var path]) return;
+        _languageProvider.Diagnostics.Clear();
         await _projectSystem.OpenAsync(path);
         _status = _projectSystem.State.Progress;
         await SaveLayoutAsync();
@@ -302,13 +360,122 @@
     private void ToggleProblems() => _problemsOpen = !_problemsOpen;
     private async Task OpenProblemAsync(LanguageDiagnostic diagnostic)
     {
-        await OpenTabAsync(diagnostic.DocumentPath);
-        if (ActiveTab is { } tab)
+        await NavigateToAsync(new(diagnostic.DocumentPath, diagnostic.Range, diagnostic.StartLine,
+            diagnostic.StartColumn, diagnostic.Message, diagnostic.ProjectName ?? "", NavigationKind.Reference));
+    }
+
+    private async Task HandleLanguageCommandAsync(CodeEditor.EditorLanguageCommand command)
+    {
+        switch (command.Command)
         {
-            tab.ViewState.SetSelection(diagnostic.Range.Start,
-                diagnostic.Range.Start + diagnostic.Range.Length, tab.Document.Content?.Length ?? 0);
-            await ActiveChangedAsync();
+            case "navigate" when command.Target is not null: await NavigateToAsync(command.Target); break;
+            case "rename": _renamePosition = command.Position; _renameName = ""; break;
+            case "back": await NavigateBackAsync(); break;
+            case "forward": await NavigateForwardAsync(); break;
+            case "workspace-edit" when command.Edit is not null:
+                _pendingWorkspaceEdit = command.Edit; _editPreview = _workspaceEdits.Preview(command.Edit); break;
+            case "navigation-empty": _status = "No navigation results."; break;
         }
+    }
+
+    private NavigationState? CaptureNavigation() => ActiveTab?.Document.FilePath is { } path
+        ? new(_workspace.Layout.FocusedGroupId, path, ActiveTab.ViewState.SelectionStart,
+            ActiveTab.ViewState.SelectionEnd, ActiveTab.ViewState.ScrollTop, ActiveTab.ViewState.ScrollLeft) : null;
+
+    private void RecordNavigation(NavigationState state)
+    {
+        if (_restoringNavigation) return;
+        if (_navigationIndex >= 0 && _navigationHistory[_navigationIndex] == state) return;
+        if (_navigationIndex < _navigationHistory.Count - 1)
+            _navigationHistory.RemoveRange(_navigationIndex + 1, _navigationHistory.Count - _navigationIndex - 1);
+        _navigationHistory.Add(state);
+        if (_navigationHistory.Count > 100) _navigationHistory.RemoveAt(0);
+        _navigationIndex = _navigationHistory.Count - 1;
+    }
+
+    private async Task NavigateToAsync(NavigationTarget target)
+    {
+        if (CaptureNavigation() is { } current) RecordNavigation(current);
+        await RestoreNavigationAsync(new(_workspace.Layout.FocusedGroupId, target.DocumentPath,
+            target.Range.Start, target.Range.Start + target.Range.Length, 0, 0));
+        var context = _projectSystem.GetContexts(target.DocumentPath).FirstOrDefault(item => item.Name == target.ProjectName);
+        if (context.Id is not null) _projectSystem.SelectContext(target.DocumentPath, context.Id);
+        if (CaptureNavigation() is { } destination) RecordNavigation(destination);
+        _status = $"{target.Kind}: {target.DisplayText}";
+    }
+
+    private async Task RestoreNavigationAsync(NavigationState state)
+    {
+        _restoringNavigation = true;
+        try
+        {
+            var existing = _workspace.Layout.Groups.SelectMany(group => group.Tabs.Select(tab => (group, tab)))
+                .FirstOrDefault(item => string.Equals(item.tab.Document.FilePath, state.DocumentPath,
+                    OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal));
+            DocumentTab? tab;
+            if (existing.tab is not null)
+            {
+                existing.group.Activate(existing.tab); _workspace.Focus(existing.group.Id); tab = existing.tab;
+            }
+            else tab = await _workspace.OpenAsync(state.DocumentPath, groupId:
+                _workspace.Layout.Groups.Any(group => group.Id == state.GroupId) ? state.GroupId : null);
+            if (tab is null) return;
+            tab.ViewState.Restore(state.SelectionStart, state.SelectionEnd, state.ScrollTop, state.ScrollLeft,
+                tab.Document.Content?.Length ?? 0);
+            TrackActiveDocument();
+            await SaveLayoutAsync();
+        }
+        finally { _restoringNavigation = false; }
+    }
+
+    private async Task NavigateBackAsync()
+    {
+        if (!CanNavigateBack) return;
+        await RestoreNavigationAsync(_navigationHistory[--_navigationIndex]);
+    }
+    private async Task NavigateForwardAsync()
+    {
+        if (!CanNavigateForward) return;
+        await RestoreNavigationAsync(_navigationHistory[++_navigationIndex]);
+    }
+
+    private async Task PreviewRenameAsync()
+    {
+        if (_renamePosition is not { } position || _document.FilePath is null) return;
+        try
+        {
+            var request = new LanguageRequest(_document.FilePath, ActiveContextId, _document.Version, position);
+            _pendingWorkspaceEdit = await _languageProvider.RenameAsync(request, _renameName, default);
+            _renamePosition = null;
+            if (_pendingWorkspaceEdit is not null) _editPreview = _workspaceEdits.Preview(_pendingWorkspaceEdit);
+            else _status = "Rename is not available at this position.";
+        }
+        catch (Exception exception) { _status = exception.Message; _renamePosition = null; }
+    }
+    private void CancelRename() => _renamePosition = null;
+    private void CancelEditPreview() { _editPreview = null; _pendingWorkspaceEdit = null; }
+    private async Task ApplyWorkspaceEditAsync()
+    {
+        if (_pendingWorkspaceEdit is null) return;
+        try
+        {
+            var open = _workspace.Layout.Groups.SelectMany(group => group.Tabs).Select(tab => tab.Document).Distinct();
+            await _workspaceEdits.ApplyAsync(_pendingWorkspaceEdit, open);
+            _status = $"Applied {_pendingWorkspaceEdit.Title}.";
+        }
+        catch (Exception exception) { _status = exception.Message; }
+        finally { CancelEditPreview(); StateHasChanged(); }
+    }
+
+    private void OpenWorkspaceSymbols() { _openMenu = null; _symbolSearchOpen = true; _workspaceSymbols = []; }
+    private void CloseWorkspaceSymbols() => _symbolSearchOpen = false;
+    private async Task SearchWorkspaceSymbolsAsync() =>
+        _workspaceSymbols = await _languageProvider.FindWorkspaceSymbolsAsync(_symbolQuery, default);
+    private async Task OpenSymbolAsync(SymbolEntry symbol)
+    {
+        _symbolSearchOpen = false;
+        await NavigateToAsync(new(symbol.DocumentPath, symbol.Range, symbol.Line, symbol.Column,
+            symbol.Name, symbol.ProjectName, NavigationKind.Definition));
     }
     private void ExplorerOpenChanged(bool open) => _explorerOpen = open;
     private Task SaveLayoutAsync() => _persistence.SaveAsync(
@@ -343,7 +510,16 @@
         if (context.Id is not null) _projectSystem.SelectContext(path, context.Id);
     }
 
-    private void ProjectSystemChanged() => _ = InvokeAsync(StateHasChanged);
+    private void ProjectSystemChanged()
+    {
+        if (_projectSystem.State.IsLoading && !_projectReloading)
+        {
+            _projectReloading = true;
+            _languageProvider.Diagnostics.Clear();
+        }
+        else if (!_projectSystem.State.IsLoading) _projectReloading = false;
+        _ = InvokeAsync(StateHasChanged);
+    }
     private void DiagnosticsChanged() => _ = InvokeAsync(StateHasChanged);
 
     private async Task HandleKeyAsync(KeyboardEventArgs args)
@@ -355,6 +531,7 @@
             case "s" when args.ShiftKey: await SaveAsAsync(); break;
             case "s": await SaveAsync(); break;
             case "f": _showFind = true; break;
+            case "t": OpenWorkspaceSymbols(); break;
             case "z" when args.ShiftKey: Redo(); break;
             case "z": Undo(); break;
             case "y": Redo(); break;
@@ -481,4 +658,7 @@
         try { foreach (var tab in dirty) tab.Document.SaveAsync().GetAwaiter().GetResult(); return true; }
         catch { return false; }
     }
+
+    private sealed record NavigationState(Guid GroupId, string DocumentPath, int SelectionStart,
+        int SelectionEnd, double ScrollTop, double ScrollLeft);
 }

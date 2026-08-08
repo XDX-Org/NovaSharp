@@ -2,18 +2,29 @@
 {
     <section class="problems-panel" aria-label="Problems">
         <header><strong>Problems</strong><span>@Diagnostics.Count</span><button aria-label="Close Problems" @onclick="Close">×</button></header>
-        <div class="problems-list">
-            @foreach (var item in Diagnostics)
-            {
-                <button class="problem @item.Severity.ToString().ToLowerInvariant()" @onclick="() => Activated.InvokeAsync(item)">
-                    <span class="problem-severity" aria-hidden="true">@SeverityIcon(item.Severity)</span>
-                    <span class="problem-message">@item.Message</span>
-                    <span class="problem-location">@Path.GetFileName(item.DocumentPath):@(item.StartLine + 1):@(item.StartColumn + 1)</span>
-                    <span class="problem-code">@item.Id · @item.Source</span>
-                </button>
-            }
-            @if (Diagnostics.Count == 0) { <p>No problems detected.</p> }
+        <div class="problem-filters">
+            <select aria-label="Problem severity" @bind="_severity"><option value="">All severities</option>@foreach (var value in Enum.GetValues<LanguageDiagnosticSeverity>().Reverse()) { <option>@value</option> }</select>
+            <select aria-label="Problem source" @bind="_source"><option value="">All sources</option>@foreach (var value in Enum.GetValues<LanguageDiagnosticSource>()) { <option>@value</option> }</select>
+            <select aria-label="Problem project" @bind="_project"><option value="">All projects</option>@foreach (var value in Diagnostics.Select(item => item.ProjectName).Where(item => item is not null).Distinct().Order()) { <option>@value</option> }</select>
+            <select aria-label="Problem file" @bind="_file"><option value="">All files</option>@foreach (var value in Diagnostics.Select(item => item.DocumentPath).Distinct().Order()) { <option value="@value">@Path.GetFileName(value)</option> }</select>
         </div>
+        <div class="problems-list">
+            @foreach (var group in Filtered.GroupBy(item => item.DocumentPath))
+            {
+                <h3>@Path.GetFileName(group.Key) <small>@group.Count()</small></h3>
+                @foreach (var item in group)
+                {
+                    <button class="problem @item.Severity.ToString().ToLowerInvariant()" @onclick="() => Activated.InvokeAsync(item)">
+                        <span class="problem-severity" aria-hidden="true">@SeverityIcon(item.Severity)</span>
+                        <span class="problem-message">@item.Message</span>
+                        <span class="problem-location">@(item.StartLine + 1):@(item.StartColumn + 1)</span>
+                        <span class="problem-code">@item.Id · @item.Source</span>
+                    </button>
+                }
+            }
+            @if (Filtered.Count == 0) { <p>No matching problems.</p> }
+        </div>
+        <span class="visually-hidden" aria-live="polite">@Announcement</span>
     </section>
 }
 
@@ -22,6 +33,13 @@
     [Parameter, EditorRequired] public IReadOnlyList<LanguageDiagnostic> Diagnostics { get; set; } = [];
     [Parameter] public EventCallback<LanguageDiagnostic> Activated { get; set; }
     [Parameter] public EventCallback Close { get; set; }
+    private string _severity = "", _source = "", _project = "", _file = "";
+    private IReadOnlyList<LanguageDiagnostic> Filtered => Diagnostics.Where(item =>
+        (_severity.Length == 0 || item.Severity.ToString() == _severity)
+        && (_source.Length == 0 || item.Source.ToString() == _source)
+        && (_project.Length == 0 || item.ProjectName == _project)
+        && (_file.Length == 0 || item.DocumentPath == _file)).ToArray();
+    private string Announcement => $"{Diagnostics.Count(item => item.Severity == LanguageDiagnosticSeverity.Error)} errors, {Diagnostics.Count(item => item.Severity == LanguageDiagnosticSeverity.Warning)} warnings";
     private static string SeverityIcon(LanguageDiagnosticSeverity severity) => severity switch
     {
         LanguageDiagnosticSeverity.Error => "●", LanguageDiagnosticSeverity.Warning => "▲", _ => "◆"

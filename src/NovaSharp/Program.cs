@@ -16,6 +16,7 @@ internal static class Program
     internal static string? Phase5Workspace { get; private set; }
     internal static string? Phase6Solution { get; private set; }
     internal static string? Phase7Solution { get; private set; }
+    internal static string? Phase8Solution { get; private set; }
     internal static Func<bool>? ConfirmWorkbenchClose { get; set; }
     private static string? SmokeReport { get; set; }
 
@@ -28,8 +29,10 @@ internal static class Program
         Phase5Workspace = ReadOption(args, "--phase5-smoke");
         Phase6Solution = ReadOption(args, "--phase6-smoke");
         Phase7Solution = ReadOption(args, "--phase7-smoke");
+        Phase8Solution = ReadOption(args, "--phase8-smoke");
         SmokeFile = Phase2SmokeFile ?? (Phase3Workspace is null ? null : Path.Combine(Phase3Workspace, "active.cs"))
-            ?? (Phase7Solution is null ? null : Path.Combine(Path.GetDirectoryName(Phase7Solution)!, "Program.cs"));
+            ?? ((Phase8Solution ?? Phase7Solution) is not { } languageSolution ? null
+                : Path.Combine(Path.GetDirectoryName(languageSolution)!, "Program.cs"));
         SmokeReport = ReadOption(args, "--smoke-report");
         var builder = PhotinoExBlazorAppBuilder.CreateDefault(args);
         var settingsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NovaSharp", "settings.json");
@@ -101,6 +104,13 @@ internal static class Program
     }
 
     internal static async Task CompletePhase7SmokeAsync(Phase7SmokeResult result)
+    {
+        if (SmokeReport is null) return;
+        await File.WriteAllTextAsync(SmokeReport, JsonSerializer.Serialize(result));
+        App.MainWindow.Close();
+    }
+
+    internal static async Task CompletePhase8SmokeAsync(Phase8SmokeResult result)
     {
         if (SmokeReport is null) return;
         await File.WriteAllTextAsync(SmokeReport, JsonSerializer.Serialize(result));

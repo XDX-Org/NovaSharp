@@ -38,6 +38,34 @@ export function createEditor(root, wordWrap, dotNet, selectionStart, selectionEn
             dotNet.invokeMethodAsync('EditorCommand', 'format', input.selectionStart);
             return;
         }
+        if (event.key === 'F12') {
+            event.preventDefault();
+            const command = event.ctrlKey && event.shiftKey ? 'type-definition'
+                : event.altKey ? 'peek' : event.shiftKey ? 'references'
+                : event.ctrlKey || event.metaKey ? 'implementation' : 'definition';
+            dotNet.invokeMethodAsync('EditorCommand', command, input.selectionStart);
+            return;
+        }
+        if (event.key === 'F2') {
+            event.preventDefault();
+            dotNet.invokeMethodAsync('EditorCommand', 'rename', input.selectionStart);
+            return;
+        }
+        if ((event.ctrlKey || event.metaKey) && event.key === '.') {
+            event.preventDefault();
+            dotNet.invokeMethodAsync('EditorCommand', 'code-actions', input.selectionStart);
+            return;
+        }
+        if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'o') {
+            event.preventDefault();
+            dotNet.invokeMethodAsync('EditorCommand', 'outline', input.selectionStart);
+            return;
+        }
+        if (event.altKey && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
+            event.preventDefault();
+            dotNet.invokeMethodAsync('EditorCommand', event.key === 'ArrowLeft' ? 'back' : 'forward', input.selectionStart);
+            return;
+        }
         if ((event.ctrlKey || event.metaKey) && event.key === '/') {
             event.preventDefault();
             toggleLineComment(input);
@@ -305,5 +333,41 @@ export async function runPhase7Smoke(root) {
             error: completionVisible ? null : `${completionDiagnostic}; provider returned ${completionItems} completion items` };
     } catch (error) {
         return { error: String(error) };
+    }
+}
+
+export async function runPhase8Smoke(root) {
+    const { input, dotNet } = root.__novaEditor;
+    const workbench = root.closest('.workbench');
+    const waitFor = async (predicate, attempts = 200) => {
+        for (let attempt = 0; attempt < attempts; attempt++) {
+            if (predicate()) return true;
+            await new Promise(resolve => setTimeout(resolve, 50));
+        }
+        return false;
+    };
+    try {
+        if (!await waitFor(() => !root.querySelector('.language-state'), 300))
+            throw new Error('C# services did not finish loading');
+        input.value = 'class C{C value; Missing missing;}';
+        input.setSelectionRange(0, 0);
+        await dotNet.invokeMethodAsync('InputChanged', input.value, 0, null);
+        const diagnosticSquiggle = await waitFor(() => !!root.querySelector('.diagnostic-error'));
+        const diagnosticGlyph = !!root.querySelector('.diagnostic-glyph:not(:empty)');
+        workbench.querySelector('[aria-label="Problems"]')?.click();
+        const problemsPanel = await waitFor(() => !!workbench.querySelector('.problems-panel .problem'));
+        const typePosition = input.value.indexOf('C value');
+        input.setSelectionRange(typePosition, typePosition);
+        await dotNet.invokeMethodAsync('EditorCommand', 'peek', typePosition);
+        const definitionPeek = await waitFor(() => !!root.querySelector('.navigation-popup code'));
+        const breadcrumbs = !!root.querySelector('.editor-breadcrumbs');
+        await dotNet.invokeMethodAsync('EditorCommand', 'outline', typePosition);
+        const outline = await waitFor(() => !!root.querySelector('.outline-popup button'));
+        await dotNet.invokeMethodAsync('EditorCommand', 'code-actions', typePosition);
+        const codeActions = await waitFor(() => !!root.querySelector('.code-actions-popup button'));
+        return { diagnosticSquiggle, diagnosticGlyph, problemsPanel, definitionPeek, breadcrumbs, outline, codeActions };
+    } catch (error) {
+        return { diagnosticSquiggle: false, diagnosticGlyph: false, problemsPanel: false,
+            definitionPeek: false, breadcrumbs: false, outline: false, codeActions: false, error: String(error) };
     }
 }
