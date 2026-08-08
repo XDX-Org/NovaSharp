@@ -58,7 +58,8 @@ internal sealed class OutputChannel(int maxEntries = 10_000, int maxBytes = 4 * 
 internal sealed partial class BuildRunService : IAsyncDisposable
 {
     private static readonly string[] InheritedEnvironment =
-        ["PATH", "DOTNET_ROOT", "DOTNET_HOST_PATH", "NUGET_PACKAGES", "HOME", "USERPROFILE", "TMP", "TEMP", "TMPDIR"];
+        ["PATH", "DOTNET_ROOT", "DOTNET_HOST_PATH", "NUGET_PACKAGES", "HOME", "USERPROFILE", "TMP", "TEMP", "TMPDIR",
+            "SystemRoot", "windir", "APPDATA", "LOCALAPPDATA", "ProgramData", "ProgramFiles", "ProgramFiles(x86)"];
     private readonly SemaphoreSlim _operationGate = new(1, 1);
     private readonly object _processGate = new();
     private readonly LanguageDiagnosticStore _diagnostics;
