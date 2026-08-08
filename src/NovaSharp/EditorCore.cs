@@ -104,7 +104,10 @@ internal static partial class CSharpTokenizer
             var line = lines[index];
             var lineEnd = lineStart + line.Text.Length;
             var semantic = semanticSpans.Where(span => span.Start >= lineStart && span.Start + span.Length <= lineEnd)
-                .Select(span => new ClassifiedSpan(span.Start - lineStart, span.Length, SemanticKind(span.Classification))).ToArray();
+                .Select(span => new ClassifiedSpan(span.Start - lineStart, span.Length, SemanticKind(span.Classification)))
+                .Where(span => span.Kind != TokenKind.Text).DistinctBy(span => (span.Start, span.Length))
+                .OrderBy(span => span.Start).ThenByDescending(span => span.Length).ToArray();
+            semantic = NonOverlapping(semantic);
             if (semantic.Length > 0)
             {
                 var baseline = line.Spans.Where(span => !semantic.Any(item => item.Start < span.Start + span.Length
@@ -114,6 +117,14 @@ internal static partial class CSharpTokenizer
             lineStart = lineEnd + NewLineLength(text, lineEnd);
         }
         return lines;
+    }
+
+    private static ClassifiedSpan[] NonOverlapping(IEnumerable<ClassifiedSpan> spans)
+    {
+        var result = new List<ClassifiedSpan>();
+        foreach (var span in spans)
+            if (result.Count == 0 || span.Start >= result[^1].Start + result[^1].Length) result.Add(span);
+        return result.ToArray();
     }
 
     private static int NewLineLength(string text, int position) => position >= text.Length ? 0

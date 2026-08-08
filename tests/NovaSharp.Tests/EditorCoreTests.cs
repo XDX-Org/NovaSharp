@@ -42,6 +42,22 @@ public sealed class EditorCoreTests
     }
 
     [TestMethod]
+    public void AdditiveSemanticClassificationsDoNotDuplicateSourceText()
+    {
+        const string text = "class C { static void Method() { } }";
+        var start = text.IndexOf("Method", StringComparison.Ordinal);
+        var lines = CSharpTokenizer.Tokenize(text,
+        [
+            new(start, 6, "method name"),
+            new(start, 6, "static symbol")
+        ]);
+
+        var method = lines.Single().Spans.Where(span => span.Start == start).ToArray();
+        Assert.HasCount(1, method);
+        Assert.AreEqual(TokenKind.Method, method[0].Kind);
+    }
+
+    [TestMethod]
     public async Task Utf16AndCanonicalPathArePreserved()
     {
         var directory = Directory.CreateTempSubdirectory("novasharp-");

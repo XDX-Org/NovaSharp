@@ -87,12 +87,36 @@ export function createEditor(root, wordWrap, dotNet, selectionStart, selectionEn
     input.addEventListener('compositionend', compositionEnd);
     input.addEventListener('select', selectionChange);
     input.addEventListener('keyup', selectionChange);
-    const pointerup = () => {
-        selectionChange();
-        dotNet.invokeMethodAsync('EditorCommand', 'hover', input.selectionStart);
+    let hoverTimer;
+    let hoverCloseTimer;
+    let hoverPosition = -1;
+    const pointermove = event => {
+        const position = editorPositionAtPoint(input, event.clientX, event.clientY);
+        if (position === hoverPosition) return;
+        hoverPosition = position;
+        clearTimeout(hoverTimer);
+        hoverTimer = setTimeout(() => dotNet.invokeMethodAsync('EditorCommand', 'hover', position), 250);
     };
-    input.addEventListener('pointerup', pointerup);
-    root.__novaEditor = { input, dotNet, sync, keydown, compositionStart, compositionInput, inputChanged, compositionEnd, selectionChange, pointerup };
+    const closeHover = () => {
+        clearTimeout(hoverTimer);
+        hoverPosition = -1;
+        dotNet.invokeMethodAsync('EditorCommand', 'hover-close', input.selectionStart);
+    };
+    const pointerleave = () => hoverCloseTimer = setTimeout(closeHover, 100);
+    const rootPointerover = event => {
+        if (event.target.closest?.('.hover-popup')) clearTimeout(hoverCloseTimer);
+    };
+    const rootPointerout = event => {
+        const tooltip = event.target.closest?.('.hover-popup');
+        if (tooltip && !tooltip.contains(event.relatedTarget)) hoverCloseTimer = setTimeout(closeHover, 100);
+    };
+    input.addEventListener('pointermove', pointermove);
+    input.addEventListener('pointerleave', pointerleave);
+    root.addEventListener('pointerover', rootPointerover);
+    root.addEventListener('pointerout', rootPointerout);
+    root.__novaEditor = { input, dotNet, sync, keydown, compositionStart, compositionInput, inputChanged, compositionEnd,
+        selectionChange, pointermove, pointerleave, rootPointerover, rootPointerout,
+        get hoverTimer() { return hoverTimer; }, get hoverCloseTimer() { return hoverCloseTimer; } };
 }
 
 export function disposeEditor(root) {
@@ -106,8 +130,30 @@ export function disposeEditor(root) {
     editor.input.removeEventListener('compositionend', editor.compositionEnd);
     editor.input.removeEventListener('select', editor.selectionChange);
     editor.input.removeEventListener('keyup', editor.selectionChange);
-    editor.input.removeEventListener('pointerup', editor.pointerup);
+    clearTimeout(editor.hoverTimer);
+    clearTimeout(editor.hoverCloseTimer);
+    editor.input.removeEventListener('pointermove', editor.pointermove);
+    editor.input.removeEventListener('pointerleave', editor.pointerleave);
+    root.removeEventListener('pointerover', editor.rootPointerover);
+    root.removeEventListener('pointerout', editor.rootPointerout);
     delete root.__novaEditor;
+}
+
+function editorPositionAtPoint(input, clientX, clientY) {
+    const style = getComputedStyle(input);
+    const rect = input.getBoundingClientRect();
+    const lineHeight = Number.parseFloat(style.lineHeight) || 20;
+    const lines = input.value.split(/\r\n|\r|\n/);
+    const line = Math.max(0, Math.min(lines.length - 1,
+        Math.floor((clientY - rect.top + input.scrollTop) / lineHeight)));
+    const measure = document.createElement('canvas').getContext('2d');
+    measure.font = style.font;
+    const columnWidth = measure.measureText('M').width || 8;
+    const column = Math.max(0, Math.min(lines[line].length,
+        Math.round((clientX - rect.left + input.scrollLeft - Number.parseFloat(style.paddingLeft)) / columnWidth)));
+    let position = column;
+    for (let index = 0; index < line; index++) position += lines[index].length + 1;
+    return position;
 }
 
 export function applyEditorEdit(root, start, length, text, newPosition) {
@@ -136,6 +182,18 @@ export function getEditorAnchor(root, position) {
     const x = 66 + measure.measureText(before.at(-1) ?? '').width - input.scrollLeft;
     const y = before.length * lineHeight - input.scrollTop;
     return [Math.max(58, Math.min(x, root.clientWidth - 280)), Math.max(20, Math.min(y, root.clientHeight - 120))];
+}
+
+export function fitEditorPopup(root, selector) {
+    const popup = root.querySelector(selector);
+    if (!popup) return;
+    const margin = 8;
+    let left = Number.parseFloat(popup.style.left) || 0;
+    let top = Number.parseFloat(popup.style.top) || 0;
+    left = Math.max(margin, Math.min(left, root.clientWidth - popup.offsetWidth - margin));
+    top = Math.max(margin, Math.min(top, root.clientHeight - popup.offsetHeight - margin));
+    popup.style.left = `${left}px`;
+    popup.style.top = `${top}px`;
 }
 
 function toggleLineComment(input) {
