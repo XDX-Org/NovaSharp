@@ -18,19 +18,23 @@ public sealed class TerminalTests
     [TestMethod]
     public async Task PtyPreservesUnicodeInputResizeAndExit()
     {
-        if (OperatingSystem.IsWindows()) Assert.Inconclusive("Unix shell fixture");
-        var profile = new TerminalProfile("test", "test", "/bin/sh", []);
+        var profile = OperatingSystem.IsWindows()
+            ? new TerminalProfile("test", "test", Environment.GetEnvironmentVariable("COMSPEC") ?? "cmd.exe", ["/D", "/Q"])
+            : new TerminalProfile("test", "test", "/bin/sh", []);
         await using var session = new TerminalSession("test", profile, Path.GetTempPath());
 
         await session.StartAsync(40, 10);
         Assert.AreEqual(TerminalSessionState.Running, session.State, session.Error);
         session.Resize(100, 30);
-        await session.SendAsync(Encoding.UTF8.GetBytes("printf '\\342\\234\\223 unicode\\n'; exit 7\r"));
+        var command = OperatingSystem.IsWindows()
+            ? "echo NOVASHARP_UNICODE_✓ & exit /b 7\r"
+            : "printf '\\342\\234\\223 unicode\\n'; exit 7\r";
+        await session.SendAsync(Encoding.UTF8.GetBytes(command));
         await WaitUntilAsync(() => session.State == TerminalSessionState.Exited);
 
         Assert.AreEqual(7, session.ExitCode);
         var output = session.Transcript.Chunks.SelectMany(chunk => chunk.Data).ToArray();
-        Assert.Contains("\u2713 unicode", Encoding.UTF8.GetString(output));
+        Assert.Contains(OperatingSystem.IsWindows() ? "NOVASHARP_UNICODE_✓" : "✓ unicode", Encoding.UTF8.GetString(output));
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition)

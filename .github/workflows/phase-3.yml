@@ -233,6 +233,27 @@ jobs:
           $result = Get-Content $report | ConvertFrom-Json
           $required = 'QuickOpenVisible', 'DuplicateFilesVisible', 'SearchVisible', 'ResultsStreamed', 'ReplacePreview'
           foreach ($name in $required) { if (-not $result.$name) { throw "Phase 9 smoke assertion failed: $name ($($result.Error))" } }
+      - name: Run packaged Linux Phase 11 terminal smoke
+        if: runner.os == 'Linux'
+        shell: pwsh
+        env:
+          GTK_A11Y: none
+          GSK_RENDERER: cairo
+          LIBGL_ALWAYS_SOFTWARE: 1
+          WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: 1
+          WEBKIT_DISABLE_DMABUF_RENDERER: 1
+        run: |
+          $workspace = Join-Path $PWD 'phase11-workspace'
+          $report = Join-Path $PWD 'phase11-smoke.json'
+          New-Item -ItemType Directory -Path $workspace | Out-Null
+          $binary = 'artifacts/app/NovaSharp'
+          $arguments = @("--phase11-smoke=$workspace", "--smoke-report=$report")
+          $process = Start-Process xvfb-run -ArgumentList (@('-a', $binary) + $arguments) -PassThru
+          if (-not $process.WaitForExit(60000)) { $process.Kill($true); throw 'Phase 11 terminal smoke timed out.' }
+          if ($process.ExitCode -ne 0 -and -not (Test-Path $report)) { throw "Phase 11 terminal smoke exited with $($process.ExitCode) before reporting." }
+          $result = Get-Content $report | ConvertFrom-Json
+          $required = 'TerminalPresent', 'InputRoundTrip', 'ResizeValid', 'ProcessExited'
+          foreach ($name in $required) { if (-not $result.$name) { throw "Phase 11 smoke assertion failed: $name ($($result.Error))" } }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -246,4 +267,5 @@ jobs:
             phase7-smoke.json
             phase8-smoke.json
             phase9-smoke.json
+            phase11-smoke.json
             artifacts/app

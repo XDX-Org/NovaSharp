@@ -131,7 +131,7 @@
             <OutputPanel Open="_outputOpen" Task="_buildRun.Tasks.LastOrDefault()" Entries="_buildRun.Output.Entries"
                          Activated="OpenOutputAsync" Input="SendProcessInputAsync" Copy="CopyOutputAsync"
                          Export="ExportOutputAsync" Clear="_buildRun.Output.Clear" />
-            <TerminalPanel Open="_terminalOpen" Service="_terminal" WorkingDirectory="WorkspaceRoot"
+            <TerminalPanel Open="_terminalOpen" Service="_terminal" WorkingDirectory="@(Program.Phase11Workspace ?? WorkspaceRoot)"
                            ConfirmClose="ConfirmTerminalCloseAsync" />
         </div>
         <SearchPanel Open="_searchOpen" RootPath="WorkspaceRoot" OpenDocuments="OpenDocuments"
@@ -318,6 +318,7 @@
         if (Program.Phase7Solution is not null) await _projectSystem.OpenAsync(Program.Phase7Solution);
         if (Program.Phase8Solution is not null) await _projectSystem.OpenAsync(Program.Phase8Solution);
         if (Program.Phase9Solution is not null) await _projectSystem.OpenAsync(Program.Phase9Solution);
+        if (Program.Phase11Workspace is not null) _terminalOpen = true;
         TrackActiveDocument();
     }
 
@@ -336,6 +337,8 @@
             await JS.InvokeVoidAsync("novaSharp.runPhase6Smoke", _self);
         if (Program.Phase9Solution is not null)
             await JS.InvokeVoidAsync("novaSharp.runPhase9Smoke", _workbench, _self);
+        if (Program.Phase11Workspace is not null)
+            await JS.InvokeVoidAsync("novaSharp.runPhase11Smoke", _workbench, _self);
     }
 
     private async Task OpenFileAsync()
@@ -778,6 +781,11 @@
         bool resultsStreamed, bool replacePreview, string? error = null) =>
         Program.CompletePhase9SmokeAsync(new(quickOpenVisible, duplicateFilesVisible, searchVisible,
             resultsStreamed, replacePreview, error));
+
+    [JSInvokable]
+    public Task CompletePhase11SmokeAsync(bool terminalPresent, bool inputRoundTrip, bool resizeValid,
+        bool processExited, string? error = null) =>
+        Program.CompletePhase11SmokeAsync(new(terminalPresent, inputRoundTrip, resizeValid, processExited, error));
 
     [JSInvokable]
     public void CancelEditorDrag() => _workspace.CancelDrag();

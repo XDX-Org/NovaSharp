@@ -38,6 +38,7 @@
             <footer>
                 <span>@active.State@if (active.ExitCode is { } exitCode) { <text> (exit @exitCode)</text> }</span>
                 <span>@active.WorkingDirectory</span>
+                <label>Search <input aria-label="Search terminal" value="@_search" @oninput="SearchAsync" /></label>
             </footer>
         }
         else
@@ -68,6 +69,7 @@
     private Task _inputQueue = Task.CompletedTask;
     private Task _outputQueue = Task.CompletedTask;
     private string? _profileId;
+    private string _search = "";
     private Guid? _initializedSession;
     private Guid? _renderedSession;
     private long _lastWrittenSequence;
@@ -168,6 +170,12 @@
         await _xterm.Write(chunk.Data); _lastWrittenSequence = chunk.Sequence;
     }
     private static string XtermId(TerminalSession session) => $"terminal-{session.Id:N}";
+    private async Task SearchAsync(ChangeEventArgs args)
+    {
+        _search = args.Value?.ToString() ?? "";
+        if (Service.ActiveSession is { } session)
+            await JS.InvokeVoidAsync("novaSharp.searchTerminal", XtermId(session), _search);
+    }
 
     [JSInvokable]
     public async Task ResizeTerminal(int columns, int rows)

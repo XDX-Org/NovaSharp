@@ -41,6 +41,23 @@ window.novaSharp.initTerminal = function (host, dotNet, terminalId) {
     requestAnimationFrame(resize);
 };
 
+window.novaSharp.searchTerminal = function (terminalId, query) {
+    const terminal = globalThis.XtermBlazor?._terminals?.get(terminalId)?.terminal;
+    if (!terminal) return;
+    terminal.clearSelection();
+    if (!query) return;
+    const buffer = terminal.buffer.active;
+    const needle = query.toLocaleLowerCase();
+    for (let row = buffer.length - 1; row >= 0; row--) {
+        const text = buffer.getLine(row)?.translateToString(true) || "";
+        const column = text.toLocaleLowerCase().indexOf(needle);
+        if (column < 0) continue;
+        terminal.select(column, row, query.length);
+        terminal.scrollToLine(row);
+        return;
+    }
+};
+
 window.novaSharp.positionContextMenu = function (menu, x, y) {
     if (!menu) return;
     const margin = 8;
@@ -778,6 +795,39 @@ window.novaSharp.runPhase9Smoke = async function (workbench, bridge) {
             searchVisible, resultsStreamed, replacePreview, null);
     } catch (error) {
         await bridge.invokeMethodAsync('CompletePhase9SmokeAsync', false, false, false, false, false,
+            `${error?.name ?? 'Error'}: ${error?.message ?? String(error)}`);
+    }
+};
+
+window.novaSharp.runPhase11Smoke = async function (workbench, bridge) {
+    const waitFor = async (predicate, attempts = 300) => {
+        for (let attempt = 0; attempt < attempts; attempt++) {
+            if (predicate()) return true;
+            await new Promise(resolve => setTimeout(resolve, 50));
+        }
+        return false;
+    };
+    try {
+        const ready = await waitFor(() => {
+            const host = workbench.querySelector('.terminal-host');
+            return host && window.XtermBlazor?._terminals?.get(host.dataset.terminalId)?.terminal;
+        });
+        const host = workbench.querySelector('.terminal-host');
+        const terminal = host && window.XtermBlazor?._terminals?.get(host.dataset.terminalId)?.terminal;
+        const terminalPresent = ready && !!terminal;
+        const resizeValid = terminalPresent && terminal.cols >= 2 && terminal.rows >= 2;
+        if (terminalPresent) terminal.input("printf 'NOVASHARP_PHASE11_OK\\n'; exit 7\r");
+        const inputRoundTrip = await waitFor(() => {
+            const buffer = terminal?.buffer?.active;
+            for (let row = 0; row < (buffer?.length ?? 0); row++)
+                if (buffer.getLine(row)?.translateToString(true).includes('NOVASHARP_PHASE11_OK')) return true;
+            return false;
+        });
+        const processExited = await waitFor(() => workbench.querySelector('.terminal-panel footer')?.textContent.includes('Exited (exit 7)'));
+        await bridge.invokeMethodAsync('CompletePhase11SmokeAsync', terminalPresent, inputRoundTrip,
+            resizeValid, processExited, null);
+    } catch (error) {
+        await bridge.invokeMethodAsync('CompletePhase11SmokeAsync', false, false, false, false,
             `${error?.name ?? 'Error'}: ${error?.message ?? String(error)}`);
     }
 };
