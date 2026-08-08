@@ -5,7 +5,12 @@ window.novaSharp.initTerminal = function (host, dotNet) {
     host.dataset.terminalReady = "true";
     const input = host.querySelector(".terminal-input");
     const screen = host.querySelector(".terminal-screen");
-    const send = value => dotNet?.invokeMethodAsync("SendTerminalInput", value);
+    let sendQueue = Promise.resolve();
+    const invoke = (method, value) => {
+        sendQueue = sendQueue.then(() => dotNet?.invokeMethodAsync(method, value)).catch(() => {});
+        return sendQueue;
+    };
+    const send = value => invoke("SendTerminalInput", value);
     input.addEventListener("input", () => {
         if (input.value) send(input.value);
         input.value = "";
@@ -13,7 +18,7 @@ window.novaSharp.initTerminal = function (host, dotNet) {
     input.addEventListener("paste", event => {
         event.preventDefault();
         event.stopPropagation();
-        dotNet?.invokeMethodAsync("SendTerminalPaste", event.clipboardData?.getData("text") || "");
+        invoke("SendTerminalPaste", event.clipboardData?.getData("text") || "");
     });
     const handleKey = (event, printable) => {
         if (event.isComposing) return;
@@ -41,7 +46,7 @@ window.novaSharp.initTerminal = function (host, dotNet) {
     });
     host.addEventListener("paste", event => {
         event.preventDefault();
-        dotNet?.invokeMethodAsync("SendTerminalPaste", event.clipboardData?.getData("text") || "");
+        invoke("SendTerminalPaste", event.clipboardData?.getData("text") || "");
     });
     host.addEventListener("compositionend", event => { if (event.data) send(event.data); });
     host.addEventListener("pointerup", event => {
