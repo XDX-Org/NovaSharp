@@ -180,6 +180,7 @@ internal sealed class LatestLanguageRequest : IDisposable
 {
     private CancellationTokenSource? _pending;
     private long _sequence;
+    internal Exception? LastError { get; private set; }
 
     internal async Task<T?> RunAsync<T>(Func<CancellationToken, Task<LanguageResponse<T>>> operation,
         long currentVersion, CancellationToken cancellationToken = default)
@@ -189,6 +190,7 @@ internal sealed class LatestLanguageRequest : IDisposable
         _pending = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var pending = _pending;
         var sequence = Interlocked.Increment(ref _sequence);
+        LastError = null;
         try
         {
             var response = await operation(pending.Token);
@@ -196,7 +198,7 @@ internal sealed class LatestLanguageRequest : IDisposable
                 ? response.Value : default;
         }
         catch (OperationCanceledException) when (pending.IsCancellationRequested) { return default; }
-        catch (Exception) { return default; }
+        catch (Exception exception) { LastError = exception; return default; }
     }
 
     public void Dispose()
