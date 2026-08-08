@@ -6,7 +6,7 @@
 <aside class="search-panel" aria-label="Search">
     <header><strong>Search</strong><button aria-label="Close search" @onclick="async () => await Close.InvokeAsync()">×</button></header>
     <form @onsubmit="StartAsync" @onsubmit:preventDefault>
-        <input aria-label="Search workspace" @bind="_query" placeholder="Search" />
+        <input aria-label="Search workspace" @bind="_query" @bind:event="oninput" placeholder="Search" />
         <input aria-label="Replace workspace" @bind="_replacement" placeholder="Replace" />
         <div class="search-options">
             <label><input type="checkbox" @bind="_matchCase" /> Aa</label>
