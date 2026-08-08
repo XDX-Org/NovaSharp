@@ -262,7 +262,8 @@
         ? _projectSystem.GetActiveDocument(path)?.Project.Id.Id.ToString() : null;
     private bool CanNavigateBack => _navigationIndex > 0;
     private bool CanNavigateForward => _navigationIndex >= 0 && _navigationIndex < _navigationHistory.Count - 1;
-    private string? WorkspaceRoot => _explorer?.RootPath ?? (_projectSystem.State.Path is { } path ? Path.GetDirectoryName(path) : null);
+    private string? WorkspaceRoot => _projectSystem.State.Path is { } path
+        ? Path.GetDirectoryName(path) : _explorer?.RootPath;
     private IReadOnlyList<EditorDocumentState> OpenDocuments => _workspace.Layout.Groups.SelectMany(group => group.Tabs)
         .Select(tab => tab.Document).Distinct().ToArray();
     private IReadOnlyList<string> StartupProjects => _projectSystem.CurrentSolution?.Projects.Select(project => project.FilePath)
