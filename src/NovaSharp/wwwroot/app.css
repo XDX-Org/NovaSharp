@@ -84,8 +84,8 @@ button:disabled { opacity: .45; cursor: default; }
 .problems-panel header span { color: #929cab; }
 .problems-panel header button { margin-left: auto; border: 0; background: transparent; }
 .output-panel { position: relative; display: flex; height: 210px; min-height: 120px; max-height: 75%; flex: 0 0 auto; flex-direction: column; overflow: hidden; border-top: 1px solid #454b57; background: #171a1f; }
-.bottom-panel-resizer { position: absolute; z-index: 3; top: -1px; left: 0; width: 100%; height: 7px; cursor: ns-resize; touch-action: none; }
-.bottom-panel-resizer:hover, .bottom-panel-resizer.dragging { background: #6688b833; }
+.bottom-panel-resizer { position: absolute; z-index: 3; top: -1px; left: 0; width: 100%; height: 5px; cursor: ns-resize; touch-action: none; background: #343842; }
+.bottom-panel-resizer:hover, .bottom-panel-resizer:focus-visible, .bottom-panel-resizer.dragging { outline: 0; background: #8397c4; }
 .output-panel header { display: flex; align-items: center; gap: 9px; min-height: 30px; padding: 0 8px 0 12px; border-bottom: 1px solid #343842; }
 .output-actions { display: flex; align-items: center; gap: 2px; margin-left: auto; }
 .output-panel header button { min-height: 24px; padding: 2px 7px; border: 0; color: #aeb6c4; background: transparent; }
@@ -141,7 +141,8 @@ body.pointer-tab-dragging, body.pointer-tab-dragging * { cursor: grabbing !impor
 .editor-split.vertical > .editor-splitter::before { inset: 0; }
 .editor-split.horizontal > .editor-splitter { cursor: col-resize; }
 .editor-split.vertical > .editor-splitter { cursor: row-resize; }
-.editor-splitter:focus-visible::before { background: #8397c4; }
+.editor-splitter:hover::before, .editor-splitter:focus-visible::before,
+body.resizing-editor-x .editor-splitter::before, body.resizing-editor-y .editor-splitter::before { background: #8397c4; }
 body.resizing-editor-x { cursor: col-resize; user-select: none; }
 body.resizing-editor-y { cursor: row-resize; user-select: none; }
 .editor-group { position: relative; display: grid; width: 100%; height: 100%; min-width: 160px; min-height: 160px; grid-template-rows: 35px minmax(0, 1fr); overflow: hidden; border: 1px solid transparent; }
@@ -221,8 +222,8 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
 .app-context-menu button:disabled { opacity: .4; }
 .app-context-menu hr { width: 100%; margin: 4px 0; border: 0; border-top: 1px solid #454b57; }
 .app-context-menu kbd { color: #8792a3; font: inherit; font-size: var(--text-small); }
-.explorer-resizer { position: absolute; z-index: 20; top: 0; left: -3px; bottom: 0; width: 7px; cursor: col-resize; touch-action: none; border-left: 2px solid transparent; }
-.explorer-resizer:hover, .resizing-explorer .explorer-resizer { border-left-color: #6f83ad; background: rgba(111, 131, 173, .18); }
+.explorer-resizer { position: absolute; z-index: 20; top: 0; left: -3px; bottom: 0; width: 5px; cursor: col-resize; touch-action: none; background: #343842; }
+.explorer-resizer:hover, .explorer-resizer:focus-visible, .resizing-explorer .explorer-resizer { outline: 0; background: #8397c4; }
 .resizing-explorer { cursor: col-resize; user-select: none; }
 .activity-bar { display: flex; width: 44px; flex: 0 0 44px; flex-direction: column; align-items: center; border-left: 1px solid #343842; background: #1c1f25; }
 .activity-bar button { position: relative; display: grid; width: 44px; height: 44px; place-items: center; padding: 0; border: 0; border-radius: 0; color: #8792a3; background: transparent; font-size: 21px; }
