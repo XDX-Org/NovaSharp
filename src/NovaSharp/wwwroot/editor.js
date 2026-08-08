@@ -370,3 +370,39 @@ export async function runPhase8Smoke(root) {
             definitionPeek: false, outline: false, codeActions: false, error: String(error) };
     }
 }
+
+export async function runPhase15Smoke(root) {
+    const { input, dotNet } = root.__novaEditor;
+    const waitFor = async (predicate, attempts = 200) => {
+        for (let attempt = 0; attempt < attempts; attempt++) {
+            if (await predicate()) return true;
+            await new Promise(resolve => setTimeout(resolve, 50));
+        }
+        return false;
+    };
+    try {
+        if (!await waitFor(() => dotNet.invokeMethodAsync('LanguageReady'), 300))
+            throw new Error('Web language services did not finish loading');
+        const languageSelected = root.dataset.language === 'razor';
+        input.value = '<MyC';
+        input.setSelectionRange(4, 4);
+        await dotNet.invokeMethodAsync('InputChanged', input.value, 4, 'C');
+        await dotNet.invokeMethodAsync('EditorCommand', 'completion', 4);
+        const componentCompletion = await waitFor(() => [...root.querySelectorAll('.completion-popup button')]
+            .some(item => item.textContent.includes('MyCard')));
+        input.value = '<style>.hero { color: red; }</style>\n@code { public int Value { get; set; } }';
+        await dotNet.invokeMethodAsync('InputChanged', input.value, input.value.length, null);
+        const semanticTokens = await waitFor(() => !!root.querySelector('.token-keyword'));
+        input.value = '<div><span></div>';
+        await dotNet.invokeMethodAsync('InputChanged', input.value, input.value.length, null);
+        const diagnostics = await waitFor(() => !!root.querySelector('.diagnostic-error'));
+        input.value = '<div>\n<span>Text</span>\n</div>';
+        await dotNet.invokeMethodAsync('InputChanged', input.value, 0, null);
+        await dotNet.invokeMethodAsync('EditorCommand', 'format', 0);
+        const formatting = await waitFor(() => input.value.includes('\n    <span>'));
+        return { languageSelected, componentCompletion, semanticTokens, diagnostics, formatting };
+    } catch (error) {
+        return { languageSelected: false, componentCompletion: false, semanticTokens: false,
+            diagnostics: false, formatting: false, error: String(error) };
+    }
+}

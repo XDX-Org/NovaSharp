@@ -7,7 +7,7 @@ using Microsoft.CodeAnalysis.Text;
 
 namespace NovaSharp;
 
-public enum ProjectNodeKind { Solution, Project, TargetFramework, Folder, File, ProjectReference, AssemblyReference, Analyzer }
+public enum ProjectNodeKind { Solution, Project, TargetFramework, Folder, File, GeneratedFile, ProjectReference, AssemblyReference, Analyzer }
 public sealed record ProjectNodeContextRequest(ProjectNode Node, double X, double Y);
 public sealed record ProjectNode(string Id, string Name, ProjectNodeKind Kind, string? Path = null,
     ImmutableArray<ProjectNode> Children = default)
@@ -292,6 +292,7 @@ public sealed class RoslynProjectSystem : IAsyncDisposable
         {
             var project = group.First();
             var files = EnumerateProjectFiles(group);
+            var generated = EnumerateGeneratedRazorFiles(Path.GetDirectoryName(project.FilePath)!);
             var references = group.SelectMany(context => context.ProjectReferences).Select(reference => solution.GetProject(reference.ProjectId))
                 .Where(reference => reference is not null).Select(reference => new ProjectNode($"p:{reference!.Id.Id}", reference.Name,
                     ProjectNodeKind.ProjectReference, reference.FilePath))
@@ -301,8 +302,10 @@ public sealed class RoslynProjectSystem : IAsyncDisposable
                     Path.GetFileNameWithoutExtension(reference.FullPath) ?? reference.Display ?? "Analyzer", ProjectNodeKind.Analyzer, reference.FullPath)))
                 .DistinctBy(reference => $"{reference.Kind}:{reference.Path}", PathComparer)
                 .ToImmutableArray();
-            var children = ImmutableArray.Create(new ProjectNode($"r:{project.FilePath}", "Dependencies", ProjectNodeKind.Folder, null, references))
-                .AddRange(files);
+            var children = ImmutableArray.Create(new ProjectNode($"r:{project.FilePath}", "Dependencies", ProjectNodeKind.Folder, null, references));
+            if (generated.Length > 0)
+                children = children.Add(new($"g:{project.FilePath}", "Generated Documents", ProjectNodeKind.Folder, null, generated));
+            children = children.AddRange(files);
             return new ProjectNode($"p:{project.FilePath}", project.Name, ProjectNodeKind.Project, project.FilePath, children);
         }).ToImmutableArray();
         return new($"s:{path}", Path.GetFileNameWithoutExtension(path), ProjectNodeKind.Solution, path, projects)
@@ -334,6 +337,21 @@ public sealed class RoslynProjectSystem : IAsyncDisposable
             return new ProjectFile(relative.StartsWith("..", StringComparison.Ordinal) ? Path.GetFileName(file) : relative, file);
         }).ToArray();
         return BuildFolder(entries, "", root);
+    }
+
+    private static ImmutableArray<ProjectNode> EnumerateGeneratedRazorFiles(string projectRoot)
+    {
+        var root = Path.Combine(projectRoot, "obj");
+        if (!Directory.Exists(root)) return [];
+        try
+        {
+            return Directory.EnumerateFiles(root, "*.g.cs", SearchOption.AllDirectories)
+                .Where(path => Path.GetFileName(path).Contains(".razor.", StringComparison.OrdinalIgnoreCase)
+                    || Path.GetFileName(path).Contains(".cshtml.", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(path => path, PathComparer).Select(path => new ProjectNode($"g:{path}",
+                    Path.GetRelativePath(root, path), ProjectNodeKind.GeneratedFile, path)).ToImmutableArray();
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { return []; }
     }
 
     private static ImmutableArray<ProjectNode> BuildFolder(IEnumerable<ProjectFile> entries, string prefix, string root)

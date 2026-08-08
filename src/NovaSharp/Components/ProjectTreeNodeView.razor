@@ -21,7 +21,7 @@ else
 {
     <button class="tree-row project-leaf" title="@Node.Path"
             data-file-path="@(Node.Kind == ProjectNodeKind.File ? Node.Path : null)"
-            disabled="@(Node.Path is null)" @onclick="OpenAsync"
+            disabled="@(Node.Path is null || Node.Kind == ProjectNodeKind.GeneratedFile)" @onclick="OpenAsync"
             @oncontextmenu="ShowContextMenuAsync" @oncontextmenu:preventDefault @oncontextmenu:stopPropagation>
         <span class="tree-toggle @IconClass" aria-hidden="true">@Icon</span>
         <span class="tree-name">@Node.Name</span>
@@ -36,13 +36,13 @@ else
     {
         ProjectNodeKind.Solution => "SLN", ProjectNodeKind.Project => "C#",
         ProjectNodeKind.Folder when Node.Name == "Dependencies" => "◇", ProjectNodeKind.Folder => "📁",
-        ProjectNodeKind.File => ExplorerFileIcons.Text(Node.Name), ProjectNodeKind.ProjectReference => "↗",
+        ProjectNodeKind.File => ExplorerFileIcons.Text(Node.Name), ProjectNodeKind.GeneratedFile => "G#", ProjectNodeKind.ProjectReference => "↗",
         ProjectNodeKind.Analyzer => "A", _ => "◇"
     };
     private string IconClass => Node.Kind switch
     {
         ProjectNodeKind.Solution => "file-icon solution", ProjectNodeKind.Project => "file-icon csharp",
-        ProjectNodeKind.File => $"file-icon {ExplorerFileIcons.CssClass(Node.Name)}",
+        ProjectNodeKind.File => $"file-icon {ExplorerFileIcons.CssClass(Node.Name)}", ProjectNodeKind.GeneratedFile => "file-icon csharp",
         ProjectNodeKind.Folder => "folder-icon", ProjectNodeKind.Analyzer => "file-icon props",
         _ => "file-icon assembly"
     };

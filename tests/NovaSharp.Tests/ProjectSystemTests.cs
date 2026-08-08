@@ -58,6 +58,8 @@ public sealed class ProjectSystemTests
         Assert.EndsWith("Web.csproj", webNode.Path);
         Assert.AreEqual("Dependencies", webNode.Items[0].Name);
         Assert.IsTrue(Descendants(webNode).Any(node => node.Name == "Component.razor"));
+        Assert.IsTrue(Descendants(webNode).Any(node => node.Kind == ProjectNodeKind.GeneratedFile
+            && node.Name.EndsWith("Component.razor.g.cs", StringComparison.Ordinal)));
         var css = Descendants(webNode).Single(node => node.Name == "app.css");
         Assert.AreEqual(Path.Combine(fixture.Root, "Web", "wwwroot", "app.css"), css.Path);
         Assert.AreEqual(Path.Combine(fixture.Root, "Web", "wwwroot"),
@@ -211,6 +213,9 @@ public sealed class ProjectSystemTests
             File.WriteAllText(Path.Combine(Root, "Web", "Web.csproj"), Project("Microsoft.NET.Sdk.Web", "net10.0"));
             File.WriteAllText(Path.Combine(Root, "Web", "Program.cs"), "public class WebProgram { }");
             File.WriteAllText(Path.Combine(Root, "Web", "Component.razor"), "<h1>Fixture</h1>");
+            var generated = Path.Combine(Root, "Web", "obj", "Debug", "net10.0", "generated");
+            Directory.CreateDirectory(generated);
+            File.WriteAllText(Path.Combine(generated, "Component.razor.g.cs"), "// generated");
             Directory.CreateDirectory(Path.Combine(Root, "Web", "wwwroot"));
             File.WriteAllText(Path.Combine(Root, "Web", "wwwroot", "app.css"), "body { color: white; }");
             File.WriteAllText(SolutionFile,

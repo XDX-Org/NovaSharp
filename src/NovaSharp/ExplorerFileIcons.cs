@@ -6,7 +6,7 @@ internal static class ExplorerFileIcons
     {
         ".cs" => "C#", ".js" => "JS", ".css" => "CSS", ".html" or ".htm" => "HTML",
         ".json" => "{}", ".md" or ".markdown" => "MD", "git" => "GIT", ".props" => "MSB",
-        ".sln" => "SLN", ".slnx" => "SLNX", ".razor" => "RZ", ".dll" => "⚙",
+        ".sln" => "SLN", ".slnx" => "SLNX", ".razor" or ".cshtml" => "RZ", ".dll" => "⚙",
         ".exe" or ".com" => "🖥︎", ".csproj" => "CSP", ".xml" => "<>", ".pdb" => "PDB",
         ".yml" or ".yaml" => "YML", "none" => "FILE", _ => symbolicLink ? "↗" : "▧"
     };
@@ -15,7 +15,7 @@ internal static class ExplorerFileIcons
     {
         ".cs" => "csharp", ".js" => "javascript", ".css" => "stylesheet", ".html" or ".htm" => "html",
         ".json" => "json", ".md" or ".markdown" => "markdown", "git" => "git", ".props" => "props",
-        ".sln" or ".slnx" => "solution", ".razor" => "razor", ".dll" => "assembly",
+        ".sln" or ".slnx" => "solution", ".razor" or ".cshtml" => "razor", ".dll" => "assembly",
         ".exe" or ".com" => "executable", ".csproj" => "csproj", ".xml" => "xml", ".pdb" => "symbols",
         ".yml" or ".yaml" => "yaml", "none" => "extensionless", _ => "generic"
     };

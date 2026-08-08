@@ -1,7 +1,7 @@
 @inject IJSRuntime JS
 @implements IAsyncDisposable
 
-<div class="code-editor @(WordWrap ? "word-wrap" : null)" @ref="_root">
+<div class="code-editor @(WordWrap ? "word-wrap" : null)" data-language="@LanguageInfo.LanguageId" @ref="_root">
     @if (_outlineOpen)
     {
         <div class="outline-popup language-popup" role="dialog" aria-label="Document outline">
@@ -41,7 +41,11 @@
     </div>
     @if (ProjectLoading)
     {
-        <div class="language-state" role="status">C# services loading…</div>
+        <div class="language-state" role="status">@LanguageInfo.DisplayName services loading…</div>
+    }
+    else if (!LanguageInfo.IsAvailable)
+    {
+        <div class="language-state" role="status">@LanguageInfo.Status</div>
     }
     @if (_completion is { Items.Count: > 0 })
     {
@@ -136,6 +140,9 @@
     private int _selectedCompletion;
     private bool _outlineOpen;
     private double _popupX = 72, _popupY = 24;
+    private IExtendedLanguageProvider ExtendedProvider => (IExtendedLanguageProvider)LanguageProvider;
+    private LanguageProviderInfo LanguageInfo => Document.FilePath is { } path
+        ? ExtendedProvider.GetInfo(path) : new("text", "Text", LanguageCapabilities.None, false, "Language services unavailable");
     private ICollection<EditorLine> Lines
     {
         get
@@ -162,7 +169,8 @@
                 ViewState.SelectionEnd, ViewState.ScrollTop, ViewState.ScrollLeft);
             _ = RefreshSemanticAsync();
             _ = RefreshDiagnosticsAsync();
-            if (Program.Phase8Solution is not null) _ = RunPhase8SmokeAsync();
+            if (Program.Phase15Solution is not null) _ = RunPhase15SmokeAsync();
+            else if (Program.Phase8Solution is not null) _ = RunPhase8SmokeAsync();
             else if (Program.Phase7Solution is not null) _ = RunPhase7SmokeAsync();
             if (Program.Phase2SmokeFile is not null)
             {
@@ -180,12 +188,13 @@
         await ValueChanged.InvokeAsync(value);
         ViewState.SetSelection(caret, caret, value.Length);
         _diagnostics = [];
-        if (Document.FilePath is { } diagnosticPath) ((CSharpLanguageProvider)LanguageProvider).Diagnostics.Remove(diagnosticPath);
+        if (Document.FilePath is { } diagnosticPath) ExtendedProvider.ClearDiagnostics(diagnosticPath);
         if (ProjectLoading || Document.FilePath is null) return;
-        if (SuggestionsEnabled && (trigger is "." or " " || trigger?.Length == 1 && char.IsLetterOrDigit(trigger[0])))
+        if (SuggestionsEnabled && Has(LanguageCapabilities.Completion)
+            && (trigger is "." or " " or "<" or "@" or ":" or "-" || trigger?.Length == 1 && char.IsLetterOrDigit(trigger[0])))
             await RequestCompletionAsync(caret, false);
         else CloseCompletion();
-        if (trigger is "(" or ",") await RequestSignatureAsync(caret);
+        if (Has(LanguageCapabilities.SignatureHelp) && trigger is "(" or ",") await RequestSignatureAsync(caret);
         else if (trigger == ")") _signature = null;
         _hover = null;
         _ = RefreshSemanticAsync();
@@ -197,26 +206,28 @@
     {
         switch (command)
         {
-            case "completion": await RequestCompletionAsync(caret, true); break;
-            case "signature": await RequestSignatureAsync(caret); break;
-            case "hover": await RequestHoverAsync(caret); break;
+            case "completion" when Has(LanguageCapabilities.Completion): await RequestCompletionAsync(caret, true); break;
+            case "signature" when Has(LanguageCapabilities.SignatureHelp): await RequestSignatureAsync(caret); break;
+            case "hover" when Has(LanguageCapabilities.Hover): await RequestHoverAsync(caret); break;
             case "hover-close": _hover = null; break;
             case "completion-next": MoveCompletion(1); break;
             case "completion-previous": MoveCompletion(-1); break;
             case "completion-accept" when _completion is { Items.Count: > 0 }:
                 await CommitCompletionAsync(_completion.Items[_selectedCompletion]); break;
             case "escape": _completion = null; _signature = null; _hover = null; break;
-            case "format": await FormatAsync(); break;
-            case "definition": await RequestNavigationAsync(caret, "definition"); break;
-            case "type-definition": await RequestNavigationAsync(caret, "type-definition"); break;
-            case "implementation": await RequestNavigationAsync(caret, "implementation"); break;
-            case "references": await RequestNavigationAsync(caret, "references"); break;
-            case "peek": await RequestNavigationAsync(caret, "peek"); break;
-            case "outline": _outlineOpen = !_outlineOpen; break;
-            case "rename": case "back": case "forward":
+            case "format" when Has(LanguageCapabilities.Formatting): await FormatAsync(); break;
+            case "definition" when Has(LanguageCapabilities.Navigation): await RequestNavigationAsync(caret, "definition"); break;
+            case "type-definition" when Has(LanguageCapabilities.Navigation): await RequestNavigationAsync(caret, "type-definition"); break;
+            case "implementation" when Has(LanguageCapabilities.Navigation): await RequestNavigationAsync(caret, "implementation"); break;
+            case "references" when Has(LanguageCapabilities.Navigation): await RequestNavigationAsync(caret, "references"); break;
+            case "peek" when Has(LanguageCapabilities.Navigation): await RequestNavigationAsync(caret, "peek"); break;
+            case "outline" when Has(LanguageCapabilities.Symbols): _outlineOpen = !_outlineOpen; break;
+            case "rename" when Has(LanguageCapabilities.Rename):
                 await LanguageCommand.InvokeAsync(new(command, caret)); break;
-            case "code-actions":
-                _codeActions = await ((CSharpLanguageProvider)LanguageProvider).GetCodeActionsAsync(Request(caret), default);
+            case "back": case "forward":
+                await LanguageCommand.InvokeAsync(new(command, caret)); break;
+            case "code-actions" when Has(LanguageCapabilities.CodeActions):
+                _codeActions = await ExtendedProvider.GetCodeActionsAsync(Request(caret), default);
                 await UpdateAnchorAsync(caret); break;
         }
         await InvokeAsync(StateHasChanged);
@@ -234,6 +245,8 @@
 
     private LanguageRequest Request(int position, TextRange? range = null) =>
         new(Document.FilePath!, ProjectContext, Document.Version, Math.Clamp(position, 0, Value.Length), range);
+    private bool Has(LanguageCapabilities capability) => LanguageInfo.IsAvailable
+        && LanguageInfo.Capabilities.HasFlag(capability);
 
     private async Task RunPhase7SmokeAsync()
     {
@@ -246,6 +259,12 @@
         await Task.Yield();
         var result = await _module!.InvokeAsync<Phase8SmokeResult>("runPhase8Smoke", _root);
         await Program.CompletePhase8SmokeAsync(result);
+    }
+    private async Task RunPhase15SmokeAsync()
+    {
+        await Task.Yield();
+        var result = await _module!.InvokeAsync<Phase15SmokeResult>("runPhase15Smoke", _root);
+        await Program.CompletePhase15SmokeAsync(result);
     }
 
     private async Task RequestCompletionAsync(int caret, bool explicitInvocation)
@@ -298,19 +317,19 @@
 
     private async Task RefreshSemanticAsync()
     {
-        if (ProjectLoading || Document.FilePath is null || !SemanticHighlighting) return;
+        if (ProjectLoading || Document.FilePath is null || !SemanticHighlighting || !Has(LanguageCapabilities.SemanticTokens)) return;
         var version = Document.Version;
         try { await Task.Delay(150); } catch (OperationCanceledException) { return; }
         var spans = await _semanticRequest.RunAsync(
             token => LanguageProvider.GetSemanticSpansAsync(Request(Value.Length), token), version);
         if (spans is not null) { _semanticSpans = spans; _semanticRevision++; await InvokeAsync(StateHasChanged); }
-        var symbols = await ((CSharpLanguageProvider)LanguageProvider).GetDocumentSymbolsAsync(Request(Value.Length), default);
+        var symbols = await ExtendedProvider.GetDocumentSymbolsAsync(Request(Value.Length), default);
         if (Document.Version == version) _symbols = symbols;
     }
 
     private async Task RequestNavigationAsync(int caret, string command)
     {
-        var provider = (CSharpLanguageProvider)LanguageProvider;
+        var provider = ExtendedProvider;
         var request = Request(caret);
         IReadOnlyList<NavigationTarget> targets = command switch
         {
@@ -352,7 +371,7 @@
 
     private async Task RefreshDiagnosticsAsync()
     {
-        if (ProjectLoading || Document.FilePath is null) return;
+        if (ProjectLoading || Document.FilePath is null || !Has(LanguageCapabilities.Diagnostics)) return;
         var version = Document.Version;
         try { await Task.Delay(300); } catch (OperationCanceledException) { return; }
         var diagnostics = await _diagnosticRequest.RunAsync(

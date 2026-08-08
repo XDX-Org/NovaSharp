@@ -19,7 +19,7 @@ public sealed record CodeActionEntry(string Title, string Kind, WorkspaceEdit Ed
 
 internal sealed partial class CSharpLanguageProvider
 {
-    internal async Task<IReadOnlyList<NavigationTarget>> GetDefinitionsAsync(LanguageRequest request,
+    public async Task<IReadOnlyList<NavigationTarget>> GetDefinitionsAsync(LanguageRequest request,
         bool typeDefinition, CancellationToken cancellationToken)
     {
         var document = await ResolveAsync(request, cancellationToken);
@@ -31,7 +31,7 @@ internal sealed partial class CSharpLanguageProvider
             typeDefinition ? NavigationKind.TypeDefinition : NavigationKind.Definition, cancellationToken);
     }
 
-    internal async Task<IReadOnlyList<NavigationTarget>> GetImplementationsAsync(LanguageRequest request,
+    public async Task<IReadOnlyList<NavigationTarget>> GetImplementationsAsync(LanguageRequest request,
         CancellationToken cancellationToken)
     {
         var document = await ResolveAsync(request, cancellationToken);
@@ -47,7 +47,7 @@ internal sealed partial class CSharpLanguageProvider
         return DistinctTargets(results);
     }
 
-    internal async Task<IReadOnlyList<NavigationTarget>> FindReferencesAsync(LanguageRequest request,
+    public async Task<IReadOnlyList<NavigationTarget>> FindReferencesAsync(LanguageRequest request,
         CancellationToken cancellationToken)
     {
         var document = await ResolveAsync(request, cancellationToken);
@@ -64,7 +64,7 @@ internal sealed partial class CSharpLanguageProvider
         return DistinctTargets(results);
     }
 
-    internal async Task<IReadOnlyList<SymbolEntry>> GetDocumentSymbolsAsync(LanguageRequest request,
+    public async Task<IReadOnlyList<SymbolEntry>> GetDocumentSymbolsAsync(LanguageRequest request,
         CancellationToken cancellationToken)
     {
         var document = await ResolveAsync(request, cancellationToken);
@@ -83,7 +83,7 @@ internal sealed partial class CSharpLanguageProvider
         return results.OrderBy(item => item.Range.Start).ToArray();
     }
 
-    internal async Task<IReadOnlyList<SymbolEntry>> FindWorkspaceSymbolsAsync(string query,
+    public async Task<IReadOnlyList<SymbolEntry>> FindWorkspaceSymbolsAsync(string query,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(query) || projectSystem.CurrentSolution is not { } solution) return [];
@@ -97,7 +97,7 @@ internal sealed partial class CSharpLanguageProvider
         return results.Take(500).ToArray();
     }
 
-    internal async Task<WorkspaceEdit?> RenameAsync(LanguageRequest request, string newName,
+    public async Task<WorkspaceEdit?> RenameAsync(LanguageRequest request, string newName,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(newName)) return null;
@@ -124,7 +124,7 @@ internal sealed partial class CSharpLanguageProvider
             OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal).ToArray());
     }
 
-    internal async Task<IReadOnlyList<CodeActionEntry>> GetCodeActionsAsync(LanguageRequest request,
+    public async Task<IReadOnlyList<CodeActionEntry>> GetCodeActionsAsync(LanguageRequest request,
         CancellationToken cancellationToken)
     {
         var document = await ResolveAsync(request, cancellationToken);

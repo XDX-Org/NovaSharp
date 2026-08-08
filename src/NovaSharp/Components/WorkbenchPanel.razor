@@ -221,7 +221,7 @@
 @code {
     private readonly EditorGroupWorkspace _workspace = new();
     private readonly RoslynProjectSystem _projectSystem = new();
-    private readonly CSharpLanguageProvider _languageProvider;
+    private readonly LanguageProviderRegistry _languageProvider;
     private readonly HashSet<EditorDocumentState> _projectDocuments = [];
     private readonly WorkspaceEditTransaction _workspaceEdits = new();
     private readonly CommandRegistry _commands = new();
@@ -318,6 +318,7 @@
         if (Program.Phase7Solution is not null) await _projectSystem.OpenAsync(Program.Phase7Solution);
         if (Program.Phase8Solution is not null) await _projectSystem.OpenAsync(Program.Phase8Solution);
         if (Program.Phase9Solution is not null) await _projectSystem.OpenAsync(Program.Phase9Solution);
+        if (Program.Phase15Solution is not null) await _projectSystem.OpenAsync(Program.Phase15Solution);
         if (Program.Phase11Workspace is not null) _terminalOpen = true;
         TrackActiveDocument();
     }
@@ -344,8 +345,10 @@
     private async Task OpenFileAsync()
     {
         _openMenu = null;
-        var files = await Program.App.MainWindow.ShowOpenFileDialogAsync(title: "Open C# file", multiSelect: true,
-            filterPatterns: [new FileFilter("C# source", "*.cs")]);
+        var files = await Program.App.MainWindow.ShowOpenFileDialogAsync(title: "Open file", multiSelect: true,
+            filterPatterns: [new FileFilter("C#", "*.cs"), new FileFilter("Razor component", "*.razor"),
+                new FileFilter("Razor page", "*.cshtml"), new FileFilter("HTML", "*.html"),
+                new FileFilter("HTML", "*.htm"), new FileFilter("CSS", "*.css")]);
         UntrackActiveDocument();
         foreach (var path in files ?? []) await _workspace.OpenAsync(path);
         TrackActiveDocument();
@@ -434,7 +437,10 @@
     private async Task SaveAsAsync()
     {
         _openMenu = null;
-        var path = await Program.App.MainWindow.ShowSaveFileDialogAsync("Save C# file", _document.FilePath ?? "Untitled.cs", [new FileFilter("C# source", "*.cs")]);
+        var path = await Program.App.MainWindow.ShowSaveFileDialogAsync("Save file", _document.FilePath ?? "Untitled.cs",
+            [new FileFilter("C#", "*.cs"), new FileFilter("Razor component", "*.razor"),
+                new FileFilter("Razor page", "*.cshtml"), new FileFilter("HTML", "*.html"),
+                new FileFilter("HTML", "*.htm"), new FileFilter("CSS", "*.css")]);
         if (!string.IsNullOrWhiteSpace(path)) try { await _document.SaveAsync(path); _status = "Saved"; } catch (Exception ex) { _status = ex.Message; }
     }
     private void Undo() { _openMenu = null; _document.Undo(); StateHasChanged(); }

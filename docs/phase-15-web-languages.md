@@ -14,6 +14,19 @@ Make Razor/Blazor, HTML, and CSS projects first-class editing targets rather tha
 
 JavaScript/TypeScript language services and browser debugging are not preview requirements.
 
+## Implementation
+
+- A language-provider registry selects C#, Razor, HTML, and CSS by extension and advertises each optional capability. Unregistered languages remain editable with a clear degraded state.
+- Razor uses versioned HTML, CSS, and C# projection segments. Stale or cross-segment mappings are rejected before edits or ranges reach the host document.
+- Razor component completion and definition navigation discover project `.razor` files. Project C# types are offered inside projected C# blocks with a 200-file scan bound.
+- HTML/Razor provide tag and attribute completion, hover, structural diagnostics, formatting, symbols, component navigation, and tag rename. CSS provides properties, semantic classification, brace diagnostics, formatting, and embedded `<style>` support.
+- Solution view exposes generated Razor `.g.cs` documents as non-editable generated files.
+- The service is in-process and request-isolated. Restart clears bounded completion state and diagnostics while preserving editor buffers. See [ADR 0006](decisions/0006-phase-15-web-language-services.md).
+
+## Budgets
+
+On the 2,000-element Phase 15 fixture, projection updates must finish within 250 ms and first completion and semantic results within 1 second each. Providers retain zero projection snapshots; component/type discovery scans at most 200 C# files and retains at most 200 completion entries. A service restart must finish within 50 ms and preserve open document text.
+
 ## Design constraints
 
 - Decide whether services are in-process or protocol-based and document redistribution, lifecycle, and version compatibility.

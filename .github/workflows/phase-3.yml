@@ -2,7 +2,7 @@ name: Workbench verification
 
 on:
   push:
-    branches: [main, phase-3, phase-4, phase-5, phase-6, phase-7, phase-8, phase-9, phase-10, phase-11]
+    branches: [main, phase-3, phase-4, phase-5, phase-6, phase-7, phase-8, phase-9, phase-10, phase-11, phase-15]
   pull_request:
   workflow_dispatch:
 
@@ -254,6 +254,31 @@ jobs:
           $result = Get-Content $report | ConvertFrom-Json
           $required = 'TerminalPresent', 'InputRoundTrip', 'ResizeValid', 'ProcessExited'
           foreach ($name in $required) { if (-not $result.$name) { throw "Phase 11 smoke assertion failed: $name ($($result.Error))" } }
+      - name: Run packaged Linux Phase 15 web-language smoke
+        if: runner.os == 'Linux'
+        shell: pwsh
+        env:
+          GTK_A11Y: none
+          GSK_RENDERER: cairo
+          LIBGL_ALWAYS_SOFTWARE: 1
+          WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: 1
+          WEBKIT_DISABLE_DMABUF_RENDERER: 1
+        run: |
+          $workspace = Join-Path $PWD 'phase15-workspace'
+          $report = Join-Path $PWD 'phase15-smoke.json'
+          New-Item -ItemType Directory -Path $workspace | Out-Null
+          '<Project Sdk="Microsoft.NET.Sdk.Razor"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup><ItemGroup><FrameworkReference Include="Microsoft.AspNetCore.App" /></ItemGroup></Project>' | Set-Content -Encoding utf8 (Join-Path $workspace 'Fixture.csproj')
+          '<MyCard />' | Set-Content -Encoding utf8 (Join-Path $workspace 'Index.razor')
+          '<article>@Title</article>@code { [Parameter] public string Title { get; set; } = ""; }' | Set-Content -Encoding utf8 (Join-Path $workspace 'MyCard.razor')
+          dotnet restore (Join-Path $workspace 'Fixture.csproj')
+          $binary = 'artifacts/app/NovaSharp'
+          $arguments = @("--phase15-smoke=$(Join-Path $workspace 'Fixture.csproj')", "--smoke-report=$report")
+          $process = Start-Process xvfb-run -ArgumentList (@('-a', $binary) + $arguments) -PassThru
+          if (-not $process.WaitForExit(60000)) { $process.Kill($true); throw 'Phase 15 native smoke timed out.' }
+          if ($process.ExitCode -ne 0 -and -not (Test-Path $report)) { throw "Phase 15 native smoke exited with $($process.ExitCode) before reporting." }
+          $result = Get-Content $report | ConvertFrom-Json
+          $required = 'LanguageSelected', 'ComponentCompletion', 'SemanticTokens', 'Diagnostics', 'Formatting'
+          foreach ($name in $required) { if (-not $result.$name) { throw "Phase 15 smoke assertion failed: $name ($($result.Error))" } }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -268,4 +293,5 @@ jobs:
             phase8-smoke.json
             phase9-smoke.json
             phase11-smoke.json
+            phase15-smoke.json
             artifacts/app

@@ -38,7 +38,7 @@ internal sealed class WorkspaceService : IDisposable
 {
     private static readonly HashSet<string> DefaultIgnored = new(StringComparer.OrdinalIgnoreCase) { ".git", "bin", "obj" };
     private static readonly HashSet<string> SupportedExtensions = new(StringComparer.OrdinalIgnoreCase)
-        { ".cs", ".csproj", ".sln", ".slnx", ".razor", ".html", ".css", ".json", ".xml", ".md", ".txt" };
+        { ".cs", ".csproj", ".sln", ".slnx", ".razor", ".cshtml", ".html", ".htm", ".css", ".json", ".xml", ".md", ".txt" };
     private readonly HashSet<string> _ignored;
     private FileSystemWatcher? _watcher;
 

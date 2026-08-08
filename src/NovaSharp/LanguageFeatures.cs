@@ -44,11 +44,48 @@ public interface ILanguageProvider
     Task<LanguageResponse<FormatResult>> FormatAsync(LanguageRequest request, CancellationToken cancellationToken);
 }
 
-internal sealed partial class CSharpLanguageProvider(RoslynProjectSystem projectSystem, LanguageDiagnosticStore? diagnosticStore = null) : ILanguageProvider
+[Flags]
+public enum LanguageCapabilities
+{
+    None = 0, Completion = 1, Hover = 2, SignatureHelp = 4, SemanticTokens = 8,
+    Diagnostics = 16, Formatting = 32, Symbols = 64, Navigation = 128, Rename = 256, CodeActions = 512
+}
+
+public sealed record LanguageProviderInfo(string LanguageId, string DisplayName,
+    LanguageCapabilities Capabilities, bool IsAvailable = true, string? Status = null);
+
+internal interface IExtendedLanguageProvider
+{
+    void ClearDiagnostics(string documentPath);
+    LanguageProviderInfo GetInfo(string documentPath);
+    Task<IReadOnlyList<NavigationTarget>> GetDefinitionsAsync(LanguageRequest request, bool typeDefinition,
+        CancellationToken cancellationToken);
+    Task<IReadOnlyList<NavigationTarget>> GetImplementationsAsync(LanguageRequest request, CancellationToken cancellationToken);
+    Task<IReadOnlyList<NavigationTarget>> FindReferencesAsync(LanguageRequest request, CancellationToken cancellationToken);
+    Task<IReadOnlyList<SymbolEntry>> GetDocumentSymbolsAsync(LanguageRequest request, CancellationToken cancellationToken);
+    Task<IReadOnlyList<SymbolEntry>> FindWorkspaceSymbolsAsync(string query, CancellationToken cancellationToken);
+    Task<WorkspaceEdit?> RenameAsync(LanguageRequest request, string newName, CancellationToken cancellationToken);
+    Task<IReadOnlyList<CodeActionEntry>> GetCodeActionsAsync(LanguageRequest request, CancellationToken cancellationToken);
+}
+
+internal sealed partial class CSharpLanguageProvider(RoslynProjectSystem projectSystem, LanguageDiagnosticStore? diagnosticStore = null)
+    : ILanguageProvider, IExtendedLanguageProvider
 {
     internal LanguageDiagnosticStore Diagnostics { get; } = diagnosticStore ?? new();
     private readonly Dictionary<string, (long Version, Document Document, CompletionItem Item)> _completionItems = [];
     private long _nextCompletionId;
+    internal int RetainedCompletionCount { get { lock (_completionItems) return _completionItems.Count; } }
+
+    public LanguageProviderInfo GetInfo(string documentPath) => new("csharp", "C#",
+        LanguageCapabilities.Completion | LanguageCapabilities.Hover | LanguageCapabilities.SignatureHelp
+        | LanguageCapabilities.SemanticTokens | LanguageCapabilities.Diagnostics | LanguageCapabilities.Formatting
+        | LanguageCapabilities.Symbols | LanguageCapabilities.Navigation | LanguageCapabilities.Rename
+        | LanguageCapabilities.CodeActions);
+    public void ClearDiagnostics(string documentPath) => Diagnostics.Remove(documentPath);
+    internal void Restart()
+    {
+        lock (_completionItems) _completionItems.Clear();
+    }
 
     public async Task<LanguageResponse<CompletionResult>> GetCompletionsAsync(LanguageRequest request,
         bool explicitInvocation, CancellationToken cancellationToken)
