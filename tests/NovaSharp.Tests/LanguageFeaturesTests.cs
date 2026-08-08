@@ -125,6 +125,44 @@ public sealed class LanguageFeaturesTests
 
     [TestMethod]
     [Timeout(30000)]
+    public async Task DiagnosticsUseUnsavedDocumentVersionAndExactRange()
+    {
+        using var fixture = new LanguageFixture();
+        await using var projectSystem = new RoslynProjectSystem();
+        await projectSystem.OpenAsync(fixture.SolutionFile);
+        using var editor = await fixture.OpenEditorAsync();
+        projectSystem.Track(editor);
+        editor.Content = "class C { void M() { int value = missing; } }";
+        var provider = new CSharpLanguageProvider(projectSystem);
+
+        var response = await provider.GetDiagnosticsAsync(Request(projectSystem, editor, editor.Content.Length), default);
+
+        var diagnostics = response.Value!;
+        var diagnostic = diagnostics.Single(item => item.Id == "CS0103");
+        Assert.AreEqual(editor.Version, response.SourceVersion);
+        Assert.AreEqual(LanguageDiagnosticSeverity.Error, diagnostic.Severity);
+        Assert.AreEqual(editor.Content.IndexOf("missing", StringComparison.Ordinal), diagnostic.Range.Start);
+        Assert.AreEqual("missing".Length, diagnostic.Range.Length);
+        Assert.AreEqual(diagnostics.Count, provider.Diagnostics.Entries.Count);
+    }
+
+    [TestMethod]
+    public void DiagnosticStoreKeepsProducersSeparateAndRejectsStaleResults()
+    {
+        var store = new LanguageDiagnosticStore();
+        var path = Path.Combine(Path.GetTempPath(), "diagnostics.cs");
+        var compiler = new LanguageDiagnostic("CS1", LanguageDiagnosticSource.Compiler,
+            LanguageDiagnosticSeverity.Error, "compiler", path, new(0, 1), 0, 0, "App");
+        var analyzer = compiler with { Id = "AN1", Source = LanguageDiagnosticSource.Analyzer, Message = "analyzer" };
+
+        Assert.IsTrue(store.Replace(path, 2, LanguageDiagnosticSource.Compiler, [compiler]));
+        Assert.IsTrue(store.Replace(path, 2, LanguageDiagnosticSource.Analyzer, [analyzer]));
+        Assert.IsFalse(store.Replace(path, 1, LanguageDiagnosticSource.Compiler, []));
+        CollectionAssert.AreEquivalent(new[] { "CS1", "AN1" }, store.Entries.Select(item => item.Id).ToArray());
+    }
+
+    [TestMethod]
+    [Timeout(30000)]
     public async Task MediumFixtureMeetsLanguageLatencyBudgets()
     {
         using var fixture = new LanguageFixture(200);

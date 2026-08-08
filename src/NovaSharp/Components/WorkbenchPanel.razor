@@ -90,6 +90,8 @@
                                    ExternalDragActive="_explorerFileDrag is not null"
                                    ActiveChanged="ActiveChangedAsync" ContentEdited="ContentEditedAsync"
                                    CloseRequested="CloseRequestedAsync" />
+            <ProblemsPanel Open="_problemsOpen" Diagnostics="_languageProvider.Diagnostics.Entries"
+                           Activated="OpenProblemAsync" Close="ToggleProblems" />
         </div>
         <WorkspaceExplorer @ref="_explorer" Document="_document" ProjectSystem="_projectSystem" FileOpened="OpenWorkspaceFileAsync"
                            FilePreviewed="PreviewWorkspaceFileAsync" OpenChanged="ExplorerOpenChanged" />
@@ -97,6 +99,11 @@
             <button class="@(_explorerOpen ? "active" : null)" @onclick="ToggleExplorerAsync" aria-label="Explorer"
                     title="Explorer" aria-pressed="@_explorerOpen">
                 <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 5.5h6l2 2h10v11H3z" /></svg>
+            </button>
+            <button class="@(_problemsOpen ? "active" : null)" @onclick="ToggleProblems" aria-label="Problems"
+                    title="Problems" aria-pressed="@_problemsOpen">
+                <span class="activity-problems" aria-hidden="true">!</span>
+                @if (_languageProvider.Diagnostics.Entries.Count > 0) { <small>@_languageProvider.Diagnostics.Entries.Count</small> }
             </button>
         </nav>
     </div>
@@ -126,7 +133,7 @@
     private string? _explorerFileDrag;
     private string _query = "", _replacement = "";
     private string? _openMenu;
-    private bool _showFind, _wordWrap, _externalChange, _leftMouseDown, _explorerOpen = true, _suggestions = true;
+    private bool _showFind, _wordWrap, _externalChange, _leftMouseDown, _explorerOpen = true, _problemsOpen, _suggestions = true;
     private DocumentTab? ActiveTab => _workspace.FocusedGroup.ActiveTab;
     private EditorDocumentState _document => ActiveTab?.Document ?? _emptyDocument;
     private string Status => _status ?? _workspace.LastError ?? (_document.IsReadOnly ? "Read-only" : _document.FilePath ?? "Ready");
@@ -145,6 +152,7 @@
             "NovaSharp", "workbench-session.json"));
         _workspace.Changed += WorkspaceChanged;
         _projectSystem.Changed += ProjectSystemChanged;
+        _languageProvider.Diagnostics.Changed += DiagnosticsChanged;
         Program.ConfirmWorkbenchClose = ConfirmClose;
         if (Program.Phase5Workspace is not null)
         {
@@ -291,6 +299,17 @@
     private async Task ReloadAsync() { await _document.ReloadAsync(); _externalChange = false; StateHasChanged(); }
     private void KeepBuffer() { _document.KeepBuffer(); _externalChange = false; }
     private Task ToggleExplorerAsync() => _explorer?.ToggleCollapsedAsync() ?? Task.CompletedTask;
+    private void ToggleProblems() => _problemsOpen = !_problemsOpen;
+    private async Task OpenProblemAsync(LanguageDiagnostic diagnostic)
+    {
+        await OpenTabAsync(diagnostic.DocumentPath);
+        if (ActiveTab is { } tab)
+        {
+            tab.ViewState.SetSelection(diagnostic.Range.Start,
+                diagnostic.Range.Start + diagnostic.Range.Length, tab.Document.Content?.Length ?? 0);
+            await ActiveChangedAsync();
+        }
+    }
     private void ExplorerOpenChanged(bool open) => _explorerOpen = open;
     private Task SaveLayoutAsync() => _persistence.SaveAsync(
         _workspace.CaptureState() with { SolutionPath = _projectSystem.State.Path });
@@ -325,6 +344,7 @@
     }
 
     private void ProjectSystemChanged() => _ = InvokeAsync(StateHasChanged);
+    private void DiagnosticsChanged() => _ = InvokeAsync(StateHasChanged);
 
     private async Task HandleKeyAsync(KeyboardEventArgs args)
     {
@@ -438,6 +458,7 @@
         _ = SaveLayoutAsync();
         _workspace.Changed -= WorkspaceChanged;
         _projectSystem.Changed -= ProjectSystemChanged;
+        _languageProvider.Diagnostics.Changed -= DiagnosticsChanged;
         UntrackActiveDocument();
         _workspace.Dispose();
         _emptyDocument.Dispose();

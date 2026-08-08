@@ -54,6 +54,22 @@ button:disabled { opacity: .45; cursor: default; }
 
 .workbench-body { display: flex; width: 100%; min-width: 0; flex: 1; min-height: 0; overflow: hidden; }
 .editor-area { position: relative; display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; overflow: hidden; }
+.editor-area > .editor-split, .editor-area > .editor-group { flex: 1; min-height: 0; }
+.problems-panel { display: flex; min-height: 110px; max-height: 38%; flex: 0 0 190px; flex-direction: column; border-top: 1px solid #454b57; background: #1c1f25; }
+.problems-panel header { display: flex; align-items: center; gap: 9px; min-height: 30px; padding: 0 8px 0 12px; border-bottom: 1px solid #343842; }
+.problems-panel header span { color: #929cab; }
+.problems-panel header button { margin-left: auto; border: 0; background: transparent; }
+.problems-list { overflow: auto; }
+.problems-list > p { margin: 18px; color: #929cab; }
+.problem { display: grid; width: 100%; grid-template-columns: 18px minmax(160px, 1fr) auto auto; gap: 8px; padding: 5px 12px; border: 0; border-radius: 0; color: inherit; background: transparent; text-align: left; }
+.problem:hover { background: #292e36; }
+.problem-severity { color: #75a7e8; }
+.problem.error .problem-severity { color: #f06a6a; }
+.problem.warning .problem-severity { color: #d9b56d; }
+.problem-location, .problem-code { color: #929cab; font-size: var(--text-small); }
+.activity-problems { display: grid; width: 18px; height: 18px; place-items: center; border: 2px solid currentColor; border-radius: 50%; font-weight: 700; }
+.activity-bar button { position: relative; }
+.activity-bar button small { position: absolute; right: 1px; bottom: 1px; min-width: 14px; padding: 0 2px; border-radius: 7px; color: #181a1f; background: #d9b56d; font-size: 9px; }
 .document-tabs { display: flex; min-width: 0; flex: 0 0 35px; overflow-x: auto; overflow-y: hidden; border-bottom: 1px solid #343842; background: #1c1f25; scrollbar-width: thin; }
 .document-tab { display: flex; min-width: 110px; max-width: 240px; flex: 0 0 auto; align-items: center; gap: 7px; padding: 0 5px 0 11px; border-right: 1px solid #343842; color: #9ca6b5; background: #202329; cursor: default; user-select: none; }
 .document-tab, .document-tab *, .explorer, .explorer * { user-select: none; -webkit-user-select: none; }

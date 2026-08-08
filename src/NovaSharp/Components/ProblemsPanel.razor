@@ -1,0 +1,29 @@
+@if (Open)
+{
+    <section class="problems-panel" aria-label="Problems">
+        <header><strong>Problems</strong><span>@Diagnostics.Count</span><button aria-label="Close Problems" @onclick="Close">×</button></header>
+        <div class="problems-list">
+            @foreach (var item in Diagnostics)
+            {
+                <button class="problem @item.Severity.ToString().ToLowerInvariant()" @onclick="() => Activated.InvokeAsync(item)">
+                    <span class="problem-severity" aria-hidden="true">@SeverityIcon(item.Severity)</span>
+                    <span class="problem-message">@item.Message</span>
+                    <span class="problem-location">@Path.GetFileName(item.DocumentPath):@(item.StartLine + 1):@(item.StartColumn + 1)</span>
+                    <span class="problem-code">@item.Id · @item.Source</span>
+                </button>
+            }
+            @if (Diagnostics.Count == 0) { <p>No problems detected.</p> }
+        </div>
+    </section>
+}
+
+@code {
+    [Parameter] public bool Open { get; set; }
+    [Parameter, EditorRequired] public IReadOnlyList<LanguageDiagnostic> Diagnostics { get; set; } = [];
+    [Parameter] public EventCallback<LanguageDiagnostic> Activated { get; set; }
+    [Parameter] public EventCallback Close { get; set; }
+    private static string SeverityIcon(LanguageDiagnosticSeverity severity) => severity switch
+    {
+        LanguageDiagnosticSeverity.Error => "●", LanguageDiagnosticSeverity.Warning => "▲", _ => "◆"
+    };
+}

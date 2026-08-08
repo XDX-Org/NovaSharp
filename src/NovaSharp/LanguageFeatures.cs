@@ -3,6 +3,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Classification;
 using Microsoft.CodeAnalysis.Completion;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.Formatting;
 using Microsoft.CodeAnalysis.QuickInfo;
 using Microsoft.CodeAnalysis.Text;
@@ -20,6 +21,10 @@ public sealed record SignatureResult(IReadOnlyList<string> Signatures, int Activ
 public sealed record HoverResult(TextRange Range, IReadOnlyList<string> Sections);
 public sealed record SemanticSpan(int Start, int Length, string Classification);
 public sealed record FormatResult(string Text, int SelectionStart, int SelectionLength);
+public enum LanguageDiagnosticSeverity { Hidden, Information, Warning, Error }
+public enum LanguageDiagnosticSource { Compiler, Analyzer }
+public sealed record LanguageDiagnostic(string Id, LanguageDiagnosticSource Source, LanguageDiagnosticSeverity Severity,
+    string Message, string DocumentPath, TextRange Range, int StartLine, int StartColumn, string? ProjectName);
 
 public interface ILanguageProvider
 {
@@ -33,11 +38,14 @@ public interface ILanguageProvider
     Task<LanguageResponse<HoverResult>> GetHoverAsync(LanguageRequest request, CancellationToken cancellationToken);
     Task<LanguageResponse<IReadOnlyList<SemanticSpan>>> GetSemanticSpansAsync(LanguageRequest request,
         CancellationToken cancellationToken);
+    Task<LanguageResponse<IReadOnlyList<LanguageDiagnostic>>> GetDiagnosticsAsync(LanguageRequest request,
+        CancellationToken cancellationToken);
     Task<LanguageResponse<FormatResult>> FormatAsync(LanguageRequest request, CancellationToken cancellationToken);
 }
 
-internal sealed class CSharpLanguageProvider(RoslynProjectSystem projectSystem) : ILanguageProvider
+internal sealed class CSharpLanguageProvider(RoslynProjectSystem projectSystem, LanguageDiagnosticStore? diagnosticStore = null) : ILanguageProvider
 {
+    internal LanguageDiagnosticStore Diagnostics { get; } = diagnosticStore ?? new();
     private readonly Dictionary<string, (long Version, Document Document, CompletionItem Item)> _completionItems = [];
     private long _nextCompletionId;
 
@@ -142,6 +150,27 @@ internal sealed class CSharpLanguageProvider(RoslynProjectSystem projectSystem) 
         return new(request.Version, results);
     }
 
+    public async Task<LanguageResponse<IReadOnlyList<LanguageDiagnostic>>> GetDiagnosticsAsync(LanguageRequest request,
+        CancellationToken cancellationToken)
+    {
+        var document = await ResolveAsync(request, cancellationToken);
+        if (document is null) return Degraded<IReadOnlyList<LanguageDiagnostic>>(request);
+        var tree = await document.GetSyntaxTreeAsync(cancellationToken);
+        var compilation = await document.Project.GetCompilationAsync(cancellationToken);
+        if (tree is null || compilation is null) return new(request.Version, []);
+        var compiler = compilation.GetDiagnostics(cancellationToken).Where(item => item.Location.SourceTree == tree)
+            .Select(item => ToDiagnostic(item, LanguageDiagnosticSource.Compiler, document)).ToArray();
+        Diagnostics.Replace(document.FilePath!, request.Version, LanguageDiagnosticSource.Compiler, compiler);
+
+        var analyzers = document.Project.AnalyzerReferences.SelectMany(reference => reference.GetAnalyzers(document.Project.Language)).ToImmutableArray();
+        var analyzer = analyzers.IsDefaultOrEmpty ? [] : (await compilation.WithAnalyzers(analyzers,
+                options: null).GetAnalyzerDiagnosticsAsync(cancellationToken))
+            .Where(item => item.Location.SourceTree == tree)
+            .Select(item => ToDiagnostic(item, LanguageDiagnosticSource.Analyzer, document)).ToArray();
+        Diagnostics.Replace(document.FilePath!, request.Version, LanguageDiagnosticSource.Analyzer, analyzer);
+        return new(request.Version, compiler.Concat(analyzer).ToArray());
+    }
+
     public async Task<LanguageResponse<FormatResult>> FormatAsync(LanguageRequest request, CancellationToken cancellationToken)
     {
         var document = await ResolveAsync(request, cancellationToken);
@@ -173,6 +202,20 @@ internal sealed class CSharpLanguageProvider(RoslynProjectSystem projectSystem) 
         return characters.ToArray();
     }
     private static string SymbolText(IMethodSymbol symbol) => symbol.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+    private static LanguageDiagnostic ToDiagnostic(Diagnostic diagnostic, LanguageDiagnosticSource source, Document document)
+    {
+        var span = diagnostic.Location.SourceSpan;
+        var line = diagnostic.Location.GetLineSpan().StartLinePosition;
+        var severity = diagnostic.Severity switch
+        {
+            DiagnosticSeverity.Error => LanguageDiagnosticSeverity.Error,
+            DiagnosticSeverity.Warning => LanguageDiagnosticSeverity.Warning,
+            DiagnosticSeverity.Info => LanguageDiagnosticSeverity.Information,
+            _ => LanguageDiagnosticSeverity.Hidden
+        };
+        return new(diagnostic.Id, source, severity, diagnostic.GetMessage(), document.FilePath!,
+            new(span.Start, span.Length), line.Line, line.Character, document.Project.Name);
+    }
     private static LanguageResponse<T> Degraded<T>(LanguageRequest request) => new(request.Version, default, true);
 }
 
