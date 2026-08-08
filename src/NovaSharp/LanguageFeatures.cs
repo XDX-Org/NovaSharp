@@ -181,6 +181,7 @@ internal sealed class LatestLanguageRequest : IDisposable
     private CancellationTokenSource? _pending;
     private long _sequence;
     internal Exception? LastError { get; private set; }
+    internal string Status { get; private set; } = "Not started";
 
     internal async Task<T?> RunAsync<T>(Func<CancellationToken, Task<LanguageResponse<T>>> operation,
         long currentVersion, CancellationToken cancellationToken = default)
@@ -191,14 +192,17 @@ internal sealed class LatestLanguageRequest : IDisposable
         var pending = _pending;
         var sequence = Interlocked.Increment(ref _sequence);
         LastError = null;
+        Status = "Running";
         try
         {
             var response = await operation(pending.Token);
-            return sequence == Interlocked.Read(ref _sequence) && response.SourceVersion == currentVersion
-                ? response.Value : default;
+            if (sequence != Interlocked.Read(ref _sequence)) { Status = "Superseded"; return default; }
+            if (response.SourceVersion != currentVersion) { Status = $"Version {response.SourceVersion}, expected {currentVersion}"; return default; }
+            Status = response.IsDegraded ? "Degraded" : response.Value is null ? "No value" : "Completed";
+            return response.Value;
         }
-        catch (OperationCanceledException) when (pending.IsCancellationRequested) { return default; }
-        catch (Exception exception) { LastError = exception; return default; }
+        catch (OperationCanceledException) when (pending.IsCancellationRequested) { Status = "Cancelled"; return default; }
+        catch (Exception exception) { LastError = exception; Status = "Failed"; return default; }
     }
 
     public void Dispose()

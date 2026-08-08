@@ -151,7 +151,8 @@
     public int CompletionItemCount() => _completion?.Items.Count ?? 0;
 
     [JSInvokable]
-    public string? CompletionError() => _completionRequest.LastError?.ToString();
+    public string CompletionDiagnostic() => _completionRequest.LastError?.ToString()
+        ?? $"{_completionRequest.Status}; {_completion?.Items.Count ?? 0} items; document version {Document.Version}";
 
     private LanguageRequest Request(int position, TextRange? range = null) =>
         new(Document.FilePath!, ProjectContext, Document.Version, Math.Clamp(position, 0, Value.Length), range);
