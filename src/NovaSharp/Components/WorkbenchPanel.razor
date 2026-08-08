@@ -127,10 +127,10 @@
                                    ActiveChanged="ActiveChangedAsync" ContentEdited="ContentEditedAsync"
                                    CloseRequested="CloseRequestedAsync" LanguageCommand="HandleLanguageCommandAsync" />
             <ProblemsPanel Open="_problemsOpen" Diagnostics="_languageProvider.Diagnostics.Entries"
-                           Activated="OpenProblemAsync" Close="ToggleProblems" />
+                           Activated="OpenProblemAsync" />
             <OutputPanel Open="_outputOpen" Task="_buildRun.Tasks.LastOrDefault()" Entries="_buildRun.Output.Entries"
                          Activated="OpenOutputAsync" Input="SendProcessInputAsync" Copy="CopyOutputAsync"
-                         Export="ExportOutputAsync" Clear="_buildRun.Output.Clear" Close="ToggleOutput" />
+                         Export="ExportOutputAsync" Clear="_buildRun.Output.Clear" />
             <TerminalPanel Open="_terminalOpen" Service="_terminal" WorkingDirectory="WorkspaceRoot"
                            ConfirmClose="ConfirmTerminalCloseAsync" />
         </div>
