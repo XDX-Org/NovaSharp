@@ -5,9 +5,11 @@
         <header>
             <strong>Output</strong>
             @if (Task is not null) { <span class="task-state @Task.State.ToString().ToLowerInvariant()">@Task.State</span> }
-            <button @onclick="async () => await Copy.InvokeAsync()">Copy</button>
-            <button @onclick="async () => await Export.InvokeAsync()">Export</button>
-            <button @onclick="async () => await Clear.InvokeAsync()">Clear</button>
+            <div class="output-actions">
+                <button @onclick="async () => await Copy.InvokeAsync()">Copy</button>
+                <button @onclick="async () => await Export.InvokeAsync()">Export</button>
+                <button @onclick="async () => await Clear.InvokeAsync()">Clear</button>
+            </div>
             <button aria-label="Close Output" @onclick="async () => await Close.InvokeAsync()">×</button>
         </header>
         <div class="output-lines" role="log" aria-live="polite">
