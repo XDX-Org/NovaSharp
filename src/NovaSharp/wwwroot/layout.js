@@ -3,6 +3,22 @@ window.novaSharp = window.novaSharp || {};
 window.novaSharp.initTerminal = function (host, dotNet, terminalId) {
     if (!host || host.dataset.terminalReady) return;
     host.dataset.terminalReady = "true";
+    let pendingSize;
+    let appliedSize;
+    let resizing = false;
+    const applyLatestSize = async () => {
+        if (resizing) return;
+        resizing = true;
+        try {
+            while (pendingSize) {
+                const size = pendingSize;
+                pendingSize = undefined;
+                await dotNet?.invokeMethodAsync("ResizeTerminal", size.columns, size.rows);
+                appliedSize = size;
+            }
+        } catch { }
+        finally { resizing = false; }
+    };
     const resize = () => {
         const terminal = host.querySelector(".xterm");
         if (!terminal) return;
@@ -15,7 +31,9 @@ window.novaSharp.initTerminal = function (host, dotNet, terminalId) {
         const scrollbarWidth = viewport ? Math.max(0, viewport.offsetWidth - viewport.clientWidth) : 0;
         const columns = Math.max(2, Math.floor((host.clientWidth - scrollbarWidth) / cellWidth));
         const rows = Math.max(1, Math.floor(host.clientHeight / cellHeight));
-        dotNet?.invokeMethodAsync("ResizeTerminal", columns, rows);
+        if (appliedSize?.columns === columns && appliedSize?.rows === rows) return;
+        pendingSize = { columns, rows };
+        void applyLatestSize();
     };
     host.addEventListener("keydown", event => event.stopPropagation());
     new ResizeObserver(resize).observe(host);
