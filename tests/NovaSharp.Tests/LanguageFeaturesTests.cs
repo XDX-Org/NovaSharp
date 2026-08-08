@@ -60,6 +60,50 @@ public sealed class LanguageFeaturesTests
     }
 
     [TestMethod]
+    [Timeout(30000)]
+    public async Task SignatureHelpTracksTheSelectedOverload()
+    {
+        using var fixture = new LanguageFixture();
+        await using var projectSystem = new RoslynProjectSystem();
+        await projectSystem.OpenAsync(fixture.SolutionFile);
+        using var editor = await fixture.OpenEditorAsync();
+        projectSystem.Track(editor);
+        var provider = new CSharpLanguageProvider(projectSystem);
+
+        editor.Content = "class C { string M() => string.Concat(\"a\", \"b\"); }";
+        var strings = await provider.GetSignatureHelpAsync(Request(projectSystem, editor,
+            editor.Content.IndexOf(",", StringComparison.Ordinal) + 2), default);
+        editor.Content = "class C { string M() => string.Concat(\"a\", 1); }";
+        var objects = await provider.GetSignatureHelpAsync(Request(projectSystem, editor,
+            editor.Content.IndexOf(",", StringComparison.Ordinal) + 2), default);
+
+        StringAssert.Contains(strings.Value!.Signatures[strings.Value.ActiveSignature], "string?");
+        StringAssert.Contains(objects.Value!.Signatures[objects.Value.ActiveSignature], "object?");
+        Assert.AreNotEqual(strings.Value.Signatures[strings.Value.ActiveSignature],
+            objects.Value.Signatures[objects.Value.ActiveSignature]);
+    }
+
+    [TestMethod]
+    [Timeout(30000)]
+    public async Task CompletionDetailsPreserveNullableProjectContext()
+    {
+        using var fixture = new LanguageFixture();
+        await using var projectSystem = new RoslynProjectSystem();
+        await projectSystem.OpenAsync(fixture.SolutionFile);
+        using var editor = await fixture.OpenEditorAsync();
+        projectSystem.Track(editor);
+        editor.Content = "using Fixture; class C { void M(ProjectType value) { value.Null } }";
+        var provider = new CSharpLanguageProvider(projectSystem);
+        var position = editor.Content.IndexOf("Null }", StringComparison.Ordinal) + 4;
+
+        var completion = await provider.GetCompletionsAsync(Request(projectSystem, editor, position), true, default);
+        var item = completion.Value!.Items.Single(candidate => candidate.DisplayText == "NullableProperty");
+        var details = await provider.GetCompletionDetailsAsync(Request(projectSystem, editor, position), item.Id, default);
+
+        StringAssert.Contains(details.Value!.Detail, "string?");
+    }
+
+    [TestMethod]
     public async Task LatestRequestCancelsAndDiscardsOutOfOrderResponses()
     {
         using var latest = new LatestLanguageRequest();
@@ -132,7 +176,7 @@ public sealed class LanguageFeaturesTests
             File.WriteAllText(Path.Combine(Root, "Lib", "Lib.csproj"),
                 "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><Nullable>enable</Nullable></PropertyGroup></Project>");
             File.WriteAllText(Path.Combine(Root, "Lib", "Types.cs"),
-                "namespace Fixture; public class ProjectType { } internal class HiddenType { }");
+                "namespace Fixture; public class ProjectType { public string? NullableProperty { get; } } internal class HiddenType { }");
             File.WriteAllText(Path.Combine(Root, "App", "App.csproj"),
                 "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><Nullable>enable</Nullable></PropertyGroup><ItemGroup><ProjectReference Include=\"../Lib/Lib.csproj\" /></ItemGroup></Project>");
             File.WriteAllText(AppFile, "using System; class Program { static void Main() { Console. } }");

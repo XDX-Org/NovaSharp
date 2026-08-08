@@ -26,27 +26,8 @@ Branch: `phase-7` (tracking `origin/phase-7`)
 - `a36cba3` Use filtered member completion in smoke
 - `56c3a37` Report completion smoke diagnostics
 
-## Remaining failure
+## Resolution
 
-Linux Phase 7 native smoke has repeatedly failed only `CompletionVisible`. Signature help, hover, semantic tokens, auto-indent, comment toggle, formatting, loading state, builds, and tests pass.
+The Linux completion failure was a smoke startup race: the first editor render occurred while C# services were still loading, so the completion request correctly did not start. The smoke now waits for the loading state to clear. A concurrent macOS watcher teardown race was also fixed.
 
-Previous reports did not reveal whether Roslyn returned zero items or the Blazor popup failed to render. Commit `56c3a37` adds `CompletionItemCount()` and writes this distinction into the smoke report error, e.g. `Provider returned N completion items`.
-
-Current diagnostic run: <https://github.com/XDX-Org/NovaSharp/actions/runs/30813917177>
-
-At handoff, Apple Silicon was green; Linux, Intel macOS, and Windows were running tests. Inspect the Linux Phase 7 failure/report when complete:
-
-```sh
-gh run view 30813917177 --json status,conclusion,jobs
-gh run view 30813917177 --job 91686917833 --log-failed | tail -120
-tmpdir=$(mktemp -d)
-gh run download 30813917177 -n phase-3-linux-x64 -D "$tmpdir"
-cat "$tmpdir/phase7-smoke.json"
-```
-
-Interpretation:
-
-- `Provider returned 0`: diagnose the provider request/version/project context; `LatestLanguageRequest` currently swallows provider exceptions.
-- `Provider returned >0`: provider is correct; diagnose Blazor render timing/DOM ownership after `EditorCommand`.
-
-Do not consider the task complete until the full four-platform workflow is green. The working tree was clean before adding this handoff file.
+The full Linux, Windows, macOS Intel, and macOS Apple Silicon workflow is green: <https://github.com/XDX-Org/NovaSharp/actions/runs/31266586068>.

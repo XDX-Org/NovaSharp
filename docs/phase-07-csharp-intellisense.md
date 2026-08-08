@@ -2,7 +2,7 @@
 
 ## Status
 
-Implementation complete; local verification passes. The four-platform packaging matrix remains required before marking the phase complete.
+Complete. Local verification and the Linux, Windows, macOS Intel, and macOS Apple Silicon packaging matrix pass.
 
 ## Goal
 
@@ -60,7 +60,7 @@ On the 200-document Phase 7 fixture, cold explicit completion must finish within
 
 ## Verification
 
-The local Release suite covers project-aware completion, accessibility, unsaved versions, lazy details, signature parameters, hover provenance, semantic classification, formatting, cancellation, out-of-order responses, and the medium-fixture budgets. Native interaction and four-platform package verification run in CI before the status changes to complete.
+The local Release suite covers project-aware and nullable-aware completion, accessibility, unsaved versions, lazy details, signature overloads and parameters, hover provenance, semantic classification, formatting, cancellation, out-of-order responses, and the medium-fixture budgets. Native interaction and four-platform package verification pass in CI.
 
 ## Next phase
 
