@@ -30,25 +30,14 @@
         </header>
         @if (Service.ActiveSession is { } active)
         {
-            <div @key="active.Id" @ref="_host" class="terminal-host" tabindex="0" role="textbox" aria-multiline="true"
+            <div @key="active.Id" @ref="_host" class="terminal-host" role="application"
                  aria-label="Terminal @active.Name, @active.State" data-terminal-id="@active.Id">
-                <div class="terminal-screen">
-                    @foreach (var line in Filter(active.Buffer.Lines))
-                    {
-                        <div class="terminal-line">@foreach (var run in line.Runs)
-                            {
-                                @if (run.Style.Link is { } link)
-                                { <a href="@link" target="_blank" rel="noopener noreferrer" style="@Style(run.Style)">@run.Text</a> }
-                                else { <span style="@Style(run.Style)">@run.Text</span> }
-                            }</div>
-                    }
-                </div>
-                <textarea class="terminal-input" aria-label="Terminal input" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
+                <Xterm @ref="_xterm" Options="_options" Class="terminal-xterm" OnFirstRender="XtermReadyAsync"
+                       OnData="SendTerminalInput" OnBinary="SendTerminalBinary" OnResize="XtermResized" />
             </div>
             <footer>
                 <span>@active.State@if (active.ExitCode is { } exitCode) { <text> (exit @exitCode)</text> }</span>
                 <span>@active.WorkingDirectory</span>
-                <label>Search <input aria-label="Search terminal" @bind="_search" @bind:event="oninput" /></label>
             </footer>
         }
         else
@@ -64,16 +53,29 @@
     [Parameter] public string? WorkingDirectory { get; set; }
     [Parameter] public EventCallback<TerminalSession> ConfirmClose { get; set; }
     private ElementReference _host;
+    private Xterm? _xterm;
     private DotNetObjectReference<TerminalPanel>? _self;
+    private readonly SemaphoreSlim _renderGate = new(1, 1);
+    private readonly object _inputGate = new();
+    private readonly TerminalOptions _options = new()
+    {
+        CursorBlink = true, CursorStyle = CursorStyle.Block, FontSize = 14,
+        FontFamily = "JetBrains Mono, Cascadia Code, ui-monospace, monospace",
+        Scrollback = 5_000, ScreenReaderMode = true,
+        Theme = new() { Background = "#121419", Foreground = "#d8dee9", Cursor = "#eceff4", SelectionBackground = "#4b6eaf88" }
+    };
+    private Task _inputQueue = Task.CompletedTask;
     private string? _profileId;
-    private string _search = "";
     private Guid? _initializedSession;
+    private Guid? _renderedSession;
+    private long _lastWrittenSequence;
     private bool _creating;
 
     protected override void OnInitialized()
     {
         _profileId = Service.Profiles.FirstOrDefault()?.Id;
         Service.Changed += ServiceChanged;
+        Service.OutputReceived += OutputReceived;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -88,9 +90,7 @@
             return;
         }
         if (Service.ActiveSession is not { } session || _initializedSession == session.Id) return;
-        _self ??= DotNetObjectReference.Create(this);
         _initializedSession = session.Id;
-        await JS.InvokeVoidAsync("novaSharp.initTerminal", _host, _self);
     }
 
     private async Task CreateAsync() { await Service.CreateAsync(_profileId, WorkingDirectory); }
@@ -109,28 +109,68 @@
         else await Service.CloseAsync(session.Id, force: true);
     }
 
-    private IReadOnlyList<TerminalLine> Filter(IReadOnlyList<TerminalLine> lines) => string.IsNullOrEmpty(_search) ? lines
-        : lines.Where(line => string.Concat(line.Runs.Select(run => run.Text)).Contains(_search, StringComparison.OrdinalIgnoreCase)).ToArray();
-    private static string Style(TerminalStyle style) => $"color:{style.Foreground ?? "inherit"};background:{style.Background ?? "transparent"};font-weight:{(style.Bold ? "bold" : "normal")};text-decoration:{(style.Underline ? "underline" : "none")}";
     private void ServiceChanged() => _ = InvokeAsync(() => { StateHasChanged(); });
 
-    [JSInvokable] public Task SendTerminalInput(string value) => Service.ActiveSession?.SendAsync(Encoding.UTF8.GetBytes(value)) ?? Task.CompletedTask;
-    [JSInvokable] public async Task SendTerminalPaste(string value)
+    private async Task XtermReadyAsync()
     {
-        if (string.IsNullOrEmpty(value) || Service.ActiveSession is not { } session) return;
-        if (value.Contains('\n') || value.Contains('\r') || value.Length > 1_000)
+        if (_xterm is null || Service.ActiveSession is not { } session) return;
+        _self ??= DotNetObjectReference.Create(this);
+        await _renderGate.WaitAsync();
+        try
+        {
+            _renderedSession = session.Id; _lastWrittenSequence = 0;
+            foreach (var chunk in session.Transcript.Chunks) await WriteChunkAsync(session, chunk);
+        }
+        finally { _renderGate.Release(); }
+        await JS.InvokeVoidAsync("novaSharp.initTerminal", _host, _self);
+        await _xterm.Focus();
+    }
+
+    private async Task SendTerminalInput(string value)
+    {
+        if ((value.Contains('\n') || (value.Contains('\r') && value != "\r") || value.Length > 1_000)
+            && Service.ActiveSession is { } session)
         {
             var result = await Program.App.MainWindow.ShowMessageDialogAsync("Paste into terminal",
                 $"Paste {value.Length} characters into {session.Name}?", DialogButtons.YesNo, DialogIcon.Warning);
             if (result != DialogResult.Yes) return;
         }
-        await session.SendAsync(Encoding.UTF8.GetBytes(value));
+        await QueueInput(Encoding.UTF8.GetBytes(value));
     }
-    [JSInvokable] public void ResizeTerminal(int columns, int rows) => Service.ActiveSession?.Resize(columns, rows);
+    private Task SendTerminalBinary(string value) => QueueInput(value.Select(character => (byte)character).ToArray());
+    private Task QueueInput(byte[] value)
+    {
+        lock (_inputGate)
+            return _inputQueue = _inputQueue.ContinueWith(_ => Service.ActiveSession?.SendAsync(value) ?? Task.CompletedTask,
+                CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default).Unwrap();
+    }
+    private void XtermResized(ResizeEventArgs args) => Service.ActiveSession?.Resize(args.Columns, args.Rows);
+    private void OutputReceived(TerminalSession session, TerminalOutputChunk chunk) =>
+        _ = InvokeAsync(() => WriteChunkSerializedAsync(session, chunk));
+    private async Task WriteChunkSerializedAsync(TerminalSession session, TerminalOutputChunk chunk)
+    {
+        await _renderGate.WaitAsync();
+        try { await WriteChunkAsync(session, chunk); }
+        finally { _renderGate.Release(); }
+    }
+    private async Task WriteChunkAsync(TerminalSession session, TerminalOutputChunk chunk)
+    {
+        if (!Open || _xterm is null || _renderedSession != session.Id || chunk.Sequence <= _lastWrittenSequence) return;
+        await _xterm.Write(chunk.Data); _lastWrittenSequence = chunk.Sequence;
+    }
+
+    [JSInvokable]
+    public async Task ResizeTerminal(int columns, int rows)
+    {
+        if (_xterm is not null) await _xterm.Resize(columns, rows);
+        Service.ActiveSession?.Resize(columns, rows);
+    }
 
     public void Dispose()
     {
         Service.Changed -= ServiceChanged;
+        Service.OutputReceived -= OutputReceived;
         _self?.Dispose();
+        _renderGate.Dispose();
     }
 }

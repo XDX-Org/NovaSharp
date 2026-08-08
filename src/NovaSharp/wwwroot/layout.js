@@ -3,70 +3,23 @@ window.novaSharp = window.novaSharp || {};
 window.novaSharp.initTerminal = function (host, dotNet) {
     if (!host || host.dataset.terminalReady) return;
     host.dataset.terminalReady = "true";
-    const input = host.querySelector(".terminal-input");
-    const screen = host.querySelector(".terminal-screen");
-    let sendQueue = Promise.resolve();
-    const invoke = (method, value) => {
-        sendQueue = sendQueue.then(() => dotNet?.invokeMethodAsync(method, value)).catch(() => {});
-        return sendQueue;
-    };
-    const send = value => invoke("SendTerminalInput", value);
-    input.addEventListener("input", () => {
-        if (input.value) send(input.value);
-        input.value = "";
-    });
-    input.addEventListener("paste", event => {
-        event.preventDefault();
-        event.stopPropagation();
-        invoke("SendTerminalPaste", event.clipboardData?.getData("text") || "");
-    });
-    const handleKey = (event, printable) => {
-        if (event.isComposing) return;
-        const sequences = {
-            Enter: "\r", Backspace: "\x7f", Tab: "\t", Escape: "\x1b",
-            ArrowUp: "\x1b[A", ArrowDown: "\x1b[B", ArrowRight: "\x1b[C", ArrowLeft: "\x1b[D",
-            Home: "\x1b[H", End: "\x1b[F", Delete: "\x1b[3~", PageUp: "\x1b[5~", PageDown: "\x1b[6~"
-        };
-        let value = sequences[event.key];
-        const selected = window.getSelection()?.toString();
-        if (event.ctrlKey && event.key.toLowerCase() === "c" && selected) return;
-        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v") return;
-        if (event.ctrlKey && event.key.length === 1)
-            value = String.fromCharCode(event.key.toUpperCase().charCodeAt(0) - 64);
-        else if (printable && !event.altKey && !event.metaKey && event.key.length === 1)
-            value = event.key;
-        if (value === undefined) return;
-        event.preventDefault();
-        event.stopPropagation();
-        send(value);
-    };
-    input.addEventListener("keydown", event => handleKey(event, false));
-    host.addEventListener("keydown", event => {
-        if (event.target !== input) handleKey(event, true);
-    });
-    host.addEventListener("paste", event => {
-        event.preventDefault();
-        invoke("SendTerminalPaste", event.clipboardData?.getData("text") || "");
-    });
-    host.addEventListener("compositionend", event => { if (event.data) send(event.data); });
-    host.addEventListener("pointerup", event => {
-        if (!event.target.closest("a") && !window.getSelection()?.toString()) host.focus({ preventScroll: true });
-    });
     const resize = () => {
-        const style = getComputedStyle(screen);
+        const terminal = host.querySelector(".xterm");
+        if (!terminal) return;
+        const style = getComputedStyle(terminal);
         const probe = document.createElement("span");
         probe.textContent = "MMMMMMMMMM";
-        probe.style.cssText = `position:absolute;visibility:hidden;font:${style.font}`;
+        probe.style.cssText = `position:absolute;visibility:hidden;font-family:${style.fontFamily};font-size:${style.fontSize}`;
         host.appendChild(probe);
         const cellWidth = Math.max(1, probe.getBoundingClientRect().width / 10);
         const cellHeight = Math.max(1, parseFloat(style.lineHeight) || 20);
         probe.remove();
-        dotNet?.invokeMethodAsync("ResizeTerminal", Math.floor(host.clientWidth / cellWidth), Math.floor(host.clientHeight / cellHeight));
+        dotNet?.invokeMethodAsync("ResizeTerminal", Math.max(2, Math.floor(host.clientWidth / cellWidth)),
+            Math.max(1, Math.floor(host.clientHeight / cellHeight)));
     };
+    host.addEventListener("keydown", event => event.stopPropagation());
     new ResizeObserver(resize).observe(host);
-    new MutationObserver(() => { screen.scrollTop = screen.scrollHeight; }).observe(screen, { childList: true, subtree: true });
     resize();
-    host.focus({ preventScroll: true });
 };
 
 window.novaSharp.positionContextMenu = function (menu, x, y) {

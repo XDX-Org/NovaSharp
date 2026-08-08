@@ -21,9 +21,9 @@ Provide reliable interactive terminal sessions without coupling terminal emulati
 ## Implementation
 
 - `Porta.Pty` 1.0.7 owns the cross-platform transport: ConPTY plus a Windows Job Object on Windows 10 1809+, and `forkpty` on Linux/macOS.
-- NovaSharp owns session lifecycle and a small, headless ANSI/VT presentation buffer. Escape sequences never enter Razor markup; rendered text is encoded by Blazor, and OSC 8 links accept only absolute HTTP(S) targets.
+- `XtermBlazor` 2.4.0 supplies xterm.js 6.0.0 for complete ANSI/VT emulation, input editing, device-query responses, Unicode rendering, selection, and accessibility.
 - Each terminal has an independent profile, name, working directory, PTY, and bounded buffer. Sessions survive panel hide/show and are intentionally not persisted.
-- The emulator answers primary and secondary device-attribute queries used by shells such as fish, and visually wraps long rendered lines to the panel width.
+- The emulator answers terminal queries used by shells such as fish and wraps at the current PTY column width.
 - Scrollback defaults to 5,000 lines and 4 MiB. Input and resize handling target one animation frame (16.7 ms) before PTY/system scheduling.
 - Phase 10 and terminal processes share the same ownership rule—NovaSharp starts, stops, and disposes only processes it owns—while PTY byte streams remain separate from the line-oriented build service.
 
