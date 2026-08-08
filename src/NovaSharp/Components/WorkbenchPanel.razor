@@ -86,6 +86,20 @@
                 }
             </div>
         </nav>
+        @if (StartupProjects.Count > 0)
+        {
+            <div class="build-controls" aria-label="Build and run settings">
+                <select aria-label="Startup project" title="Startup project" value="@StartupProject" @onchange="SelectStartupProject">
+                    @foreach (var project in StartupProjects) { <option value="@project">@Path.GetFileNameWithoutExtension(project)</option> }
+                </select>
+                <select aria-label="Build configuration" title="Build configuration" @bind="_buildConfiguration"><option>Debug</option><option>Release</option></select>
+                <input class="framework-input" aria-label="Target framework" title="Target framework" placeholder="Framework" @bind="_targetFramework" />
+                <input class="profile-input" aria-label="Launch profile" title="Launch profile" placeholder="Launch profile" @bind="_launchProfile" />
+                <button title="Build startup project (Ctrl+Shift+B)" aria-label="Build startup project" @onclick="() => StartBuildAsync(BuildOperation.Build)">Build</button>
+                <button title="Run without debugging (Ctrl+F5)" aria-label="Run startup project" @onclick="() => StartBuildAsync(BuildOperation.Run)">Run</button>
+                <button title="Stop build or run" aria-label="Stop build or run" disabled="@(_buildRun.ActiveTask is null)" @onclick="StopBuild">■</button>
+            </div>
+        }
     </header>
     @if (_showFind)
     {
@@ -142,15 +156,6 @@
     </div>
     <footer class="statusbar">
         <span class="status-message" aria-live="polite">@Status</span>
-        @if (StartupProjects.Count > 0)
-        {
-            <select aria-label="Startup project" value="@StartupProject" @onchange="SelectStartupProject">
-                @foreach (var project in StartupProjects) { <option value="@project">@Path.GetFileNameWithoutExtension(project)</option> }
-            </select>
-            <select aria-label="Build configuration" @bind="_buildConfiguration"><option>Debug</option><option>Release</option></select>
-            <input class="framework-input" aria-label="Target framework" placeholder="framework" @bind="_targetFramework" />
-            <input class="profile-input" aria-label="Launch profile" placeholder="launch profile" @bind="_launchProfile" />
-        }
         @if (ActiveContexts.Count > 1)
         {
             <select aria-label="Active project context" value="@ActiveContextId" @onchange="SelectContext">
@@ -318,6 +323,7 @@
         await JS.InvokeVoidAsync("novaSharp.initLeftMouseStatus", _workbench, _self);
         await JS.InvokeVoidAsync("novaSharp.initPointerTabDrag", _workbench, _self);
         await JS.InvokeVoidAsync("novaSharp.initExplorerFileDrag", _workbench, _self);
+        await JS.InvokeVoidAsync("novaSharp.initBottomPanelResize", _workbench);
         if (Program.Phase4Workspace is not null || Program.Phase5Workspace is not null)
             await JS.InvokeVoidAsync("novaSharp.startSmokePolling", _self,
                 Program.Phase4Workspace is not null, Program.Phase5Workspace is not null);

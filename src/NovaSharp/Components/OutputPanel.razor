@@ -1,6 +1,7 @@
 @if (Open)
 {
     <section class="output-panel" aria-label="Build output">
+        <div class="bottom-panel-resizer" role="separator" tabindex="0" aria-orientation="horizontal" aria-label="Resize Output panel"></div>
         <header>
             <strong>Output</strong>
             @if (Task is not null) { <span class="task-state @Task.State.ToString().ToLowerInvariant()">@Task.State</span> }

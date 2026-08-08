@@ -647,6 +647,44 @@ window.novaSharp.startSmokePolling = function (bridge, phase4, phase5) {
     }, 100);
 };
 
+window.novaSharp.initBottomPanelResize = function (workbench) {
+    if (workbench.dataset.bottomPanelResize === 'true') return;
+    workbench.dataset.bottomPanelResize = 'true';
+    workbench.addEventListener('pointerdown', event => {
+        const handle = event.target.closest('.bottom-panel-resizer');
+        if (!handle) return;
+        const panel = handle.parentElement;
+        const startY = event.clientY;
+        const startHeight = panel.getBoundingClientRect().height;
+        const editorHeight = panel.parentElement.getBoundingClientRect().height;
+        handle.classList.add('dragging');
+        handle.setPointerCapture(event.pointerId);
+        const move = moveEvent => {
+            const height = Math.max(110, Math.min(editorHeight * .75, startHeight + startY - moveEvent.clientY));
+            panel.style.height = `${height}px`;
+        };
+        const finish = () => {
+            handle.classList.remove('dragging');
+            handle.removeEventListener('pointermove', move);
+            handle.removeEventListener('pointerup', finish);
+            handle.removeEventListener('pointercancel', finish);
+        };
+        handle.addEventListener('pointermove', move);
+        handle.addEventListener('pointerup', finish);
+        handle.addEventListener('pointercancel', finish);
+        event.preventDefault();
+    });
+    workbench.addEventListener('keydown', event => {
+        const handle = event.target.closest('.bottom-panel-resizer');
+        if (!handle || !['ArrowUp', 'ArrowDown'].includes(event.key)) return;
+        const panel = handle.parentElement;
+        const current = panel.getBoundingClientRect().height;
+        const maximum = panel.parentElement.getBoundingClientRect().height * .75;
+        panel.style.height = `${Math.max(110, Math.min(maximum, current + (event.key === 'ArrowUp' ? 20 : -20)))}px`;
+        event.preventDefault();
+    });
+};
+
 window.novaSharp.runPhase6Smoke = async function (bridge) {
     try {
         for (let attempt = 0; attempt < 100 && !document.querySelector('.solution-explorer .project-tree'); attempt++)
