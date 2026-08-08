@@ -259,10 +259,8 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
     overflow: hidden;
     background: linear-gradient(to right, #1c1e23 54px, #181a1f 54px);
 }
-.presentation, .editor-input { position: absolute; inset: 24px 0 0; }
-.editor-breadcrumbs { position: absolute; z-index: 8; top: 0; right: 0; left: 0; display: flex; height: 24px; align-items: center; gap: 7px; padding: 0 8px 0 12px; overflow: hidden; border-bottom: 1px solid #343842; color: #9ca6b5; background: #202329; font-size: var(--text-small); white-space: nowrap; }
-.editor-breadcrumbs button { margin-left: auto; padding: 1px 6px; border: 0; background: transparent; }
-.outline-popup { z-index: 25; top: 25px; right: 4px; width: min(390px, calc(100% - 8px)); }
+.presentation, .editor-input { position: absolute; inset: 0; }
+.outline-popup { z-index: 25; top: 4px; right: 4px; width: min(390px, calc(100% - 8px)); }
 .outline-popup button, .navigation-popup button { display: flex; width: 100%; justify-content: space-between; gap: 12px; padding: 5px 8px; border: 0; border-radius: 0; background: transparent; text-align: left; }
 .outline-popup button:hover, .navigation-popup button:hover { background: #3b4d68; }
 .outline-popup small, .navigation-popup small { color: #929cab; }

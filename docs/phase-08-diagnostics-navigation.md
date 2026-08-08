@@ -11,7 +11,7 @@ Turn language analysis into an IDE workflow for finding, understanding, and fixi
 - Syntax, compiler, and analyzer diagnostics as editor squiggles, glyphs, hover details, and a Problems panel.
 - Filter/group Problems by severity, project, file, and source; activation navigates to the exact range.
 - Go to definition/type definition/implementation, Peek Definition, find references, and document/workspace symbols.
-- Breadcrumbs and outline for the active document.
+- Document outline for the active document.
 - Rename with preview, formatting, code actions, quick fixes, and fix-all where supported.
 - Navigation history with Back/Forward and restoration of group, tab, cursor, and selection.
 - Multi-file workspace-edit transaction with conflict detection and rollback before disk writes.
@@ -44,7 +44,7 @@ Completed on `phase-8`:
 
 - versioned compiler/analyzer diagnostics with merged squiggles, gutter glyphs, overview marks, accessible details, and a non-virtualized Problems store;
 - Problems filtering/grouping and exact-range activation;
-- definition, type definition, implementation, Peek, references, document outline/breadcrumbs, and workspace symbols;
+- definition, type definition, implementation, Peek, references, document outline, and workspace symbols;
 - Back/Forward view restoration across groups and project-context-aware navigation;
 - rename and code-action previews, formatting, supported quick fixes/fix-all, and conflict-checked multi-file transactions with staged disk rollback;
 - unit/acceptance coverage and a packaged Linux Phase 8 smoke gate.

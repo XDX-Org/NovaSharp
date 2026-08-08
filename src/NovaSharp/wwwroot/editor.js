@@ -360,14 +360,13 @@ export async function runPhase8Smoke(root) {
         input.setSelectionRange(typePosition, typePosition);
         await dotNet.invokeMethodAsync('EditorCommand', 'peek', typePosition);
         const definitionPeek = await waitFor(() => !!root.querySelector('.navigation-popup code'));
-        const breadcrumbs = !!root.querySelector('.editor-breadcrumbs');
         await dotNet.invokeMethodAsync('EditorCommand', 'outline', typePosition);
         const outline = await waitFor(() => !!root.querySelector('.outline-popup button'));
         await dotNet.invokeMethodAsync('EditorCommand', 'code-actions', typePosition);
         const codeActions = await waitFor(() => !!root.querySelector('.code-actions-popup button'));
-        return { diagnosticSquiggle, diagnosticGlyph, problemsPanel, definitionPeek, breadcrumbs, outline, codeActions };
+        return { diagnosticSquiggle, diagnosticGlyph, problemsPanel, definitionPeek, outline, codeActions };
     } catch (error) {
         return { diagnosticSquiggle: false, diagnosticGlyph: false, problemsPanel: false,
-            definitionPeek: false, breadcrumbs: false, outline: false, codeActions: false, error: String(error) };
+            definitionPeek: false, outline: false, codeActions: false, error: String(error) };
     }
 }

@@ -2,10 +2,6 @@
 @implements IAsyncDisposable
 
 <div class="code-editor @(WordWrap ? "word-wrap" : null)" @ref="_root">
-    <nav class="editor-breadcrumbs" aria-label="Code breadcrumbs">
-        <span>@Document.DisplayName</span>
-        @foreach (var symbol in Breadcrumbs) { <span>› @symbol.Name</span> }
-    </nav>
     @if (_outlineOpen)
     {
         <div class="outline-popup language-popup" role="dialog" aria-label="Document outline">
@@ -156,10 +152,6 @@
     }
     private string PopupStyle => $"left:{_popupX}px;top:{_popupY}px";
     private string OverviewTop(LanguageDiagnostic diagnostic) => $"{Math.Clamp((diagnostic.StartLine + .5) / Math.Max(1, Lines.Count) * 100, 0, 99).ToString(System.Globalization.CultureInfo.InvariantCulture)}%";
-    private IEnumerable<SymbolEntry> Breadcrumbs => _symbols.Where(item =>
-        item.Range.Start <= ViewState.SelectionStart && item.Range.Start + item.Range.Length >= ViewState.SelectionStart)
-        .OrderByDescending(item => item.Range.Length).Take(4);
-
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
