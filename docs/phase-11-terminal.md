@@ -36,4 +36,4 @@ Provide reliable interactive terminal sessions without coupling terminal emulati
 
 ## Next phase
 
-Establish the managed debugger protocol and lifecycle independently of its full UI.
+Add project-aware Razor, Blazor, HTML, and CSS language services over the proven editor and project-system foundations.

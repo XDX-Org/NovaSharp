@@ -31,4 +31,4 @@ Make the C# workbench resilient and configurable enough for sustained daily use.
 
 ## Next phase
 
-Use the stable language-provider boundary to deliver the web languages advertised by NovaSharp.
+Expose a deliberately small, stable subset of proven workbench capabilities to extensions.

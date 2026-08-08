@@ -32,4 +32,4 @@ JavaScript/TypeScript language services and browser debugging are not preview re
 
 ## Next phase
 
-Expose a deliberately small, stable subset of proven workbench capabilities to extensions.
+Establish the managed debugger protocol and lifecycle independently of its full UI.
