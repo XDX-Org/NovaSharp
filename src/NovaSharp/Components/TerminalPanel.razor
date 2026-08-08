@@ -49,7 +49,7 @@
         }
         else
         {
-            <div class="terminal-empty"><button @onclick="CreateAsync">Create terminal</button></div>
+            <div class="terminal-empty" role="status">Starting terminal…</div>
         }
     </section>
 }
@@ -65,6 +65,7 @@
     private string? _profileId;
     private string _search = "";
     private Guid? _initializedSession;
+    private bool _creating;
 
     protected override void OnInitialized()
     {
@@ -75,6 +76,14 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!Open) { _initializedSession = null; return; }
+        if (Service.Sessions.Count == 0)
+        {
+            if (_creating) return;
+            _creating = true;
+            try { await CreateAsync(); }
+            finally { _creating = false; }
+            return;
+        }
         if (Service.ActiveSession is not { } session || _initializedSession == session.Id) return;
         _self ??= DotNetObjectReference.Create(this);
         _initializedSession = session.Id;
