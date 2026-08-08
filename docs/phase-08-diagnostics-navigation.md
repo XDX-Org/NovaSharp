@@ -1,5 +1,7 @@
 # Phase 8: diagnostics and code navigation
 
+Status: Complete
+
 ## Goal
 
 Turn language analysis into an IDE workflow for finding, understanding, and fixing code.
@@ -36,9 +38,9 @@ Turn language analysis into an IDE workflow for finding, understanding, and fixi
 
 Connect editing to [workspace-wide search and replacement](phase-09-search-replace.md).
 
-## Implementation status
+## Completion evidence
 
-Implemented on `phase-8`:
+Completed on `phase-8`:
 
 - versioned compiler/analyzer diagnostics with merged squiggles, gutter glyphs, overview marks, accessible details, and a non-virtualized Problems store;
 - Problems filtering/grouping and exact-range activation;
@@ -47,4 +49,4 @@ Implemented on `phase-8`:
 - rename and code-action previews, formatting, supported quick fixes/fix-all, and conflict-checked multi-file transactions with staged disk rollback;
 - unit/acceptance coverage and a packaged Linux Phase 8 smoke gate.
 
-Local Release tests and warning-as-error build pass. Completion remains pending until the four-platform workflow and packaged native smoke pass.
+All 68 tests, warning-as-error builds, packages, and the Linux Phase 2–8 native smoke gates pass across Windows x64, Linux x64, macOS Intel, and macOS Apple Silicon in [verification run 31268021847](https://github.com/XDX-Org/NovaSharp/actions/runs/31268021847).
