@@ -32,4 +32,4 @@ An online marketplace, arbitrary UI embedding, extension self-update, and full i
 
 ## Next phase
 
-Package and qualify the complete preview product.
+Add a project-aware build configurator before packaging and qualifying the preview product.

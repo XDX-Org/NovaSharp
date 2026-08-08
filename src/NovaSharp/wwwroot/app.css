@@ -49,10 +49,9 @@ select:disabled { opacity: .45; cursor: default; }
     background: #202329;
 }
 .build-controls { display: flex; min-width: 0; align-items: center; gap: 5px; margin-left: auto; }
-.build-controls select, .build-controls input { min-width: 0; height: 28px; }
-.build-controls input { padding: 3px 7px; border: 1px solid #454b57; border-radius: 4px; color: inherit; background: #292e37; }
+.build-controls select { min-width: 0; height: 28px; }
 .build-controls select:first-child { width: 150px; }.build-controls select:nth-child(2) { width: 76px; }
-.build-controls input { width: 100px; }.build-controls button { padding-inline: 8px; }
+.build-controls button { padding-inline: 8px; }
 .main-menu { position: relative; }
 .menu-bar { display: flex; align-items: center; gap: 2px; }
 .menu-dismiss { position: fixed; z-index: 49; inset: 0; }
@@ -354,7 +353,6 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
 .statusbar input { max-width: 110px; border: 0; color: inherit; background: #343943; font: inherit; }
 
 @media (max-width: 1050px) {
-    .build-controls input { display: none; }
     .build-controls select:first-child { width: 120px; }
 }
 

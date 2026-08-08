@@ -13,14 +13,15 @@ NovaSharp is being built in small, runnable phases. Each phase must leave the ap
 7. [C# IntelliSense](phase-07-csharp-intellisense.md) — completion, signature help, hover, and semantic highlighting.
 8. [Diagnostics and code navigation](phase-08-diagnostics-navigation.md) — squiggles, Problems, definitions, references, rename, and code actions.
 9. [Workspace search and replace](phase-09-search-replace.md) — Quick Open, streamed search, and transactional replacement.
-10. [Build, run, and output](phase-10-build-run.md) — MSBuild orchestration, startup profiles, process control, and structured output.
+10. [Build, run, and output](phase-10-build-run.md) — MSBuild orchestration, process control, and structured output.
 11. [Integrated terminal](phase-11-terminal.md) — terminal emulation and cross-platform process sessions.
 12. [Debug adapter foundation](phase-12-debug-adapter.md) — debugger protocol, lifecycle, source identity, and breakpoint binding.
 13. [Debugging experience](phase-13-debugging-experience.md) — stepping, stacks, variables, watches, evaluation, and debug console.
 14. [Durable workbench](phase-14-durable-workbench.md) — settings, layouts, accessibility, recovery, and performance hardening.
 15. [Razor, HTML, and CSS](phase-15-web-languages.md) — project-aware Razor/Blazor editing and web-language services.
 16. [Extension architecture](phase-16-extensions.md) — a versioned, permission-aware extension host and SDK.
-17. [Preview release](phase-17-preview-release.md) — packaging, signing, updates, support policy, and release qualification.
+17. [Build configurator](phase-17-build-configurator.md) — project-aware frameworks, launch profiles, arguments, and environment settings.
+18. [Preview release](phase-18-preview-release.md) — packaging, signing, updates, support policy, and release qualification.
 
 The sequence is dependency order, not a promise that every phase has equal size. See:
 

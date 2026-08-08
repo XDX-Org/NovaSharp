@@ -93,8 +93,6 @@
                     @foreach (var project in StartupProjects) { <option value="@project">@Path.GetFileNameWithoutExtension(project)</option> }
                 </select>
                 <select aria-label="Build configuration" title="Build configuration" @bind="_buildConfiguration"><option>Debug</option><option>Release</option></select>
-                <input class="framework-input" aria-label="Target framework" title="Target framework" placeholder="Framework" @bind="_targetFramework" />
-                <input class="profile-input" aria-label="Launch profile" title="Launch profile" placeholder="Launch profile" @bind="_launchProfile" />
                 <button title="Build startup project (Ctrl+Shift+B)" aria-label="Build startup project" @onclick="() => StartBuildAsync(BuildOperation.Build)">Build</button>
                 <button title="Run without debugging (Ctrl+F5)" aria-label="Run startup project" @onclick="() => StartBuildAsync(BuildOperation.Run)">Run</button>
                 <button title="Stop build or run" aria-label="Stop build or run" disabled="@(_buildRun.ActiveTask is null)" @onclick="StopBuild">■</button>
@@ -239,7 +237,7 @@
     private int? _renamePosition;
     private string _renameName = "", _symbolQuery = "";
     private string _quickAccessQuery = "";
-    private string _buildConfiguration = "Debug", _targetFramework = "", _launchProfile = "";
+    private string _buildConfiguration = "Debug";
     private string? _startupProject;
     private WorkspaceEdit? _pendingWorkspaceEdit;
     private WorkspaceEditPreview? _editPreview;
@@ -477,9 +475,7 @@
         _openMenu = null;
         if (StartupProject is not { } project) { _status = "Open a project or solution first."; return; }
         _outputOpen = true;
-        var request = new BuildRequest(project, operation, _buildConfiguration,
-            string.IsNullOrWhiteSpace(_targetFramework) ? null : _targetFramework,
-            string.IsNullOrWhiteSpace(_launchProfile) ? null : _launchProfile);
+        var request = new BuildRequest(project, operation, _buildConfiguration);
         var completed = await _buildRun.ExecuteAsync(request);
         _status = $"{operation}: {completed.State}";
     }

@@ -6,13 +6,14 @@ Complete the normal edit/build/run loop inside NovaSharp with structured state a
 
 ## Scope
 
-- Build, rebuild, clean, restore, and run a selected startup project, target framework, configuration, and launch profile.
+- Build, rebuild, clean, restore, and run a selected startup project and configuration.
 - Queued/running/succeeded/failed/canceled task state with duration and exit code.
 - Output channels with bounded retention, copy/export, and clickable file locations.
 - Structured MSBuild diagnostics published to the phase 8 diagnostic store.
 - Stop/restart and stdin for owned non-terminal processes.
 
 Terminal emulation and debugging are deferred to phases 11–13.
+Project-aware target-framework and launch-profile configuration is deferred to phase 17.
 
 ## Design constraints
 
@@ -24,7 +25,7 @@ Terminal emulation and debugging are deferred to phases 11–13.
 
 ## Completion criteria
 
-- Fixture projects build and run under supported configurations, frameworks, and launch profiles.
+- Fixture projects build and run under supported configurations using project defaults.
 - Problems and build output agree on file, range, severity, project, and diagnostic code.
 - Cancellation and application shutdown clean up owned descendants on every supported OS.
 - Invalid SDKs, restore failures, malformed profiles, huge output, and interactive input fail recoverably.

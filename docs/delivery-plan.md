@@ -20,7 +20,7 @@ Source control UI, remote development, collaboration, notebooks, AI completion, 
 | 8. Diagnostics and code navigation | Complete | 68 tests, four-platform build/test/package, and Linux Phase 2–8 native gates pass in run 31268021847 |
 | 9. Workspace search and replace | In progress | Implementation and 79 local tests pass; four-platform and packaged Linux smoke evidence pending |
 | 10. Build, run, and output | In progress | Implementation and 87 local tests pass; four-platform and packaged Linux smoke evidence pending |
-| 11–17 | Planned | Completion criteria not yet met |
+| 11–18 | Planned | Completion criteria not yet met |
 
 Status values are `planned`, `in progress`, `blocked`, and `complete`. Update this table only from test or release evidence; documentation or partial UI alone does not complete a phase.
 
@@ -95,8 +95,9 @@ Resolve these before the named phase starts:
 4. Phase 12: debug adapter/engine, protocol transport, redistribution/licensing, attach permissions, and capability fallback.
 5. Phase 15: Razor language-service integration and projection ownership.
 6. Phase 16: in-process versus isolated extension host, trust model, permissions, compatibility, and signing policy.
-7. Phase 17: application identity, versioning, package formats, signing/notarization, update channel, and support lifetime.
+7. Phase 17: build-configuration ownership, launch-profile editing boundaries, validation, and secret storage.
+8. Phase 18: application identity, versioning, package formats, signing/notarization, update channel, and support lifetime.
 
 ## Preview definition
 
-Preview is reached only when phases 1–17 are complete, the supported platform matrix is green, clean install/update/uninstall paths pass, persisted-state migration and crash recovery pass, security and license reviews have no release blockers, and known limitations are published.
+Preview is reached only when phases 1–18 are complete, the supported platform matrix is green, clean install/update/uninstall paths pass, persisted-state migration and crash recovery pass, security and license reviews have no release blockers, and known limitations are published.
