@@ -46,6 +46,26 @@ public sealed class TerminalTests
     }
 
     [TestMethod]
+    public void CursorRedrawDoesNotCommitShellAutosuggestions()
+    {
+        var buffer = new TerminalBuffer();
+
+        buffer.Append(Encoding.UTF8.GetBytes("prompt> \u001b[90msuggestion\u001b[0m\u001b[10Dtyped\u001b[K"));
+
+        Assert.AreEqual("prompt> typed", string.Concat(buffer.Lines[0].Runs.Select(run => run.Text)));
+    }
+
+    [TestMethod]
+    public void CursorMovementAndEraseUpdateTheCurrentLine()
+    {
+        var buffer = new TerminalBuffer();
+
+        buffer.Append(Encoding.UTF8.GetBytes("abc\u001b[2D\u001b[Kx"));
+
+        Assert.AreEqual("ax", string.Concat(buffer.Lines[0].Runs.Select(run => run.Text)));
+    }
+
+    [TestMethod]
     public async Task PtyPreservesUnicodeInputResizeAndExit()
     {
         if (OperatingSystem.IsWindows()) Assert.Inconclusive("Unix shell fixture");

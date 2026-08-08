@@ -16,8 +16,9 @@ Branch: `phase-11` (from `phase-10`)
 ## Verification
 
 - Release build with warnings as errors passes locally.
-- 91 unit, integration, and acceptance tests pass locally.
+- 93 unit, integration, and acceptance tests pass locally.
 - A real Unix PTY fixture verifies resize, Unicode input/output, process exit, and exit-code propagation.
 - Parser tests cover split UTF-8, ANSI styling, scrollback bounds, and rejection of unsafe OSC 8 links.
+- Cursor movement, erase, and in-place redraw tests cover shell autosuggestions and editable command lines.
 
 Four-platform build/test/package and packaged Linux Phase 11 interaction evidence remain required before the delivery-plan status changes to complete.

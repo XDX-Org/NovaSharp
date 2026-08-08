@@ -35,6 +35,7 @@ internal sealed class TerminalBuffer(int maxLines = 5_000, int maxBytes = 4 * 10
     private readonly Decoder _decoder = Encoding.UTF8.GetDecoder();
     private TerminalStyle _style = new();
     private int _bytes;
+    private int _cursorRow, _cursorColumn, _savedColumn;
     private bool _inEscape;
 
     internal IReadOnlyList<TerminalLine> Lines
@@ -68,8 +69,8 @@ internal sealed class TerminalBuffer(int maxLines = 5_000, int maxBytes = 4 * 10
             return;
         }
         if (value == '\x1b') { _inEscape = true; _escape.Clear(); return; }
-        if (value == '\r') return;
-        if (value == '\n') { _lines.Add([]); return; }
+        if (value == '\r') { _cursorColumn = 0; return; }
+        if (value == '\n') { _cursorRow++; _cursorColumn = 0; EnsureRow(); return; }
         if (value == '\b') { Backspace(); return; }
         if (!char.IsControl(value)) AddText(value.ToString());
     }
@@ -78,9 +79,23 @@ internal sealed class TerminalBuffer(int maxLines = 5_000, int maxBytes = 4 * 10
     {
         var sequence = _escape.ToString();
         _escape.Clear(); _inEscape = false;
-        if (sequence[^1] != 'm') return;
-        var values = sequence[1..^1].Split(';').Select(value => int.TryParse(value, out var parsed) ? parsed : 0).ToArray();
+        var command = sequence[^1];
+        var parameters = sequence[1..^1].TrimStart('?', '>', '!');
+        var values = parameters.Split(';').Select(value => int.TryParse(value, out var parsed) ? parsed : 0).ToArray();
         if (values.Length == 0) values = [0];
+        var amount = Math.Max(1, values[0]);
+        switch (command)
+        {
+            case 'C': _cursorColumn += amount; return;
+            case 'D': _cursorColumn = Math.Max(0, _cursorColumn - amount); return;
+            case 'G': _cursorColumn = Math.Max(0, amount - 1); return;
+            case 's': _savedColumn = _cursorColumn; return;
+            case 'u': _cursorColumn = _savedColumn; return;
+            case 'K': EraseLine(values[0]); return;
+            case 'P': DeleteCharacters(amount); return;
+            case 'm': break;
+            default: return;
+        }
         for (var i = 0; i < values.Length; i++)
         {
             var value = values[i];
@@ -116,18 +131,54 @@ internal sealed class TerminalBuffer(int maxLines = 5_000, int maxBytes = 4 * 10
 
     private void AddText(string text)
     {
-        var line = _lines[^1];
-        if (line.Count > 0 && line[^1].Style == _style) line[^1] = line[^1] with { Text = line[^1].Text + text };
-        else line.Add(new(text, _style));
+        EnsureRow();
+        foreach (var character in text)
+        {
+            var cells = Cells(_lines[_cursorRow]);
+            while (cells.Count < _cursorColumn) cells.Add((' ', new()));
+            if (_cursorColumn < cells.Count) cells[_cursorColumn] = (character, _style);
+            else cells.Add((character, _style));
+            _lines[_cursorRow] = Runs(cells);
+            _cursorColumn++;
+        }
     }
 
-    private void Backspace()
+    private void Backspace() => _cursorColumn = Math.Max(0, _cursorColumn - 1);
+
+    private void EraseLine(int mode)
     {
-        var line = _lines[^1];
-        if (line.Count == 0) return;
-        var run = line[^1];
-        if (run.Text.Length <= 1) line.RemoveAt(line.Count - 1);
-        else line[^1] = run with { Text = run.Text[..^1] };
+        EnsureRow();
+        var cells = Cells(_lines[_cursorRow]);
+        if (mode == 2) cells.Clear();
+        else if (mode == 1 && cells.Count > 0) cells.RemoveRange(0, Math.Min(cells.Count, _cursorColumn + 1));
+        else if (_cursorColumn < cells.Count) cells.RemoveRange(_cursorColumn, cells.Count - _cursorColumn);
+        _lines[_cursorRow] = Runs(cells);
+    }
+
+    private void DeleteCharacters(int count)
+    {
+        EnsureRow();
+        var cells = Cells(_lines[_cursorRow]);
+        if (_cursorColumn < cells.Count) cells.RemoveRange(_cursorColumn, Math.Min(count, cells.Count - _cursorColumn));
+        _lines[_cursorRow] = Runs(cells);
+    }
+
+    private void EnsureRow()
+    {
+        while (_lines.Count <= _cursorRow) _lines.Add([]);
+    }
+
+    private static List<(char Character, TerminalStyle Style)> Cells(IEnumerable<TerminalRun> runs) =>
+        runs.SelectMany(run => run.Text.Select(character => (character, run.Style))).ToList();
+
+    private static List<TerminalRun> Runs(IEnumerable<(char Character, TerminalStyle Style)> cells)
+    {
+        var runs = new List<TerminalRun>();
+        foreach (var cell in cells)
+            if (runs.Count > 0 && runs[^1].Style == cell.Style)
+                runs[^1] = runs[^1] with { Text = runs[^1].Text + cell.Character };
+            else runs.Add(new(cell.Character.ToString(), cell.Style));
+        return runs;
     }
 
     private void Trim()
@@ -136,6 +187,7 @@ internal sealed class TerminalBuffer(int maxLines = 5_000, int maxBytes = 4 * 10
         {
             _bytes = Math.Max(0, _bytes - Encoding.UTF8.GetByteCount(string.Concat(_lines[0].Select(run => run.Text))) - 1);
             _lines.RemoveAt(0);
+            _cursorRow = Math.Max(0, _cursorRow - 1);
         }
     }
 
