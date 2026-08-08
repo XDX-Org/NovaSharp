@@ -823,7 +823,7 @@ window.novaSharp.runPhase11Smoke = async function (workbench, bridge) {
                 if (buffer.getLine(row)?.translateToString(true).includes('NOVASHARP_PHASE11_OK')) return true;
             return false;
         });
-        const processExited = await waitFor(() => workbench.querySelector('.terminal-panel footer')?.textContent.includes('Exited (exit 7)'));
+        const processExited = await waitFor(() => workbench.querySelector('.terminal-state')?.textContent.includes('Exited (exit 7)'));
         await bridge.invokeMethodAsync('CompletePhase11SmokeAsync', terminalPresent, inputRoundTrip,
             resizeValid, processExited, null);
     } catch (error) {

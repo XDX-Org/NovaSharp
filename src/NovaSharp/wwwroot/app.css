@@ -94,7 +94,9 @@ button:disabled { opacity: .45; cursor: default; }
 .terminal-panel header button { min-height: 25px; padding: 2px 7px; border: 0; color: #aeb6c4; background: transparent; }
 .terminal-panel header button:hover, .terminal-tabs button.active { color: #fff; background: #303640; }
 .terminal-panel header > button:last-child { font-size: 15px; }
-.terminal-panel select { max-width: 150px; margin-left: auto; }
+.terminal-panel select { max-width: 150px; margin-left: 7px; }
+.terminal-search { display: flex; margin-left: auto; align-items: center; gap: 5px; color: #929cab; font-size: var(--text-small); }
+.terminal-search input { width: 150px; padding: 2px 5px; border: 1px solid #454b57; color: inherit; background: #181a1f; }
 .terminal-tabs { display: flex; min-width: 0; height: 35px; flex: 0 1 auto; align-self: stretch; overflow-x: auto; overflow-y: hidden; background: #1c1f25; scrollbar-width: thin; }
 .terminal-tab { display: flex; min-width: 110px; max-width: 240px; height: 35px; flex: 0 0 auto; align-items: center; gap: 7px; padding: 0 5px 0 11px; border-right: 1px solid #343842; color: #9ca6b5; background: #202329; cursor: default; touch-action: none; user-select: none; -webkit-user-select: none; }
 .terminal-tab.active { color: #e1e6ef; background: #181a1f; box-shadow: inset 0 2px #8397c4; }
@@ -111,10 +113,6 @@ button:disabled { opacity: .45; cursor: default; }
 .terminal-xterm .xterm-scrollable-element > .scrollbar.vertical { width: 8px !important; background: #121419 !important; }
 .terminal-xterm .xterm-scrollable-element > .scrollbar.vertical > .slider { left: 1px !important; width: 6px !important; border-radius: 3px; background: #4c5360 !important; }
 .terminal-xterm .xterm-scrollable-element > .scrollbar.vertical > .slider:hover { background: #687282 !important; }
-.terminal-panel footer { display: flex; min-height: 27px; align-items: center; gap: 14px; padding: 2px 9px; overflow: hidden; color: #929cab; border-top: 1px solid #292d35; font-size: var(--text-small); }
-.terminal-panel footer > span:nth-child(2) { min-width: 0; overflow: hidden; flex: 1; text-overflow: ellipsis; white-space: nowrap; }
-.terminal-panel footer label { display: flex; align-items: center; gap: 5px; }
-.terminal-panel footer input { width: 150px; padding: 2px 5px; border: 1px solid #454b57; color: inherit; background: #181a1f; }
 .terminal-empty { display: grid; min-height: 0; flex: 1; place-items: center; }
 .output-lines { flex: 1; overflow: auto; padding: 5px 10px; font-family: var(--font-mono); font-size: var(--text-small); }
 .output-line { display: block; width: 100%; min-height: 18px; margin: 0; padding: 1px 0; border: 0; color: #c9ced7; background: transparent; text-align: left; white-space: pre-wrap; word-break: break-all; font: inherit; }

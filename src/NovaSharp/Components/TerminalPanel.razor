@@ -21,25 +21,22 @@
                     </div>
                 }
             </div>
+            <label class="terminal-search">Search <input aria-label="Search terminal" value="@_search" @oninput="SearchAsync"
+                                                        disabled="@(Service.ActiveSession is null)" /></label>
             <select aria-label="Terminal profile" @bind="_profileId">
                 @foreach (var profile in Service.Profiles) { <option value="@profile.Id">@profile.Name</option> }
             </select>
             <button title="New terminal" aria-label="New terminal" @onclick="CreateAsync">＋</button>
-            <button title="Rename terminal" aria-label="Rename terminal" disabled="@(Service.ActiveSession is null)" @onclick="RenameAsync">Rename</button>
             <button title="Restart terminal" aria-label="Restart terminal" disabled="@(Service.ActiveSession is null)" @onclick="RestartAsync">↻</button>
         </header>
         @if (Service.ActiveSession is { } active)
         {
+            <span class="visually-hidden terminal-state" aria-live="polite">@active.State@if (active.ExitCode is { } exitCode) { <text> (exit @exitCode)</text> }</span>
             <div @key="active.Id" @ref="_host" class="terminal-host" role="application"
                  aria-label="Terminal @active.Name, @active.State" data-terminal-id="@active.Id">
                 <Xterm @ref="_xterm" Id="@XtermId(active)" Options="_options" Class="terminal-xterm" OnFirstRender="XtermReadyAsync"
                        OnData="SendTerminalInput" OnBinary="SendTerminalBinary" OnResize="XtermResized" />
             </div>
-            <footer>
-                <span>@active.State@if (active.ExitCode is { } exitCode) { <text> (exit @exitCode)</text> }</span>
-                <span>@active.WorkingDirectory</span>
-                <label>Search <input aria-label="Search terminal" value="@_search" @oninput="SearchAsync" /></label>
-            </footer>
         }
         else
         {
@@ -99,12 +96,6 @@
 
     private async Task CreateAsync() { await Service.CreateAsync(_profileId, WorkingDirectory); }
     private async Task RestartAsync() { if (Service.ActiveSession is { } session) await Service.RestartAsync(session.Id); }
-    private async Task RenameAsync()
-    {
-        if (Service.ActiveSession is not { } session) return;
-        var name = await JS.InvokeAsync<string?>("prompt", "Terminal name", session.Name);
-        if (name is not null) Service.Rename(session.Id, name);
-    }
     private Task MiddleCloseAsync(MouseEventArgs args, TerminalSession session) =>
         args.Button == 1 ? CloseSessionAsync(session) : Task.CompletedTask;
     private async Task CloseSessionAsync(TerminalSession session)
