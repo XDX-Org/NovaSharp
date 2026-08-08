@@ -282,6 +282,7 @@ internal sealed partial class BuildRunService : IAsyncDisposable
         if (!match.Success) { diagnostic = null!; return false; }
         var path = match.Groups["path"].Value;
         if (!Path.IsPathRooted(path)) path = Path.GetFullPath(path, Path.GetDirectoryName(request.ProjectPath)!);
+        else if (OperatingSystem.IsMacOS()) path = NormalizeMacPath(path, request.ProjectPath);
         var startLine = Math.Max(0, int.Parse(match.Groups["line"].Value) - 1);
         var startColumn = Math.Max(0, int.Parse(match.Groups["column"].Value) - 1);
         var endLine = match.Groups["endLine"].Success ? int.Parse(match.Groups["endLine"].Value) - 1 : startLine;
@@ -292,6 +293,23 @@ internal sealed partial class BuildRunService : IAsyncDisposable
             match.Groups["message"].Value.Trim(), path, range, startLine, startColumn,
             Path.GetFileNameWithoutExtension(request.ProjectPath), endLine, endColumn);
         return true;
+    }
+
+    private static string NormalizeMacPath(string path, string projectPath)
+    {
+        const string privatePrefix = "/private";
+        var projectUsesPrivatePrefix = projectPath.StartsWith(privatePrefix + '/', StringComparison.Ordinal);
+        if (path.StartsWith(privatePrefix + '/', StringComparison.Ordinal) && !projectUsesPrivatePrefix)
+        {
+            var alias = path[privatePrefix.Length..];
+            if (File.Exists(alias)) return alias;
+        }
+        else if (!path.StartsWith(privatePrefix + '/', StringComparison.Ordinal) && projectUsesPrivatePrefix)
+        {
+            var alias = privatePrefix + path;
+            if (File.Exists(alias)) return alias;
+        }
+        return path;
     }
 
     private static TextRange RangeFromLocation(string path, int startLine, int startColumn, int endLine, int endColumn)
