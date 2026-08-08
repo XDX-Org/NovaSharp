@@ -285,13 +285,13 @@ export async function runPhase7Smoke(root) {
     const { input, dotNet } = root.__novaEditor;
     const waitFor = async (predicate, attempts = 100) => {
         for (let attempt = 0; attempt < attempts; attempt++) {
-            if (predicate()) return true;
+            if (await predicate()) return true;
             await new Promise(resolve => setTimeout(resolve, 50));
         }
         return false;
     };
     try {
-        if (!await waitFor(() => !root.querySelector('.language-state'), 300))
+        if (!await waitFor(() => dotNet.invokeMethodAsync('LanguageReady'), 300))
             throw new Error('C# services did not finish loading');
         input.value = 'using System; class C { void M() { Console. } }';
         const completionPosition = input.value.indexOf('. }') + 1;
@@ -341,13 +341,13 @@ export async function runPhase8Smoke(root) {
     const workbench = root.closest('.workbench');
     const waitFor = async (predicate, attempts = 200) => {
         for (let attempt = 0; attempt < attempts; attempt++) {
-            if (predicate()) return true;
+            if (await predicate()) return true;
             await new Promise(resolve => setTimeout(resolve, 50));
         }
         return false;
     };
     try {
-        if (!await waitFor(() => !root.querySelector('.language-state'), 300))
+        if (!await waitFor(() => dotNet.invokeMethodAsync('LanguageReady'), 300))
             throw new Error('C# services did not finish loading');
         input.value = 'class C{C value; Missing missing;}';
         input.setSelectionRange(0, 0);

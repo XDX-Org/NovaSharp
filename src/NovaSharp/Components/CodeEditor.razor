@@ -235,6 +235,9 @@
     public int CompletionItemCount() => _completion?.Items.Count ?? 0;
 
     [JSInvokable]
+    public bool LanguageReady() => !ProjectLoading && Document.FilePath is not null;
+
+    [JSInvokable]
     public string CompletionDiagnostic() => _completionRequest.LastError?.ToString()
         ?? $"{_completionRequest.Status}; {_completion?.Items.Count ?? 0} items; document version {Document.Version}";
 
