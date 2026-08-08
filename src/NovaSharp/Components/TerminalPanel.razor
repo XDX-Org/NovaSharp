@@ -57,6 +57,7 @@
     private DotNetObjectReference<TerminalPanel>? _self;
     private readonly SemaphoreSlim _renderGate = new(1, 1);
     private readonly object _inputGate = new();
+    private readonly object _outputGate = new();
     private readonly TerminalOptions _options = new()
     {
         CursorBlink = true, CursorStyle = CursorStyle.Block, FontSize = 14,
@@ -65,6 +66,7 @@
         Theme = new() { Background = "#121419", Foreground = "#d8dee9", Cursor = "#eceff4", SelectionBackground = "#4b6eaf88" }
     };
     private Task _inputQueue = Task.CompletedTask;
+    private Task _outputQueue = Task.CompletedTask;
     private string? _profileId;
     private Guid? _initializedSession;
     private Guid? _renderedSession;
@@ -145,8 +147,15 @@
                 CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default).Unwrap();
     }
     private void XtermResized(ResizeEventArgs args) => Service.ActiveSession?.Resize(args.Columns, args.Rows);
-    private void OutputReceived(TerminalSession session, TerminalOutputChunk chunk) =>
-        _ = InvokeAsync(() => WriteChunkSerializedAsync(session, chunk));
+    private void OutputReceived(TerminalSession session, TerminalOutputChunk chunk)
+    {
+        lock (_outputGate)
+            _outputQueue = _outputQueue.ContinueWith(async _ =>
+            {
+                try { await InvokeAsync(() => WriteChunkSerializedAsync(session, chunk)); }
+                catch (Exception exception) when (exception is InvalidOperationException or JSDisconnectedException) { }
+            }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default).Unwrap();
+    }
     private async Task WriteChunkSerializedAsync(TerminalSession session, TerminalOutputChunk chunk)
     {
         await _renderGate.WaitAsync();
