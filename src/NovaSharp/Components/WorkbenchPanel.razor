@@ -45,6 +45,7 @@
                 {
                 <div class="menu-popup" role="menu" @onclick:stopPropagation>
                     <button role="menuitem" @onclick="ToggleExplorerAsync">Explorer</button>
+                    <button role="menuitem" @onclick="ToggleTerminalAsync">Terminal <kbd>Ctrl+`</kbd></button>
                     <button role="menuitem" @onclick="ToggleWrapAsync">Word wrap <span>@(_wordWrap ? "On" : "Off")</span></button>
                     <button role="menuitem" @onclick="OpenWorkspaceSymbols">Workspace symbols <kbd>Ctrl+T</kbd></button>
                 </div>
@@ -130,6 +131,8 @@
             <OutputPanel Open="_outputOpen" Task="_buildRun.Tasks.LastOrDefault()" Entries="_buildRun.Output.Entries"
                          Activated="OpenOutputAsync" Input="SendProcessInputAsync" Copy="CopyOutputAsync"
                          Export="ExportOutputAsync" Clear="_buildRun.Output.Clear" Close="ToggleOutput" />
+            <TerminalPanel Open="_terminalOpen" Service="_terminal" WorkingDirectory="WorkspaceRoot"
+                           Close="ToggleTerminal" ConfirmClose="ConfirmTerminalCloseAsync" />
         </div>
         <SearchPanel Open="_searchOpen" RootPath="WorkspaceRoot" OpenDocuments="OpenDocuments"
                      Activated="OpenSearchMatchAsync" PreviewRequested="PreviewSearchReplace"
@@ -150,6 +153,8 @@
                     title="Search" aria-pressed="@_searchOpen"><span aria-hidden="true">⌕</span></button>
             <button class="@(_outputOpen ? "active" : null)" @onclick="ToggleOutput" aria-label="Output"
                     title="Output" aria-pressed="@_outputOpen"><span aria-hidden="true">›_</span></button>
+            <button class="@(_terminalOpen ? "active" : null)" @onclick="ToggleTerminalAsync" aria-label="Terminal"
+                    title="Terminal" aria-pressed="@_terminalOpen"><span aria-hidden="true">⌘</span></button>
         </nav>
     </div>
     <footer class="statusbar">
@@ -222,6 +227,7 @@
     private readonly CommandRegistry _commands = new();
     private readonly QuickAccessService _quickAccess;
     private readonly BuildRunService _buildRun;
+    private readonly TerminalService _terminal = new();
     private readonly List<NavigationState> _navigationHistory = [];
     private readonly EditorDocumentState _emptyDocument = new();
     private EditorLayoutPersistence _persistence = null!;
@@ -246,7 +252,7 @@
     private int _navigationIndex = -1;
     private bool _restoringNavigation, _symbolSearchOpen, _searchOpen;
     private bool _quickAccessOpen, _quickAccessCommands, _quickAccessBusy;
-    private bool _projectReloading, _outputOpen;
+    private bool _projectReloading, _outputOpen, _terminalOpen;
     private bool _showFind, _wordWrap, _externalChange, _explorerOpen = true, _problemsOpen, _suggestions = true;
     private DocumentTab? ActiveTab => _workspace.FocusedGroup.ActiveTab;
     private EditorDocumentState _document => ActiveTab?.Document ?? _emptyDocument;
@@ -482,6 +488,18 @@
         if (_buildRun.RestartAsync() is { } restart) await restart;
     }
     private void ToggleOutput() { _openMenu = null; _outputOpen = !_outputOpen; }
+    private void ToggleTerminal() { _openMenu = null; _terminalOpen = !_terminalOpen; }
+    private async Task ToggleTerminalAsync()
+    {
+        ToggleTerminal();
+        if (_terminalOpen && _terminal.Sessions.Count == 0) await _terminal.CreateAsync(null, WorkspaceRoot);
+    }
+    private async Task ConfirmTerminalCloseAsync(TerminalSession session)
+    {
+        var result = await Program.App.MainWindow.ShowMessageDialogAsync("Close terminal",
+            $"Terminate the live process in {session.Name}?", DialogButtons.YesNo, DialogIcon.Warning);
+        if (result == DialogResult.Yes) await _terminal.CloseAsync(session.Id, force: true);
+    }
     private void SelectStartupProject(ChangeEventArgs args) => _startupProject = args.Value?.ToString();
     private async Task SendProcessInputAsync(string text) { if (!await _buildRun.SendInputAsync(text)) _status = "No running process accepts input."; }
     private async Task CopyOutputAsync() => await JS.InvokeVoidAsync("navigator.clipboard.writeText",
@@ -727,7 +745,7 @@
             case "arrowdown" when args.AltKey: await FocusDirectionAsync("down"); break;
             case "=" when args.ShiftKey: Equalize(); break;
             case "]" when args.AltKey: await TransferToNextAsync(args.ShiftKey); break;
-            case "`": FocusNext(); break;
+            case "`": await ToggleTerminalAsync(); break;
         }
     }
 
@@ -824,6 +842,7 @@
         _self?.Dispose();
         _projectSystem.DisposeAsync().AsTask().GetAwaiter().GetResult();
         _buildRun.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        _terminal.DisposeAsync().AsTask().GetAwaiter().GetResult();
         if (Program.ConfirmWorkbenchClose == ConfirmClose) Program.ConfirmWorkbenchClose = null;
     }
 
@@ -831,15 +850,30 @@
     {
         var dirty = _workspace.Layout.Groups.SelectMany(group => group.Tabs).Where(tab => tab.Document.IsDirty)
             .DistinctBy(tab => tab.Document).ToArray();
-        if (dirty.Length == 0) return true;
+        if (dirty.Length == 0 && !_terminal.HasRunningSessions) return true;
+        if (dirty.Length == 0)
+        {
+            var terminalResult = Program.App.MainWindow.ShowMessageDialogAsync("Running terminals",
+                "Terminate all live terminal processes and close NovaSharp?", DialogButtons.YesNo, DialogIcon.Warning)
+                .GetAwaiter().GetResult();
+            return terminalResult == DialogResult.Yes;
+        }
         var names = string.Join(Environment.NewLine, dirty.Select(tab => $"• {tab.Document.DisplayName}"));
         var result = Program.App.MainWindow.ShowMessageDialogAsync("Unsaved changes",
             $"Save these files before closing?{Environment.NewLine}{Environment.NewLine}{names}",
             DialogButtons.YesNoCancel, DialogIcon.Warning).GetAwaiter().GetResult();
-        if (result == DialogResult.No) return true;
+        if (result == DialogResult.No) return ConfirmTerminalShutdown();
         if (result != DialogResult.Yes) return false;
-        try { foreach (var tab in dirty) tab.Document.SaveAsync().GetAwaiter().GetResult(); return true; }
+        try { foreach (var tab in dirty) tab.Document.SaveAsync().GetAwaiter().GetResult(); return ConfirmTerminalShutdown(); }
         catch { return false; }
+    }
+
+    private bool ConfirmTerminalShutdown()
+    {
+        if (!_terminal.HasRunningSessions) return true;
+        return Program.App.MainWindow.ShowMessageDialogAsync("Running terminals",
+            "Terminate all live terminal processes and close NovaSharp?", DialogButtons.YesNo, DialogIcon.Warning)
+            .GetAwaiter().GetResult() == DialogResult.Yes;
     }
 
     private sealed record NavigationState(Guid GroupId, string DocumentPath, int SelectionStart,

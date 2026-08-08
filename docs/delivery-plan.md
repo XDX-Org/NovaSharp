@@ -20,7 +20,8 @@ Source control UI, remote development, collaboration, notebooks, AI completion, 
 | 8. Diagnostics and code navigation | Complete | 68 tests, four-platform build/test/package, and Linux Phase 2–8 native gates pass in run 31268021847 |
 | 9. Workspace search and replace | In progress | Implementation and 79 local tests pass; four-platform and packaged Linux smoke evidence pending |
 | 10. Build, run, and output | In progress | Implementation and 87 local tests pass; four-platform and packaged Linux smoke evidence pending |
-| 11–18 | Planned | Completion criteria not yet met |
+| 11. Integrated terminal | In progress | Implementation and 90 local tests pass; four-platform and packaged Linux interaction evidence pending |
+| 12–18 | Planned | Completion criteria not yet met |
 
 Status values are `planned`, `in progress`, `blocked`, and `complete`. Update this table only from test or release evidence; documentation or partial UI alone does not complete a phase.
 

@@ -18,6 +18,14 @@ Provide reliable interactive terminal sessions without coupling terminal emulati
 - Keep terminal escape handling isolated from application markup and commands.
 - Route lifecycle through the phase 10 process service and preserve exact byte/encoding semantics.
 
+## Implementation
+
+- `Porta.Pty` 1.0.7 owns the cross-platform transport: ConPTY plus a Windows Job Object on Windows 10 1809+, and `forkpty` on Linux/macOS.
+- NovaSharp owns session lifecycle and a small, headless ANSI/VT presentation buffer. Escape sequences never enter Razor markup; rendered text is encoded by Blazor, and OSC 8 links accept only absolute HTTP(S) targets.
+- Each terminal has an independent profile, name, working directory, PTY, and bounded buffer. Sessions survive panel hide/show and are intentionally not persisted.
+- Scrollback defaults to 5,000 lines and 4 MiB. Input and resize handling target one animation frame (16.7 ms) before PTY/system scheduling.
+- Phase 10 and terminal processes share the same ownership rule—NovaSharp starts, stops, and disposes only processes it owns—while PTY byte streams remain separate from the line-oriented build service.
+
 ## Completion criteria
 
 - Interactive shells work on every supported OS with resize, Unicode, colors, links, signals, and process exit.

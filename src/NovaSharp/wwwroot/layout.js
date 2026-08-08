@@ -1,5 +1,51 @@
 window.novaSharp = window.novaSharp || {};
 
+window.novaSharp.initTerminal = function (host, dotNet) {
+    if (!host || host.dataset.terminalReady) return;
+    host.dataset.terminalReady = "true";
+    const input = host.querySelector(".terminal-input");
+    const screen = host.querySelector(".terminal-screen");
+    const send = value => dotNet?.invokeMethodAsync("SendTerminalInput", value);
+    input.addEventListener("input", () => {
+        if (input.value) send(input.value);
+        input.value = "";
+    });
+    input.addEventListener("paste", event => {
+        event.preventDefault();
+        dotNet?.invokeMethodAsync("SendTerminalPaste", event.clipboardData?.getData("text") || "");
+    });
+    input.addEventListener("keydown", event => {
+        const sequences = {
+            Enter: "\r", Backspace: "\x7f", Tab: "\t", Escape: "\x1b",
+            ArrowUp: "\x1b[A", ArrowDown: "\x1b[B", ArrowRight: "\x1b[C", ArrowLeft: "\x1b[D",
+            Home: "\x1b[H", End: "\x1b[F", Delete: "\x1b[3~", PageUp: "\x1b[5~", PageDown: "\x1b[6~"
+        };
+        let value = sequences[event.key];
+        if (event.ctrlKey && event.key.length === 1) value = String.fromCharCode(event.key.toUpperCase().charCodeAt(0) - 64);
+        if (value === undefined) return;
+        event.preventDefault();
+        send(value);
+    });
+    host.addEventListener("pointerdown", event => {
+        if (!event.target.closest("a") && !window.getSelection()?.toString()) input.focus();
+    });
+    const resize = () => {
+        const style = getComputedStyle(screen);
+        const probe = document.createElement("span");
+        probe.textContent = "MMMMMMMMMM";
+        probe.style.cssText = `position:absolute;visibility:hidden;font:${style.font}`;
+        host.appendChild(probe);
+        const cellWidth = Math.max(1, probe.getBoundingClientRect().width / 10);
+        const cellHeight = Math.max(1, parseFloat(style.lineHeight) || 20);
+        probe.remove();
+        dotNet?.invokeMethodAsync("ResizeTerminal", Math.floor(host.clientWidth / cellWidth), Math.floor(host.clientHeight / cellHeight));
+    };
+    new ResizeObserver(resize).observe(host);
+    new MutationObserver(() => { screen.scrollTop = screen.scrollHeight; }).observe(screen, { childList: true, subtree: true });
+    resize();
+    input.focus();
+};
+
 window.novaSharp.positionContextMenu = function (menu, x, y) {
     if (!menu) return;
     const margin = 8;

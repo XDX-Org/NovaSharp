@@ -1,0 +1,123 @@
+@using System.Text
+@using PhotinoEx.Core.Models
+@implements IDisposable
+@inject IJSRuntime JS
+
+@if (Open)
+{
+    <section class="terminal-panel bottom-panel" aria-label="Integrated terminal">
+        <div class="bottom-panel-resizer" role="separator" aria-orientation="horizontal" tabindex="0"></div>
+        <header>
+            <div class="terminal-tabs" role="tablist" aria-label="Terminal sessions">
+                @foreach (var session in Service.Sessions)
+                {
+                    <button role="tab" aria-selected="@(session == Service.ActiveSession)" class="@(session == Service.ActiveSession ? "active" : null)"
+                            @onclick="() => Service.Activate(session.Id)">@session.Name</button>
+                }
+            </div>
+            <select aria-label="Terminal profile" @bind="_profileId">
+                @foreach (var profile in Service.Profiles) { <option value="@profile.Id">@profile.Name</option> }
+            </select>
+            <button title="New terminal" aria-label="New terminal" @onclick="CreateAsync">＋</button>
+            <button title="Rename terminal" aria-label="Rename terminal" disabled="@(Service.ActiveSession is null)" @onclick="RenameAsync">Rename</button>
+            <button title="Restart terminal" aria-label="Restart terminal" disabled="@(Service.ActiveSession is null)" @onclick="RestartAsync">↻</button>
+            <button title="Close terminal" aria-label="Close terminal" disabled="@(Service.ActiveSession is null)" @onclick="CloseSessionAsync">×</button>
+            <button title="Hide terminal" aria-label="Hide terminal" @onclick="Close">⌄</button>
+        </header>
+        @if (Service.ActiveSession is { } active)
+        {
+            <div @key="active.Id" @ref="_host" class="terminal-host" tabindex="0" role="textbox" aria-multiline="true"
+                 aria-label="Terminal @active.Name, @active.State" data-terminal-id="@active.Id">
+                <div class="terminal-screen">
+                    @foreach (var line in Filter(active.Buffer.Lines))
+                    {
+                        <div class="terminal-line">@foreach (var run in line.Runs)
+                            {
+                                @if (run.Style.Link is { } link)
+                                { <a href="@link" target="_blank" rel="noopener noreferrer" style="@Style(run.Style)">@run.Text</a> }
+                                else { <span style="@Style(run.Style)">@run.Text</span> }
+                            }</div>
+                    }
+                </div>
+                <textarea class="terminal-input" aria-label="Terminal input" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
+            </div>
+            <footer>
+                <span>@active.State@if (active.ExitCode is { } exitCode) { <text> (exit @exitCode)</text> }</span>
+                <span>@active.WorkingDirectory</span>
+                <label>Search <input aria-label="Search terminal" @bind="_search" @bind:event="oninput" /></label>
+            </footer>
+        }
+        else
+        {
+            <div class="terminal-empty"><button @onclick="CreateAsync">Create terminal</button></div>
+        }
+    </section>
+}
+
+@code {
+    [Parameter, EditorRequired] public TerminalService Service { get; set; } = null!;
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public string? WorkingDirectory { get; set; }
+    [Parameter] public EventCallback Close { get; set; }
+    [Parameter] public EventCallback<TerminalSession> ConfirmClose { get; set; }
+    private ElementReference _host;
+    private DotNetObjectReference<TerminalPanel>? _self;
+    private string? _profileId;
+    private string _search = "";
+    private Guid? _initializedSession;
+
+    protected override void OnInitialized()
+    {
+        _profileId = Service.Profiles.FirstOrDefault()?.Id;
+        Service.Changed += ServiceChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!Open) { _initializedSession = null; return; }
+        if (Service.ActiveSession is not { } session || _initializedSession == session.Id) return;
+        _self ??= DotNetObjectReference.Create(this);
+        _initializedSession = session.Id;
+        await JS.InvokeVoidAsync("novaSharp.initTerminal", _host, _self);
+    }
+
+    private async Task CreateAsync() { await Service.CreateAsync(_profileId, WorkingDirectory); }
+    private async Task RestartAsync() { if (Service.ActiveSession is { } session) await Service.RestartAsync(session.Id); }
+    private async Task RenameAsync()
+    {
+        if (Service.ActiveSession is not { } session) return;
+        var name = await JS.InvokeAsync<string?>("prompt", "Terminal name", session.Name);
+        if (name is not null) Service.Rename(session.Id, name);
+    }
+    private async Task CloseSessionAsync()
+    {
+        if (Service.ActiveSession is not { } session) return;
+        if (session.State == TerminalSessionState.Running) await ConfirmClose.InvokeAsync(session);
+        else await Service.CloseAsync(session.Id, force: true);
+    }
+
+    private IReadOnlyList<TerminalLine> Filter(IReadOnlyList<TerminalLine> lines) => string.IsNullOrEmpty(_search) ? lines
+        : lines.Where(line => string.Concat(line.Runs.Select(run => run.Text)).Contains(_search, StringComparison.OrdinalIgnoreCase)).ToArray();
+    private static string Style(TerminalStyle style) => $"color:{style.Foreground ?? "inherit"};background:{style.Background ?? "transparent"};font-weight:{(style.Bold ? "bold" : "normal")};text-decoration:{(style.Underline ? "underline" : "none")}";
+    private void ServiceChanged() => _ = InvokeAsync(() => { StateHasChanged(); });
+
+    [JSInvokable] public Task SendTerminalInput(string value) => Service.ActiveSession?.SendAsync(Encoding.UTF8.GetBytes(value)) ?? Task.CompletedTask;
+    [JSInvokable] public async Task SendTerminalPaste(string value)
+    {
+        if (string.IsNullOrEmpty(value) || Service.ActiveSession is not { } session) return;
+        if (value.Contains('\n') || value.Contains('\r') || value.Length > 1_000)
+        {
+            var result = await Program.App.MainWindow.ShowMessageDialogAsync("Paste into terminal",
+                $"Paste {value.Length} characters into {session.Name}?", DialogButtons.YesNo, DialogIcon.Warning);
+            if (result != DialogResult.Yes) return;
+        }
+        await session.SendAsync(Encoding.UTF8.GetBytes(value));
+    }
+    [JSInvokable] public void ResizeTerminal(int columns, int rows) => Service.ActiveSession?.Resize(columns, rows);
+
+    public void Dispose()
+    {
+        Service.Changed -= ServiceChanged;
+        _self?.Dispose();
+    }
+}

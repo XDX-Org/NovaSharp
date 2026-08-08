@@ -2,7 +2,7 @@ name: Workbench verification
 
 on:
   push:
-    branches: [main, phase-3, phase-4, phase-5, phase-6, phase-7, phase-8, phase-9]
+    branches: [main, phase-3, phase-4, phase-5, phase-6, phase-7, phase-8, phase-9, phase-10, phase-11]
   pull_request:
   workflow_dispatch:
 
