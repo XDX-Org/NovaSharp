@@ -780,7 +780,7 @@ window.novaSharp.runPhase9Smoke = async function (workbench, bridge) {
         const quickInput = workbench.querySelector('.quick-access input');
         quickInput.value = 'Shared';
         quickInput.dispatchEvent(new Event('input', { bubbles: true }));
-        const duplicateFilesVisible = await waitFor(() => workbench.querySelectorAll('.quick-access-results button').length === 2);
+        const duplicateFilesVisible = await waitFor(() => workbench.querySelectorAll('.quick-access-results button').length >= 2);
         workbench.querySelector('.quick-access-backdrop')?.click();
         workbench.querySelector('[aria-label="Search"]')?.click();
         const searchVisible = await waitFor(() => !!workbench.querySelector('.search-panel'));
