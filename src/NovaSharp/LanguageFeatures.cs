@@ -22,7 +22,7 @@ public sealed record HoverResult(TextRange Range, IReadOnlyList<string> Sections
 public sealed record SemanticSpan(int Start, int Length, string Classification);
 public sealed record FormatResult(string Text, int SelectionStart, int SelectionLength);
 public enum LanguageDiagnosticSeverity { Hidden, Information, Warning, Error }
-public enum LanguageDiagnosticSource { Compiler, Analyzer }
+public enum LanguageDiagnosticSource { Compiler, Analyzer, Build }
 public sealed record LanguageDiagnostic(string Id, LanguageDiagnosticSource Source, LanguageDiagnosticSeverity Severity,
     string Message, string DocumentPath, TextRange Range, int StartLine, int StartColumn, string? ProjectName,
     int EndLine = -1, int EndColumn = -1);

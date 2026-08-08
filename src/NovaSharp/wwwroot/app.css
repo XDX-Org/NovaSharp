@@ -61,6 +61,16 @@ button:disabled { opacity: .45; cursor: default; }
 .problems-panel header { display: flex; align-items: center; gap: 9px; min-height: 30px; padding: 0 8px 0 12px; border-bottom: 1px solid #343842; }
 .problems-panel header span { color: #929cab; }
 .problems-panel header button { margin-left: auto; border: 0; background: transparent; }
+.output-panel { display: flex; min-height: 120px; max-height: 42%; flex: 0 0 210px; flex-direction: column; border-top: 1px solid #454b57; background: #171a1f; }
+.output-panel header { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 0 8px 0 12px; border-bottom: 1px solid #343842; }
+.output-panel header button:first-of-type { margin-left: auto; }
+.output-lines { flex: 1; overflow: auto; padding: 5px 10px; font-family: var(--font-mono); font-size: var(--text-small); }
+.output-line { display: block; width: 100%; min-height: 18px; margin: 0; padding: 1px 0; border: 0; color: #c9ced7; background: transparent; text-align: left; white-space: pre-wrap; word-break: break-all; font: inherit; }
+button.output-line { cursor: pointer; text-decoration: underline; text-decoration-color: #667080; }
+.output-line.standarderror { color: #ff9c9c; }
+.output-line.system { color: #8eb8e8; }
+.task-state.failed { color: #ff8d8d; }.task-state.succeeded { color: #8bd49c; }.task-state.canceled { color: #e2c08d; }
+.process-input { display: flex; padding: 4px 8px; border-top: 1px solid #343842; }.process-input input { flex: 1; }
 .problems-list { overflow: auto; }
 .problem-filters { display: flex; gap: 6px; padding: 5px 8px; border-bottom: 1px solid #343842; }
 .problem-filters select { min-width: 120px; padding: 3px; color: inherit; border: 1px solid #454b57; background: #252932; }
@@ -319,6 +329,7 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
 .msbuild-log { padding: 5px 8px; color: #929cab; font-size: var(--text-small); }
 .msbuild-log pre { max-height: 100px; margin: 4px 0; overflow: auto; white-space: pre-wrap; font: var(--text-small) var(--font-code); }
 .statusbar select { max-width: 260px; border: 0; color: inherit; background: #343943; font: inherit; }
+.statusbar input { max-width: 110px; border: 0; color: inherit; background: #343943; font: inherit; }
 
 .empty-state, .error { padding: 24px; color: #8f99a8; }
 .error { color: #ff8a8a; }

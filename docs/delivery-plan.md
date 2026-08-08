@@ -19,7 +19,8 @@ Source control UI, remote development, collaboration, notebooks, AI completion, 
 | 7. C# IntelliSense | Complete | Phase 7 handoff records 65 tests and four-platform verification run 31266586068 |
 | 8. Diagnostics and code navigation | Complete | 68 tests, four-platform build/test/package, and Linux Phase 2–8 native gates pass in run 31268021847 |
 | 9. Workspace search and replace | In progress | Implementation and 79 local tests pass; four-platform and packaged Linux smoke evidence pending |
-| 10–17 | Planned | Completion criteria not yet met |
+| 10. Build, run, and output | In progress | Implementation and 86 local tests pass; four-platform and packaged Linux smoke evidence pending |
+| 11–17 | Planned | Completion criteria not yet met |
 
 Status values are `planned`, `in progress`, `blocked`, and `complete`. Update this table only from test or release evidence; documentation or partial UI alone does not complete a phase.
 

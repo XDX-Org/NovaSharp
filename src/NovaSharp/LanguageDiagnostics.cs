@@ -47,4 +47,11 @@ internal sealed class LanguageDiagnosticStore
         lock (_gate) _entries.Clear();
         Changed?.Invoke();
     }
+
+    internal void Clear(LanguageDiagnosticSource source)
+    {
+        lock (_gate)
+            foreach (var key in _entries.Keys.Where(key => key.Source == source).ToArray()) _entries.Remove(key);
+        Changed?.Invoke();
+    }
 }

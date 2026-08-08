@@ -51,6 +51,21 @@
                 }
             </div>
             <div class="main-menu">
+                <button class="menu-trigger" @onclick='() => ToggleMenu("run")' aria-expanded="@(_openMenu == "run")">Run</button>
+                @if (_openMenu == "run")
+                {
+                <div class="menu-popup" role="menu" @onclick:stopPropagation>
+                    <button role="menuitem" @onclick="() => StartBuildAsync(BuildOperation.Build)" disabled="@(StartupProject is null)">Build <kbd>Ctrl+Shift+B</kbd></button>
+                    <button role="menuitem" @onclick="() => StartBuildAsync(BuildOperation.Rebuild)" disabled="@(StartupProject is null)">Rebuild</button>
+                    <button role="menuitem" @onclick="() => StartBuildAsync(BuildOperation.Clean)" disabled="@(StartupProject is null)">Clean</button>
+                    <button role="menuitem" @onclick="() => StartBuildAsync(BuildOperation.Restore)" disabled="@(StartupProject is null)">Restore</button>
+                    <button role="menuitem" @onclick="() => StartBuildAsync(BuildOperation.Run)" disabled="@(StartupProject is null)">Run <kbd>Ctrl+F5</kbd></button>
+                    <button role="menuitem" @onclick="RestartRunAsync" disabled="@(_buildRun.ActiveTask?.Request.Operation != BuildOperation.Run)">Restart</button>
+                    <button role="menuitem" @onclick="StopBuild" disabled="@(_buildRun.ActiveTask is null)">Stop</button>
+                </div>
+                }
+            </div>
+            <div class="main-menu">
                 <button class="menu-trigger" @onclick='() => ToggleMenu("groups")' aria-expanded="@(_openMenu == "groups")">Groups</button>
                 @if (_openMenu == "groups")
                 {
@@ -100,6 +115,9 @@
                                    CloseRequested="CloseRequestedAsync" LanguageCommand="HandleLanguageCommandAsync" />
             <ProblemsPanel Open="_problemsOpen" Diagnostics="_languageProvider.Diagnostics.Entries"
                            Activated="OpenProblemAsync" Close="ToggleProblems" />
+            <OutputPanel Open="_outputOpen" Task="_buildRun.Tasks.LastOrDefault()" Entries="_buildRun.Output.Entries"
+                         Activated="OpenOutputAsync" Input="SendProcessInputAsync" Copy="CopyOutputAsync"
+                         Export="ExportOutputAsync" Clear="_buildRun.Output.Clear" Close="ToggleOutput" />
         </div>
         <SearchPanel Open="_searchOpen" RootPath="WorkspaceRoot" OpenDocuments="OpenDocuments"
                      Activated="OpenSearchMatchAsync" PreviewRequested="PreviewSearchReplace"
@@ -118,10 +136,21 @@
             </button>
             <button class="@(_searchOpen ? "active" : null)" @onclick="ToggleSearch" aria-label="Search"
                     title="Search" aria-pressed="@_searchOpen"><span aria-hidden="true">⌕</span></button>
+            <button class="@(_outputOpen ? "active" : null)" @onclick="ToggleOutput" aria-label="Output"
+                    title="Output" aria-pressed="@_outputOpen"><span aria-hidden="true">›_</span></button>
         </nav>
     </div>
     <footer class="statusbar">
         <span class="status-message" aria-live="polite">@Status</span>
+        @if (StartupProjects.Count > 0)
+        {
+            <select aria-label="Startup project" value="@StartupProject" @onchange="SelectStartupProject">
+                @foreach (var project in StartupProjects) { <option value="@project">@Path.GetFileNameWithoutExtension(project)</option> }
+            </select>
+            <select aria-label="Build configuration" @bind="_buildConfiguration"><option>Debug</option><option>Release</option></select>
+            <input class="framework-input" aria-label="Target framework" placeholder="framework" @bind="_targetFramework" />
+            <input class="profile-input" aria-label="Launch profile" placeholder="launch profile" @bind="_launchProfile" />
+        }
         @if (ActiveContexts.Count > 1)
         {
             <select aria-label="Active project context" value="@ActiveContextId" @onchange="SelectContext">
@@ -191,6 +220,7 @@
     private readonly WorkspaceEditTransaction _workspaceEdits = new();
     private readonly CommandRegistry _commands = new();
     private readonly QuickAccessService _quickAccess;
+    private readonly BuildRunService _buildRun;
     private readonly List<NavigationState> _navigationHistory = [];
     private readonly EditorDocumentState _emptyDocument = new();
     private EditorLayoutPersistence _persistence = null!;
@@ -204,6 +234,8 @@
     private int? _renamePosition;
     private string _renameName = "", _symbolQuery = "";
     private string _quickAccessQuery = "";
+    private string _buildConfiguration = "Debug", _targetFramework = "", _launchProfile = "";
+    private string? _startupProject;
     private WorkspaceEdit? _pendingWorkspaceEdit;
     private WorkspaceEditPreview? _editPreview;
     private IReadOnlyList<SymbolEntry> _workspaceSymbols = [];
@@ -213,7 +245,7 @@
     private int _navigationIndex = -1;
     private bool _restoringNavigation, _symbolSearchOpen, _searchOpen;
     private bool _quickAccessOpen, _quickAccessCommands, _quickAccessBusy;
-    private bool _projectReloading;
+    private bool _projectReloading, _outputOpen;
     private bool _showFind, _wordWrap, _externalChange, _leftMouseDown, _explorerOpen = true, _problemsOpen, _suggestions = true;
     private DocumentTab? ActiveTab => _workspace.FocusedGroup.ActiveTab;
     private EditorDocumentState _document => ActiveTab?.Document ?? _emptyDocument;
@@ -227,10 +259,15 @@
     private string? WorkspaceRoot => _explorer?.RootPath ?? (_projectSystem.State.Path is { } path ? Path.GetDirectoryName(path) : null);
     private IReadOnlyList<EditorDocumentState> OpenDocuments => _workspace.Layout.Groups.SelectMany(group => group.Tabs)
         .Select(tab => tab.Document).Distinct().ToArray();
+    private IReadOnlyList<string> StartupProjects => _projectSystem.CurrentSolution?.Projects.Select(project => project.FilePath)
+        .Where(path => path is not null).Cast<string>().Distinct().Order().ToArray() ?? [];
+    private string? StartupProject => _startupProject is not null && StartupProjects.Contains(_startupProject)
+        ? _startupProject : StartupProjects.FirstOrDefault();
 
     public WorkbenchPanel()
     {
         _languageProvider = new(_projectSystem);
+        _buildRun = new(_languageProvider.Diagnostics);
         _quickAccess = new(_commands);
         RegisterCommands();
     }
@@ -244,6 +281,8 @@
         _workspace.Changed += WorkspaceChanged;
         _projectSystem.Changed += ProjectSystemChanged;
         _languageProvider.Diagnostics.Changed += DiagnosticsChanged;
+        _buildRun.Changed += BuildChanged;
+        _buildRun.Output.Changed += BuildChanged;
         Program.ConfirmWorkbenchClose = ConfirmClose;
         if (Program.Phase5Workspace is not null)
         {
@@ -419,7 +458,49 @@
             _ => SaveAsync()));
         _commands.Register(new("workbench.action.splitEditor", "Split Editor Right", "Ctrl+\\", () => true,
             _ => { Split(SplitDirection.Right); return Task.CompletedTask; }));
+        _commands.Register(new("workbench.action.build", "Build Startup Project", "Ctrl+Shift+B", () => StartupProject is not null,
+            _ => StartBuildAsync(BuildOperation.Build)));
+        _commands.Register(new("workbench.action.run", "Run Without Debugging", "Ctrl+F5", () => StartupProject is not null,
+            _ => StartBuildAsync(BuildOperation.Run)));
+        _commands.Register(new("workbench.action.stop", "Stop Build or Run", null, () => _buildRun.ActiveTask is not null,
+            _ => { StopBuild(); return Task.CompletedTask; }));
     }
+
+    private async Task StartBuildAsync(BuildOperation operation)
+    {
+        _openMenu = null;
+        if (StartupProject is not { } project) { _status = "Open a project or solution first."; return; }
+        _outputOpen = true;
+        var request = new BuildRequest(project, operation, _buildConfiguration,
+            string.IsNullOrWhiteSpace(_targetFramework) ? null : _targetFramework,
+            string.IsNullOrWhiteSpace(_launchProfile) ? null : _launchProfile);
+        var completed = await _buildRun.ExecuteAsync(request);
+        _status = $"{operation}: {completed.State}";
+    }
+    private void StopBuild() => _buildRun.Stop();
+    private async Task RestartRunAsync()
+    {
+        _openMenu = null;
+        if (_buildRun.RestartAsync() is { } restart) await restart;
+    }
+    private void ToggleOutput() { _openMenu = null; _outputOpen = !_outputOpen; }
+    private void SelectStartupProject(ChangeEventArgs args) => _startupProject = args.Value?.ToString();
+    private async Task SendProcessInputAsync(string text) { if (!await _buildRun.SendInputAsync(text)) _status = "No running process accepts input."; }
+    private async Task CopyOutputAsync() => await JS.InvokeVoidAsync("navigator.clipboard.writeText",
+        string.Join(Environment.NewLine, _buildRun.Output.Entries.Select(entry => entry.Text)));
+    private async Task ExportOutputAsync()
+    {
+        var path = await Program.App.MainWindow.ShowSaveFileDialogAsync("Export output", "novasharp-output.log",
+            [new FileFilter("Log", "*.log"), new FileFilter("Text", "*.txt")]);
+        if (!string.IsNullOrWhiteSpace(path)) await _buildRun.Output.ExportAsync(path);
+    }
+    private async Task OpenOutputAsync(OutputEntry entry)
+    {
+        if (entry.FilePath is null) return;
+        await NavigateToAsync(new(entry.FilePath, new(0, 0), entry.Line, entry.Column,
+            entry.Text, "Build", NavigationKind.Reference));
+    }
+    private void BuildChanged() => _ = InvokeAsync(StateHasChanged);
 
     private void OpenQuickOpen()
     {
@@ -745,11 +826,14 @@
         _workspace.Changed -= WorkspaceChanged;
         _projectSystem.Changed -= ProjectSystemChanged;
         _languageProvider.Diagnostics.Changed -= DiagnosticsChanged;
+        _buildRun.Changed -= BuildChanged;
+        _buildRun.Output.Changed -= BuildChanged;
         UntrackActiveDocument();
         _workspace.Dispose();
         _emptyDocument.Dispose();
         _self?.Dispose();
         _projectSystem.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        _buildRun.DisposeAsync().AsTask().GetAwaiter().GetResult();
         if (Program.ConfirmWorkbenchClose == ConfirmClose) Program.ConfirmWorkbenchClose = null;
     }
 

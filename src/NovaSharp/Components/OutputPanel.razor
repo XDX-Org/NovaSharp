@@ -1,0 +1,43 @@
+@if (Open)
+{
+    <section class="output-panel" aria-label="Build output">
+        <header>
+            <strong>Output</strong>
+            @if (Task is not null) { <span class="task-state @Task.State.ToString().ToLowerInvariant()">@Task.State</span> }
+            <button @onclick="async () => await Copy.InvokeAsync()">Copy</button>
+            <button @onclick="async () => await Export.InvokeAsync()">Export</button>
+            <button @onclick="async () => await Clear.InvokeAsync()">Clear</button>
+            <button aria-label="Close Output" @onclick="async () => await Close.InvokeAsync()">×</button>
+        </header>
+        <div class="output-lines" role="log" aria-live="polite">
+            @foreach (var entry in Entries)
+            {
+                if (entry.FilePath is not null)
+                {
+                    <button class="output-line @entry.Stream.ToString().ToLowerInvariant()" @onclick="() => Activated.InvokeAsync(entry)">@entry.Text</button>
+                }
+                else { <pre class="output-line @entry.Stream.ToString().ToLowerInvariant()">@entry.Text</pre> }
+            }
+        </div>
+        @if (Task?.Request.Operation == BuildOperation.Run && Task.State == BuildTaskState.Running)
+        {
+            <form class="process-input" @onsubmit="SendAsync" @onsubmit:preventDefault>
+                <input aria-label="Process input" @bind="_input" /><button type="submit">Send</button>
+            </form>
+        }
+    </section>
+}
+
+@code {
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public BuildTask? Task { get; set; }
+    [Parameter, EditorRequired] public IReadOnlyList<OutputEntry> Entries { get; set; } = [];
+    [Parameter] public EventCallback<OutputEntry> Activated { get; set; }
+    [Parameter] public EventCallback<string> Input { get; set; }
+    [Parameter] public EventCallback Copy { get; set; }
+    [Parameter] public EventCallback Export { get; set; }
+    [Parameter] public EventCallback Clear { get; set; }
+    [Parameter] public EventCallback Close { get; set; }
+    private string _input = "";
+    private async Task SendAsync() { if (_input.Length == 0) return; await Input.InvokeAsync(_input + Environment.NewLine); _input = ""; }
+}
