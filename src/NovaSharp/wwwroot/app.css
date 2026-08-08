@@ -222,7 +222,7 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
 .app-context-menu button:disabled { opacity: .4; }
 .app-context-menu hr { width: 100%; margin: 4px 0; border: 0; border-top: 1px solid #454b57; }
 .app-context-menu kbd { color: #8792a3; font: inherit; font-size: var(--text-small); }
-.explorer-resizer { position: absolute; z-index: 20; top: 0; left: -3px; bottom: 0; width: 5px; cursor: col-resize; touch-action: none; background: #343842; }
+.explorer-resizer { position: absolute; z-index: 20; top: 0; left: 0; bottom: 0; width: 5px; cursor: col-resize; touch-action: none; background: #343842; }
 .explorer-resizer:hover, .explorer-resizer:focus-visible, .resizing-explorer .explorer-resizer { outline: 0; background: #8397c4; }
 .resizing-explorer { cursor: col-resize; user-select: none; }
 .activity-bar { display: flex; width: 44px; flex: 0 0 44px; flex-direction: column; align-items: center; border-left: 1px solid #343842; background: #1c1f25; }
