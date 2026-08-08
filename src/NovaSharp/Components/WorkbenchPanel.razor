@@ -306,6 +306,11 @@
         {
             var state = await _persistence.LoadAsync();
             await _workspace.RestoreAsync(state);
+            _explorerOpen = state.ExplorerOpen;
+            _searchOpen = state.SearchOpen;
+            _problemsOpen = state.ProblemsOpen;
+            _outputOpen = state.OutputOpen;
+            _terminalOpen = state.TerminalOpen;
             if (state.SolutionPath is { } solutionPath && File.Exists(solutionPath))
                 await _projectSystem.OpenAsync(solutionPath);
         }
@@ -433,7 +438,7 @@
     private void Redo() { _openMenu = null; _document.Redo(); StateHasChanged(); }
     private void ReplaceAll() { _document.ReplaceAll(_query, _replacement); StateHasChanged(); }
     private void ToggleFind() { _openMenu = null; _showFind = !_showFind; }
-    private void ToggleSearch() { _openMenu = null; _searchOpen = !_searchOpen; }
+    private void ToggleSearch() { _openMenu = null; _searchOpen = !_searchOpen; _ = SaveLayoutAsync(); }
     private void ToggleMenu(string menu) => _openMenu = _openMenu == menu ? null : menu;
     private void CloseMenu() => _openMenu = null;
     private async Task ToggleWrapAsync() { _openMenu = null; _wordWrap = !_wordWrap; await Program.Configuration.SaveUserAsync(Program.Configuration.Current with { WordWrap = _wordWrap }); }
@@ -441,7 +446,7 @@
     private async Task ReloadAsync() { await _document.ReloadAsync(); _externalChange = false; StateHasChanged(); }
     private void KeepBuffer() { _document.KeepBuffer(); _externalChange = false; }
     private Task ToggleExplorerAsync() => _explorer?.ToggleCollapsedAsync() ?? Task.CompletedTask;
-    private void ToggleProblems() => _problemsOpen = !_problemsOpen;
+    private void ToggleProblems() { _problemsOpen = !_problemsOpen; _ = SaveLayoutAsync(); }
     private async Task OpenSearchMatchAsync(WorkspaceSearchMatch match) => await NavigateToAsync(new(match.Path,
         new(match.Start, match.Length), match.Line, match.Column, match.Preview, "Search", NavigationKind.Reference));
     private void PreviewSearchReplace(WorkspaceEdit edit)
@@ -477,6 +482,7 @@
         _openMenu = null;
         if (StartupProject is not { } project) { _status = "Open a project or solution first."; return; }
         _outputOpen = true;
+        await SaveLayoutAsync();
         var request = new BuildRequest(project, operation, _buildConfiguration);
         var completed = await _buildRun.ExecuteAsync(request);
         _status = $"{operation}: {completed.State}";
@@ -487,8 +493,8 @@
         _openMenu = null;
         if (_buildRun.RestartAsync() is { } restart) await restart;
     }
-    private void ToggleOutput() { _openMenu = null; _outputOpen = !_outputOpen; }
-    private void ToggleTerminal() { _openMenu = null; _terminalOpen = !_terminalOpen; }
+    private void ToggleOutput() { _openMenu = null; _outputOpen = !_outputOpen; _ = SaveLayoutAsync(); }
+    private void ToggleTerminal() { _openMenu = null; _terminalOpen = !_terminalOpen; _ = SaveLayoutAsync(); }
     private async Task ToggleTerminalAsync()
     {
         ToggleTerminal();
@@ -673,9 +679,11 @@
         await NavigateToAsync(new(symbol.DocumentPath, symbol.Range, symbol.Line, symbol.Column,
             symbol.Name, symbol.ProjectName, NavigationKind.Definition));
     }
-    private void ExplorerOpenChanged(bool open) => _explorerOpen = open;
+    private void ExplorerOpenChanged(bool open) { _explorerOpen = open; _ = SaveLayoutAsync(); }
     private Task SaveLayoutAsync() => _persistence.SaveAsync(
-        _workspace.CaptureState() with { SolutionPath = _projectSystem.State.Path });
+        _workspace.CaptureState() with { SolutionPath = _projectSystem.State.Path, ExplorerOpen = _explorerOpen,
+            SearchOpen = _searchOpen, ProblemsOpen = _problemsOpen, OutputOpen = _outputOpen,
+            TerminalOpen = _terminalOpen });
     private void WorkspaceChanged() => _ = InvokeAsync(StateHasChanged);
     private void OnExternalChange() => _ = InvokeAsync(() => { _externalChange = true; StateHasChanged(); });
     private void UntrackActiveDocument() => _document.ExternalChangeDetected -= OnExternalChange;
