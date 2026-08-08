@@ -9,7 +9,7 @@ Branch: `phase-11` (from `phase-10`)
 - Dedicated hideable terminal panel with selection/copy, paste through browser input, search, line wrapping, ANSI colors, safe HTTP(S) links, and screen-reader labels.
 - Primary/secondary device-attribute responses required by interactive shells such as fish.
 - Explorer, search, problems, output, and terminal panel visibility restored with the workbench session; terminal processes remain intentionally non-persistent.
-- An open terminal panel maintains at least one session, automatically replacing the final closed session.
+- Editor-style terminal tabs support per-tab close buttons and middle-click close; an open panel automatically replaces the final closed session.
 - Bounded 5,000-line/4-MiB scrollback and isolated escape handling that cannot create workbench markup or invoke commands.
 - Confirmation before terminating a live session or closing the workbench with active terminals.
 

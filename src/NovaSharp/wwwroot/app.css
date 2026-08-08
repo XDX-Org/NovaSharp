@@ -97,8 +97,12 @@ button:disabled { opacity: .45; cursor: default; }
 .terminal-panel header button:hover, .terminal-tabs button.active { color: #fff; background: #303640; }
 .terminal-panel header > button:last-child { font-size: 15px; }
 .terminal-panel select { max-width: 150px; margin-left: auto; }
-.terminal-tabs { display: flex; min-width: 0; overflow-x: auto; }
-.terminal-tabs button { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.terminal-tabs { display: flex; min-width: 0; align-self: stretch; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
+.terminal-tab { display: flex; min-width: 110px; max-width: 240px; flex: 0 0 auto; align-items: center; gap: 7px; padding: 0 5px 0 11px; border-right: 1px solid #343842; color: #9ca6b5; background: #202329; cursor: default; user-select: none; }
+.terminal-tab.active { color: #e1e6ef; background: #181a1f; box-shadow: inset 0 2px #8397c4; }
+.terminal-tab .tab-label { min-width: 0; overflow: hidden; flex: 1; text-overflow: ellipsis; white-space: nowrap; }
+.terminal-tab .tab-close { display: grid; width: 22px; min-height: 22px; flex: 0 0 22px; place-items: center; padding: 0; border-radius: 3px; opacity: 0; }
+.terminal-tab:hover .tab-close, .terminal-tab.active .tab-close, .terminal-tab .tab-close:focus-visible { opacity: 1; }
 .terminal-host { position: relative; min-height: 0; flex: 1; overflow: hidden; outline: none; }
 .terminal-screen { position: absolute; inset: 0; overflow: auto; padding: 7px 10px; color: #d8dee9; font: var(--text-code)/var(--line-code) var(--font-code); }
 .terminal-line { min-height: var(--line-code); white-space: pre-wrap; overflow-wrap: anywhere; }

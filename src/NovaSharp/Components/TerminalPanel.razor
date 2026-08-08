@@ -11,8 +11,14 @@
             <div class="terminal-tabs" role="tablist" aria-label="Terminal sessions">
                 @foreach (var session in Service.Sessions)
                 {
-                    <button role="tab" aria-selected="@(session == Service.ActiveSession)" class="@(session == Service.ActiveSession ? "active" : null)"
-                            @onclick="() => Service.Activate(session.Id)">@session.Name</button>
+                    <div role="tab" aria-selected="@(session == Service.ActiveSession)" tabindex="@(session == Service.ActiveSession ? 0 : -1)"
+                         class="terminal-tab @(session == Service.ActiveSession ? "active" : null)"
+                         title="@session.WorkingDirectory" @onclick="() => Service.Activate(session.Id)"
+                         @onmousedown="args => MiddleCloseAsync(args, session)">
+                        <span class="tab-label">@session.Name</span>
+                        <button class="tab-close" aria-label="Close @session.Name" title="Close terminal"
+                                @onclick="() => CloseSessionAsync(session)" @onclick:stopPropagation>×</button>
+                    </div>
                 }
             </div>
             <select aria-label="Terminal profile" @bind="_profileId">
@@ -21,8 +27,6 @@
             <button title="New terminal" aria-label="New terminal" @onclick="CreateAsync">＋</button>
             <button title="Rename terminal" aria-label="Rename terminal" disabled="@(Service.ActiveSession is null)" @onclick="RenameAsync">Rename</button>
             <button title="Restart terminal" aria-label="Restart terminal" disabled="@(Service.ActiveSession is null)" @onclick="RestartAsync">↻</button>
-            <button title="Close terminal" aria-label="Close terminal" disabled="@(Service.ActiveSession is null)" @onclick="CloseSessionAsync">×</button>
-            <button title="Hide terminal" aria-label="Hide terminal" @onclick="Close">⌄</button>
         </header>
         @if (Service.ActiveSession is { } active)
         {
@@ -58,7 +62,6 @@
     [Parameter, EditorRequired] public TerminalService Service { get; set; } = null!;
     [Parameter] public bool Open { get; set; }
     [Parameter] public string? WorkingDirectory { get; set; }
-    [Parameter] public EventCallback Close { get; set; }
     [Parameter] public EventCallback<TerminalSession> ConfirmClose { get; set; }
     private ElementReference _host;
     private DotNetObjectReference<TerminalPanel>? _self;
@@ -98,9 +101,10 @@
         var name = await JS.InvokeAsync<string?>("prompt", "Terminal name", session.Name);
         if (name is not null) Service.Rename(session.Id, name);
     }
-    private async Task CloseSessionAsync()
+    private Task MiddleCloseAsync(MouseEventArgs args, TerminalSession session) =>
+        args.Button == 1 ? CloseSessionAsync(session) : Task.CompletedTask;
+    private async Task CloseSessionAsync(TerminalSession session)
     {
-        if (Service.ActiveSession is not { } session) return;
         if (session.State == TerminalSessionState.Running) await ConfirmClose.InvokeAsync(session);
         else await Service.CloseAsync(session.Id, force: true);
     }

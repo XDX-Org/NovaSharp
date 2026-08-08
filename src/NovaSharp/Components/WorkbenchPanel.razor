@@ -132,7 +132,7 @@
                          Activated="OpenOutputAsync" Input="SendProcessInputAsync" Copy="CopyOutputAsync"
                          Export="ExportOutputAsync" Clear="_buildRun.Output.Clear" Close="ToggleOutput" />
             <TerminalPanel Open="_terminalOpen" Service="_terminal" WorkingDirectory="WorkspaceRoot"
-                           Close="ToggleTerminal" ConfirmClose="ConfirmTerminalCloseAsync" />
+                           ConfirmClose="ConfirmTerminalCloseAsync" />
         </div>
         <SearchPanel Open="_searchOpen" RootPath="WorkspaceRoot" OpenDocuments="OpenDocuments"
                      Activated="OpenSearchMatchAsync" PreviewRequested="PreviewSearchReplace"
