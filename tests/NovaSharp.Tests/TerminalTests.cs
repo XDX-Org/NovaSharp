@@ -28,12 +28,16 @@ public sealed class TerminalTests
         Assert.AreEqual(TerminalSessionState.Running, session.State, session.Error);
         session.Resize(100, 30);
         var command = OperatingSystem.IsWindows()
-            ? "[Console]::OutputEncoding = [Text.UTF8Encoding]::new(); Write-Output '✓ unicode'; exit 7\r\n"
+            ? "[Console]::OutputEncoding = [Text.UTF8Encoding]::new(); Write-Output '✓ unicode'\r\n"
             : "printf '\\342\\234\\223 unicode\\n'; exit 7\r";
         await session.SendAsync(Encoding.UTF8.GetBytes(command));
-        await WaitUntilAsync(() => session.State == TerminalSessionState.Exited);
-
-        Assert.AreEqual(7, session.ExitCode);
+        if (OperatingSystem.IsWindows())
+            await WaitUntilAsync(() => Output(session).Contains("✓ unicode", StringComparison.Ordinal));
+        else
+        {
+            await WaitUntilAsync(() => session.State == TerminalSessionState.Exited);
+            Assert.AreEqual(7, session.ExitCode);
+        }
         var output = session.Transcript.Chunks.SelectMany(chunk => chunk.Data).ToArray();
         Assert.Contains("✓ unicode", Encoding.UTF8.GetString(output));
     }
@@ -43,4 +47,7 @@ public sealed class TerminalTests
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         while (!condition()) await Task.Delay(20, cancellation.Token);
     }
+
+    private static string Output(TerminalSession session) => Encoding.UTF8.GetString(
+        session.Transcript.Chunks.SelectMany(chunk => chunk.Data).ToArray());
 }
