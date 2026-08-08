@@ -7,15 +7,15 @@ window.novaSharp.initTerminal = function (host, dotNet) {
         const terminal = host.querySelector(".xterm");
         if (!terminal) return;
         const style = getComputedStyle(terminal);
-        const probe = document.createElement("span");
-        probe.textContent = "MMMMMMMMMM";
-        probe.style.cssText = `position:absolute;visibility:hidden;font-family:${style.fontFamily};font-size:${style.fontSize}`;
-        host.appendChild(probe);
-        const cellWidth = Math.max(1, probe.getBoundingClientRect().width / 10);
-        const cellHeight = Math.max(1, parseFloat(style.lineHeight) || 20);
-        probe.remove();
-        dotNet?.invokeMethodAsync("ResizeTerminal", Math.max(2, Math.floor(host.clientWidth / cellWidth)),
-            Math.max(1, Math.floor(host.clientHeight / cellHeight)));
+        const measure = terminal.querySelector(".xterm-char-measure-element");
+        const measured = measure?.getBoundingClientRect();
+        const cellWidth = Math.max(1, measured?.width || parseFloat(style.fontSize) * .6);
+        const cellHeight = Math.max(1, measured?.height || parseFloat(style.lineHeight) || 20);
+        const viewport = terminal.querySelector(".xterm-viewport");
+        const scrollbarWidth = viewport ? Math.max(0, viewport.offsetWidth - viewport.clientWidth) : 0;
+        const columns = Math.max(2, Math.floor((host.clientWidth - scrollbarWidth) / cellWidth));
+        const rows = Math.max(1, Math.floor(host.clientHeight / cellHeight));
+        dotNet?.invokeMethodAsync("ResizeTerminal", columns, rows);
     };
     host.addEventListener("keydown", event => event.stopPropagation());
     new ResizeObserver(resize).observe(host);
