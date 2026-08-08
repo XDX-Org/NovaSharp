@@ -105,7 +105,7 @@ button:disabled { opacity: .45; cursor: default; }
 .terminal-screen { position: absolute; inset: 0; overflow: auto; padding: 7px 10px; color: #d8dee9; font: var(--text-code)/var(--line-code) var(--font-code); }
 .terminal-line { min-height: var(--line-code); white-space: pre-wrap; overflow-wrap: anywhere; }
 .terminal-line a { cursor: pointer; }
-.terminal-input { position: absolute; width: 1px; height: 1px; left: -10000px; opacity: 0; }
+.terminal-input { position: absolute; z-index: 2; right: 8px; bottom: 8px; width: 1px; height: 1px; padding: 0; border: 0; resize: none; opacity: .01; pointer-events: none; }
 .terminal-panel footer { display: flex; min-height: 27px; align-items: center; gap: 14px; padding: 2px 9px; overflow: hidden; color: #929cab; border-top: 1px solid #292d35; font-size: var(--text-small); }
 .terminal-panel footer > span:nth-child(2) { min-width: 0; overflow: hidden; flex: 1; text-overflow: ellipsis; white-space: nowrap; }
 .terminal-panel footer label { display: flex; align-items: center; gap: 5px; }

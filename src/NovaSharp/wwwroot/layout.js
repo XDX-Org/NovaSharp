@@ -26,8 +26,9 @@ window.novaSharp.initTerminal = function (host, dotNet) {
         event.preventDefault();
         send(value);
     });
-    host.addEventListener("pointerdown", event => {
-        if (!event.target.closest("a") && !window.getSelection()?.toString()) input.focus();
+    host.addEventListener("focus", () => input.focus());
+    host.addEventListener("pointerup", event => {
+        if (!event.target.closest("a") && !window.getSelection()?.toString()) input.focus({ preventScroll: true });
     });
     const resize = () => {
         const style = getComputedStyle(screen);
