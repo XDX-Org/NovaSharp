@@ -12,23 +12,40 @@ window.novaSharp.initTerminal = function (host, dotNet) {
     });
     input.addEventListener("paste", event => {
         event.preventDefault();
+        event.stopPropagation();
         dotNet?.invokeMethodAsync("SendTerminalPaste", event.clipboardData?.getData("text") || "");
     });
-    input.addEventListener("keydown", event => {
+    const handleKey = (event, printable) => {
+        if (event.isComposing) return;
         const sequences = {
             Enter: "\r", Backspace: "\x7f", Tab: "\t", Escape: "\x1b",
             ArrowUp: "\x1b[A", ArrowDown: "\x1b[B", ArrowRight: "\x1b[C", ArrowLeft: "\x1b[D",
             Home: "\x1b[H", End: "\x1b[F", Delete: "\x1b[3~", PageUp: "\x1b[5~", PageDown: "\x1b[6~"
         };
         let value = sequences[event.key];
-        if (event.ctrlKey && event.key.length === 1) value = String.fromCharCode(event.key.toUpperCase().charCodeAt(0) - 64);
+        const selected = window.getSelection()?.toString();
+        if (event.ctrlKey && event.key.toLowerCase() === "c" && selected) return;
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v") return;
+        if (event.ctrlKey && event.key.length === 1)
+            value = String.fromCharCode(event.key.toUpperCase().charCodeAt(0) - 64);
+        else if (printable && !event.altKey && !event.metaKey && event.key.length === 1)
+            value = event.key;
         if (value === undefined) return;
         event.preventDefault();
+        event.stopPropagation();
         send(value);
+    };
+    input.addEventListener("keydown", event => handleKey(event, false));
+    host.addEventListener("keydown", event => {
+        if (event.target !== input) handleKey(event, true);
     });
-    host.addEventListener("focus", () => input.focus());
+    host.addEventListener("paste", event => {
+        event.preventDefault();
+        dotNet?.invokeMethodAsync("SendTerminalPaste", event.clipboardData?.getData("text") || "");
+    });
+    host.addEventListener("compositionend", event => { if (event.data) send(event.data); });
     host.addEventListener("pointerup", event => {
-        if (!event.target.closest("a") && !window.getSelection()?.toString()) input.focus({ preventScroll: true });
+        if (!event.target.closest("a") && !window.getSelection()?.toString()) host.focus({ preventScroll: true });
     });
     const resize = () => {
         const style = getComputedStyle(screen);
@@ -44,7 +61,7 @@ window.novaSharp.initTerminal = function (host, dotNet) {
     new ResizeObserver(resize).observe(host);
     new MutationObserver(() => { screen.scrollTop = screen.scrollHeight; }).observe(screen, { childList: true, subtree: true });
     resize();
-    input.focus();
+    host.focus({ preventScroll: true });
 };
 
 window.novaSharp.positionContextMenu = function (menu, x, y) {
