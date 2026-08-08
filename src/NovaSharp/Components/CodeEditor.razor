@@ -5,7 +5,6 @@
     <nav class="editor-breadcrumbs" aria-label="Code breadcrumbs">
         <span>@Document.DisplayName</span>
         @foreach (var symbol in Breadcrumbs) { <span>› @symbol.Name</span> }
-        <button aria-label="Document outline" title="Document outline (Ctrl+Shift+O)" @onclick="ToggleOutline">☷</button>
     </nav>
     @if (_outlineOpen)
     {
@@ -350,7 +349,6 @@
             new(symbol.DocumentPath, symbol.Range, symbol.Line, symbol.Column, symbol.Name,
                 symbol.ProjectName, NavigationKind.Definition)));
     }
-    private void ToggleOutline() => _outlineOpen = !_outlineOpen;
     private Task NavigateDiagnosticAsync(LanguageDiagnostic diagnostic) => LanguageCommand.InvokeAsync(new("navigate",
         ViewState.SelectionStart, new(diagnostic.DocumentPath, diagnostic.Range, diagnostic.StartLine,
             diagnostic.StartColumn, diagnostic.Message, diagnostic.ProjectName ?? "", NavigationKind.Reference)));
