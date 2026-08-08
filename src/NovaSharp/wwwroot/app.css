@@ -180,7 +180,7 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
 .drop-zone.up { top: 2%; right: 25%; left: 25%; height: 20%; }
 .drop-zone.down { right: 25%; bottom: 2%; left: 25%; height: 20%; }
 .drop-zone.center { inset: 27%; }
-.explorer { position: relative; flex: 0 0 auto; min-width: 180px; max-width: 800px; overflow: hidden; border-left: 1px solid #343842; background: #202329; }
+.explorer { position: relative; flex: 0 0 auto; min-width: 180px; max-width: 800px; overflow: hidden; padding-left: 5px; border-left: 1px solid #343842; background: #202329; }
 .explorer-header { display: flex; height: 42px; align-items: center; gap: 8px; padding: 5px 5px 5px 12px; text-transform: uppercase; font-size: var(--text-ui); }
 .explorer-view-picker { position: relative; display: inline-flex; height: 26px; align-items: center; }
 .explorer-view-picker select { width: auto; height: 28px; field-sizing: content; }
