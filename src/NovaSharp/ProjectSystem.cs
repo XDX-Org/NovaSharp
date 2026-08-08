@@ -68,6 +68,7 @@ public sealed class RoslynProjectSystem : IAsyncDisposable
     private MSBuildWorkspace? _workspace;
     private Solution? _solution;
     private readonly List<FileSystemWatcher> _watchers = [];
+    private readonly object _watcherGate = new();
     private long _loadVersion;
     private long _completedLoadVersion;
 
@@ -118,8 +119,11 @@ public sealed class RoslynProjectSystem : IAsyncDisposable
 
     internal void StopWatching()
     {
-        foreach (var watcher in _watchers) watcher.Dispose();
-        _watchers.Clear();
+        lock (_watcherGate)
+        {
+            foreach (var watcher in _watchers) watcher.Dispose();
+            _watchers.Clear();
+        }
     }
 
     internal void Track(EditorDocumentState document)
@@ -405,8 +409,7 @@ public sealed class RoslynProjectSystem : IAsyncDisposable
 
     private void StartWatching(string path, Solution solution)
     {
-        foreach (var watcher in _watchers) watcher.Dispose();
-        _watchers.Clear();
+        var watchers = new List<FileSystemWatcher>();
         var roots = solution.Projects.Select(project => Path.GetDirectoryName(project.FilePath))
             .Append(Path.GetDirectoryName(path)).Where(root => root is not null).Distinct(PathComparer);
         foreach (var root in roots)
@@ -417,7 +420,13 @@ public sealed class RoslynProjectSystem : IAsyncDisposable
             watcher.Created += OnProjectFileChanged;
             watcher.Deleted += OnProjectFileChanged;
             watcher.Renamed += OnProjectFileChanged;
-            _watchers.Add(watcher);
+            watchers.Add(watcher);
+        }
+        lock (_watcherGate)
+        {
+            foreach (var watcher in _watchers) watcher.Dispose();
+            _watchers.Clear();
+            _watchers.AddRange(watchers);
         }
     }
 
@@ -460,7 +469,7 @@ public sealed class RoslynProjectSystem : IAsyncDisposable
         foreach (var editor in _trackedEditors.Values) editor.ContentChanged -= OnEditorChanged;
         await _mutationGate.WaitAsync();
         _mutationGate.Release();
-        foreach (var watcher in _watchers) watcher.Dispose();
+        StopWatching();
         _workspace?.Dispose();
         _loadCancellation?.Dispose();
         _reloadDebounce?.Dispose();

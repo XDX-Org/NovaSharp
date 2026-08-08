@@ -205,11 +205,10 @@ export async function runPhase7Smoke(root) {
         return false;
     };
     try {
-        input.value = 'using System; class C { void M() { Console.Wri } }';
-        const completionPosition = input.value.indexOf('Wri }') + 3;
+        input.value = 'using System; class C { void M() { Console. } }';
+        const completionPosition = input.value.indexOf('. }') + 1;
         input.setSelectionRange(completionPosition, completionPosition);
-        await dotNet.invokeMethodAsync('InputChanged', input.value, input.selectionStart, null);
-        await dotNet.invokeMethodAsync('EditorCommand', 'completion', input.selectionStart);
+        await dotNet.invokeMethodAsync('InputChanged', input.value, input.selectionStart, '.');
         const completionItems = await dotNet.invokeMethodAsync('CompletionItemCount');
         const completionError = await dotNet.invokeMethodAsync('CompletionError');
         const completionVisible = await waitFor(() => root.querySelectorAll('.completion-popup [role="option"]').length > 0);
