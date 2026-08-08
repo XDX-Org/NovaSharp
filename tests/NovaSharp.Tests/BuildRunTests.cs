@@ -113,6 +113,21 @@ public sealed class BuildRunTests
         Assert.Contains("[redacted]", command);
     }
 
+    [TestMethod]
+    public async Task StartingAnActionClearsPreviousOutput()
+    {
+        using var fixture = new ProjectFixture("Console.WriteLine(42);");
+        var output = new OutputChannel();
+        output.Add(OutputStream.System, "previous action");
+        await using var service = new BuildRunService(new(), output);
+
+        var completed = await service.ExecuteAsync(new(fixture.Project, BuildOperation.Build));
+
+        Assert.AreEqual(BuildTaskState.Succeeded, completed.State);
+        Assert.IsFalse(output.Entries.Any(entry => entry.Text == "previous action"));
+        Assert.IsTrue(output.Entries.Any(entry => entry.Text.StartsWith("dotnet build", StringComparison.Ordinal)));
+    }
+
     private static async Task WaitUntilAsync(Func<bool> condition)
     {
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));

@@ -14,7 +14,7 @@ Branch: `phase-10` (from `phase-9`)
 ## Verification
 
 - Release build with warnings as errors passes locally.
-- 86 unit, integration, and acceptance tests pass locally.
+- 87 unit, integration, and acceptance tests pass locally.
 - Real .NET fixture projects build, fail diagnostically, run with arguments/stdin, and clean successfully.
 - Linux x64 cancellation and descendant cleanup completes under the 5-second budget; output retention is capped at 10,000 entries and 4 MiB.
 

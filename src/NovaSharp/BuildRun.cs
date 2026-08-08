@@ -90,6 +90,7 @@ internal sealed partial class BuildRunService : IAsyncDisposable
             Validate(task.Request);
             await _operationGate.WaitAsync(cancellationToken);
             entered = true;
+            Output.Clear();
             var started = DateTime.UtcNow;
             task = Update(task with { State = BuildTaskState.Running, StartedUtc = started });
             if (request.Operation is not BuildOperation.Run) _diagnostics.Clear(LanguageDiagnosticSource.Build);
