@@ -1,6 +1,6 @@
 @if (Open)
 {
-    <section class="problems-panel" aria-label="Problems">
+    <section class="problems-panel" data-bottom-panel="problems" aria-label="Problems">
         <div class="bottom-panel-resizer" role="separator" tabindex="0" aria-orientation="horizontal" aria-label="Resize Problems panel"></div>
         <header><strong>Problems</strong><span>@Diagnostics.Count</span><button aria-label="Close Problems" @onclick="Close">×</button></header>
         <div class="problem-filters">

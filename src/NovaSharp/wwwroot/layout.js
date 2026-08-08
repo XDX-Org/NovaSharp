@@ -650,6 +650,22 @@ window.novaSharp.startSmokePolling = function (bridge, phase4, phase5) {
 window.novaSharp.initBottomPanelResize = function (workbench) {
     if (workbench.dataset.bottomPanelResize === 'true') return;
     workbench.dataset.bottomPanelResize = 'true';
+    const storageKey = panel => `novaSharp.bottomPanelHeight.${panel.dataset.bottomPanel}`;
+    const restore = panel => {
+        if (panel.dataset.heightRestored === 'true') return;
+        panel.dataset.heightRestored = 'true';
+        try {
+            const height = Number(localStorage.getItem(storageKey(panel)));
+            if (Number.isFinite(height) && height >= 110) panel.style.height = `${height}px`;
+        } catch { }
+    };
+    const restorePanels = () => workbench.querySelectorAll('[data-bottom-panel]').forEach(restore);
+    const save = panel => {
+        try { localStorage.setItem(storageKey(panel), String(Math.round(panel.getBoundingClientRect().height))); }
+        catch { }
+    };
+    restorePanels();
+    new MutationObserver(restorePanels).observe(workbench, { childList: true, subtree: true });
     workbench.addEventListener('pointerdown', event => {
         const handle = event.target.closest('.bottom-panel-resizer');
         if (!handle) return;
@@ -664,6 +680,7 @@ window.novaSharp.initBottomPanelResize = function (workbench) {
             panel.style.height = `${height}px`;
         };
         const finish = () => {
+            save(panel);
             handle.classList.remove('dragging');
             handle.removeEventListener('pointermove', move);
             handle.removeEventListener('pointerup', finish);
@@ -681,6 +698,7 @@ window.novaSharp.initBottomPanelResize = function (workbench) {
         const current = panel.getBoundingClientRect().height;
         const maximum = panel.parentElement.getBoundingClientRect().height * .75;
         panel.style.height = `${Math.max(110, Math.min(maximum, current + (event.key === 'ArrowUp' ? 20 : -20)))}px`;
+        save(panel);
         event.preventDefault();
     });
 };
