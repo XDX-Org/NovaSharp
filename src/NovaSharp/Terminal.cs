@@ -164,10 +164,35 @@ internal sealed class TerminalBuffer(int maxLines = 5_000, int maxBytes = 4 * 10
     }
 }
 
+internal sealed class TerminalQueryResponder
+{
+    private string _tail = "";
+
+    internal IReadOnlyList<byte[]> Feed(ReadOnlySpan<byte> bytes)
+    {
+        var previousLength = _tail.Length;
+        var text = _tail + Encoding.ASCII.GetString(bytes);
+        var responses = new List<byte[]>();
+        if (EndsInNewInput(text, "\x1b[c", previousLength) || EndsInNewInput(text, "\x1b[0c", previousLength))
+            responses.Add(Encoding.ASCII.GetBytes("\x1b[?1;2c"));
+        if (EndsInNewInput(text, "\x1b[>c", previousLength) || EndsInNewInput(text, "\x1b[>0c", previousLength))
+            responses.Add(Encoding.ASCII.GetBytes("\x1b[>0;10;1c"));
+        _tail = text.Length > 8 ? text[^8..] : text;
+        return responses;
+    }
+
+    private static bool EndsInNewInput(string text, string query, int previousLength)
+    {
+        var index = text.IndexOf(query, StringComparison.Ordinal);
+        return index >= 0 && index + query.Length > previousLength;
+    }
+}
+
 public sealed class TerminalSession : IAsyncDisposable
 {
     private readonly CancellationTokenSource _lifetime = new();
     private readonly SemaphoreSlim _writeGate = new(1, 1);
+    private readonly TerminalQueryResponder _queryResponder = new();
     private IPtyConnection? _connection;
     private Task? _reader;
 
@@ -241,7 +266,10 @@ public sealed class TerminalSession : IAsyncDisposable
             {
                 var count = await _connection.ReaderStream.ReadAsync(bytes, cancellationToken);
                 if (count == 0) break;
-                Buffer.Append(bytes.AsSpan(0, count)); Changed?.Invoke();
+                var output = bytes.AsSpan(0, count);
+                Buffer.Append(output);
+                foreach (var response in _queryResponder.Feed(output)) await SendAsync(response, cancellationToken);
+                Changed?.Invoke();
             }
         }
         catch (OperationCanceledException) { }

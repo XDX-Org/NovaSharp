@@ -33,6 +33,19 @@ public sealed class TerminalTests
     }
 
     [TestMethod]
+    public void DeviceAttributeQueriesAreAnsweredAcrossReads()
+    {
+        var responder = new TerminalQueryResponder();
+
+        Assert.AreEqual(0, responder.Feed(Encoding.ASCII.GetBytes("\x1b[")).Count);
+        var primary = responder.Feed(Encoding.ASCII.GetBytes("c"));
+        var secondary = responder.Feed(Encoding.ASCII.GetBytes("\x1b[>0c"));
+
+        Assert.AreEqual("\x1b[?1;2c", Encoding.ASCII.GetString(primary.Single()));
+        Assert.AreEqual("\x1b[>0;10;1c", Encoding.ASCII.GetString(secondary.Single()));
+    }
+
+    [TestMethod]
     public async Task PtyPreservesUnicodeInputResizeAndExit()
     {
         if (OperatingSystem.IsWindows()) Assert.Inconclusive("Unix shell fixture");
