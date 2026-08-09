@@ -782,11 +782,7 @@ window.novaSharp.runPhase9Smoke = async function (workbench, bridge) {
         workbench.querySelector('.quick-access-backdrop')?.click();
         workbench.querySelector('[aria-label="Search"]')?.click();
         const searchVisible = await waitFor(() => !!workbench.querySelector('.search-panel'));
-        const searchInput = workbench.querySelector('[aria-label="Search workspace"]');
-        searchInput.value = 'needle';
-        searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-        await new Promise(resolve => setTimeout(resolve, 100));
-        workbench.querySelector('.search-panel button[type="submit"]').click();
+        await bridge.invokeMethodAsync('RunPhase9SearchSmokeAsync', 'needle');
         const resultsStreamed = await waitFor(() => workbench.querySelectorAll('.search-results button').length >= 2);
         workbench.querySelector('.search-actions button:last-child')?.click();
         const replacePreview = await waitFor(() => !!workbench.querySelector('.edit-preview'));

@@ -134,7 +134,7 @@
             <TerminalPanel Open="_terminalOpen" Service="_terminal" WorkingDirectory="@(Program.Phase11Workspace ?? WorkspaceRoot)"
                            ConfirmClose="ConfirmTerminalCloseAsync" />
         </div>
-        <SearchPanel Open="_searchOpen" RootPath="WorkspaceRoot" OpenDocuments="OpenDocuments"
+        <SearchPanel @ref="_searchPanel" Open="_searchOpen" RootPath="WorkspaceRoot" OpenDocuments="OpenDocuments"
                      Activated="OpenSearchMatchAsync" PreviewRequested="PreviewSearchReplace"
                      Close="ToggleSearch" />
         <WorkspaceExplorer @ref="_explorer" Document="_document" ProjectSystem="_projectSystem" FileOpened="OpenWorkspaceFileAsync"
@@ -232,6 +232,7 @@
     private readonly EditorDocumentState _emptyDocument = new();
     private EditorLayoutPersistence _persistence = null!;
     private WorkspaceExplorer? _explorer;
+    private SearchPanel? _searchPanel;
     private ElementReference _workbench;
     private DotNetObjectReference<WorkbenchPanel>? _self;
     private string? _status;
@@ -789,6 +790,10 @@
             _projectSystem.HasLinkedDocuments,
             _projectSystem.Contexts.Any(context => context.TargetFramework is not null && context.Configuration is not null),
             projectFileEditable, contextMenuPresent, dragSourcePresent, error));
+
+    [JSInvokable]
+    public Task RunPhase9SearchSmokeAsync(string query) =>
+        _searchPanel?.RunSmokeAsync(query) ?? Task.CompletedTask;
 
     [JSInvokable]
     public Task CompletePhase9SmokeAsync(bool quickOpenVisible, bool duplicateFilesVisible, bool searchVisible,
