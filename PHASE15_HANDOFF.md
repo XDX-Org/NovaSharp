@@ -19,11 +19,11 @@ ADR 0006 records the in-process service, projection ownership, bounds, degraded 
 ## Verification
 
 - Local Release builds pass with warnings as errors.
-- All 95 tests pass locally.
+- All 99 tests pass locally.
 - Windows x64, macOS Intel, and macOS Apple Silicon build/test/package jobs pass.
 - The full Windows x64, Linux x64, macOS Intel, and macOS Apple Silicon matrix passes.
 - Linux packaged interaction smokes pass through the Phase 15 gate.
-- Successful run: https://github.com/XDX-Org/NovaSharp/actions/runs/31309030640
+- Successful run: https://github.com/XDX-Org/NovaSharp/actions/runs/31310379518
 
 Phase 15 is complete.
 
@@ -36,8 +36,9 @@ Final fixes:
 - `a347216` replaces synthetic Phase 9 search typing with the `SearchPanel` bridge.
 - `e2d683f` refreshes the bridge's workspace parameters before running the search.
 - `80fd600` stabilizes the previously unreached Phase 11 packaged interaction smoke.
-- Run 31309030640 passes the complete supported-platform matrix and every Linux packaged smoke through Phase 15.
+- `9d32b0e` adds the final Razor Pages, component-library, standalone CSS, rapid-edit, reload, discovery-bound, and retained-state acceptance coverage.
+- Run 31310379518 passes the complete supported-platform matrix and every Linux packaged smoke through Phase 15.
 
 ## Commit range
 
-Phase 15 starts at `26b0292` on top of Phase 11 commit `a24cf72`. Completion evidence is recorded by run 31309030640.
+Phase 15 starts at `26b0292` on top of Phase 11 commit `a24cf72`. Completion evidence is recorded by run 31310379518.
