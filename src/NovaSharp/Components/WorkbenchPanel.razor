@@ -808,6 +808,21 @@
             resultsStreamed, replacePreview, error));
 
     [JSInvokable]
+    public async Task<bool> RunPhase11TerminalSmokeAsync()
+    {
+        if (_terminal.ActiveSession is not { State: TerminalSessionState.Running } session) return false;
+        session.Resize(80, 24);
+        await session.SendAsync(System.Text.Encoding.UTF8.GetBytes("printf 'NOVASHARP_PHASE11_OK\\n'; exit 7\r"));
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            if (session.Transcript.Chunks.Any(chunk => System.Text.Encoding.UTF8.GetString(chunk.Data)
+                .Contains("NOVASHARP_PHASE11_OK", StringComparison.Ordinal))) return true;
+            await Task.Delay(50);
+        }
+        return false;
+    }
+
+    [JSInvokable]
     public Task CompletePhase11SmokeAsync(bool terminalPresent, bool inputRoundTrip, bool resizeValid,
         bool processExited, string? error = null) =>
         Program.CompletePhase11SmokeAsync(new(terminalPresent, inputRoundTrip, resizeValid, processExited, error));

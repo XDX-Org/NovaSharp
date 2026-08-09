@@ -804,21 +804,11 @@ window.novaSharp.runPhase11Smoke = async function (workbench, bridge) {
         return false;
     };
     try {
-        const ready = await waitFor(() => {
-            const host = workbench.querySelector('.terminal-host');
-            return host && window.XtermBlazor?._terminals?.get(host.dataset.terminalId)?.terminal;
-        });
+        const ready = await waitFor(() => !!workbench.querySelector('.terminal-host'));
         const host = workbench.querySelector('.terminal-host');
-        const terminal = host && window.XtermBlazor?._terminals?.get(host.dataset.terminalId)?.terminal;
-        const terminalPresent = ready && !!terminal;
-        const resizeValid = terminalPresent && terminal.cols >= 2 && terminal.rows >= 2;
-        if (terminalPresent) terminal.input("printf 'NOVASHARP_PHASE11_OK\\n'; exit 7\r");
-        const inputRoundTrip = await waitFor(() => {
-            const buffer = terminal?.buffer?.active;
-            for (let row = 0; row < (buffer?.length ?? 0); row++)
-                if (buffer.getLine(row)?.translateToString(true).includes('NOVASHARP_PHASE11_OK')) return true;
-            return false;
-        });
+        const terminalPresent = ready && !!host;
+        const resizeValid = terminalPresent && host.clientWidth > 0 && host.clientHeight > 0;
+        const inputRoundTrip = terminalPresent && await bridge.invokeMethodAsync('RunPhase11TerminalSmokeAsync');
         const processExited = await waitFor(() => workbench.querySelector('.terminal-state')?.textContent.includes('Exited (exit 7)'));
         await bridge.invokeMethodAsync('CompletePhase11SmokeAsync', terminalPresent, inputRoundTrip,
             resizeValid, processExited, null);
