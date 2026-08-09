@@ -341,7 +341,10 @@
         if (Program.Phase9Solution is not null)
             await JS.InvokeVoidAsync("novaSharp.runPhase9Smoke", _workbench, _self);
         if (Program.Phase11Workspace is not null)
+        {
+            await Task.Delay(100);
             await JS.InvokeVoidAsync("novaSharp.runPhase11Smoke", _workbench, _self);
+        }
     }
 
     private async Task OpenFileAsync()
