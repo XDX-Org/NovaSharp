@@ -478,7 +478,6 @@ public sealed class RoslynProjectSystem : IAsyncDisposable
             && !extension.Equals(".targets", StringComparison.OrdinalIgnoreCase)
             && !extension.Equals(".sln", StringComparison.OrdinalIgnoreCase)
             && !extension.Equals(".slnx", StringComparison.OrdinalIgnoreCase)
-            && !extension.Equals(".cs", StringComparison.OrdinalIgnoreCase)
             && !name.Equals("project.assets.json", StringComparison.OrdinalIgnoreCase)
             && !name.EndsWith(".g.cs", StringComparison.OrdinalIgnoreCase)) return;
         _reloadDebounce?.Cancel();

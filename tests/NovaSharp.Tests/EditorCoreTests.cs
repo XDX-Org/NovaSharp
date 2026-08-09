@@ -58,6 +58,124 @@ public sealed class EditorCoreTests
     }
 
     [TestMethod]
+    public void SemanticClassificationsRemainStableAcrossTyping()
+    {
+        const string before = "class C { int value; C other; }";
+        var value = before.IndexOf("value", StringComparison.Ordinal);
+        var type = before.LastIndexOf('C');
+        var spans = CSharpTokenizer.TranslateSemanticSpans(before, before.Insert(value + 5, "2"),
+        [
+            new(value, 5, "field"),
+            new(type, 1, "class")
+        ]);
+
+        Assert.AreEqual(new SemanticSpan(value, 6, "field"), spans[0]);
+        Assert.AreEqual(new SemanticSpan(type + 1, 1, "class"), spans[1]);
+    }
+
+    [TestMethod]
+    public void LocalColouringDoesNotRequireLanguageServices()
+    {
+        var spans = CSharpTokenizer.Tokenize("private int _field; service.Value = service.Run(value);").Single().Spans;
+
+        Assert.IsTrue(spans.Any(span => span.Kind == TokenKind.Keyword));
+        Assert.IsTrue(spans.Any(span => span.Kind == TokenKind.Field));
+        Assert.IsTrue(spans.Any(span => span.Kind == TokenKind.Property));
+        Assert.IsTrue(spans.Any(span => span.Kind == TokenKind.Method));
+    }
+
+    [TestMethod]
+    public void EnumMembersUseMemberColourWithoutLanguageServices()
+    {
+        var line = CSharpTokenizer.Tokenize("public enum BuildOperation { Restore, Build, Run }").Single();
+        var types = line.Spans.Where(span => span.Kind == TokenKind.EnumType).ToArray();
+        var members = line.Spans.Where(span => span.Kind == TokenKind.Field).ToArray();
+
+        Assert.HasCount(1, types);
+        Assert.HasCount(3, members);
+    }
+
+    [TestMethod]
+    public void ClassRecordAndEnumNamesUseRiderDeclarationColours()
+    {
+        var lines = CSharpTokenizer.Tokenize("class Service\nrecord Request\nenum State { Ready }");
+
+        Assert.IsTrue(lines[0].Spans.Any(span => span.Kind == TokenKind.Type));
+        Assert.IsTrue(lines[1].Spans.Any(span => span.Kind == TokenKind.Type));
+        Assert.IsTrue(lines[2].Spans.Any(span => span.Kind == TokenKind.EnumType));
+    }
+
+    [TestMethod]
+    public void CapitalizedParameterNamesUseNeutralColour()
+    {
+        const string text = "record Request(string ProjectPath, BuildOperation Operation, string Configuration = null)";
+        var parameters = CSharpTokenizer.Tokenize(text).Single().Spans
+            .Where(span => span.Kind == TokenKind.Parameter)
+            .Select(span => text.Substring(span.Start, span.Length)).ToArray();
+
+        CollectionAssert.AreEqual(new[] { "ProjectPath", "Operation", "Configuration" }, parameters);
+    }
+
+    [TestMethod]
+    public void UsingDirectiveSegmentsUseNamespaceColour()
+    {
+        var spans = CSharpTokenizer.Tokenize("using System.Text.RegularExpressions;").Single().Spans;
+
+        Assert.HasCount(3, spans.Where(span => span.Kind == TokenKind.Namespace));
+        Assert.IsFalse(spans.Any(span => span.Kind == TokenKind.Property));
+    }
+
+    [TestMethod]
+    public void AccessorsUseKeywordColour()
+    {
+        var spans = CSharpTokenizer.Tokenize("string Name { get; init; } event Action Changed { add { } remove { } }")
+            .Single().Spans;
+
+        var text = "string Name { get; init; } event Action Changed { add { } remove { } }";
+        CollectionAssert.IsSubsetOf(new[] { "get", "init", "add", "remove" }, spans
+            .Where(span => span.Kind == TokenKind.Keyword).Select(span => text.Substring(span.Start, span.Length)).ToArray());
+    }
+
+    [TestMethod]
+    public void EventsUseRiderEventColour()
+    {
+        const string text = "internal event Action? Changed;";
+        var span = CSharpTokenizer.Tokenize(text).Single().Spans.Single(item => item.Kind == TokenKind.Event);
+
+        Assert.AreEqual("Changed", text.Substring(span.Start, span.Length));
+    }
+
+    [TestMethod]
+    public void GeneratedRegexPatternsUseEmbeddedColouring()
+    {
+        var spans = CSharpTokenizer.Tokenize("[GeneratedRegex(\"^(?<line>\\\\d+)[a-z]*$\")]").Single().Spans;
+
+        Assert.IsTrue(spans.Any(span => span.Kind == TokenKind.RegexEscape));
+        Assert.IsTrue(spans.Any(span => span.Kind == TokenKind.RegexGroup));
+        Assert.IsTrue(spans.Any(span => span.Kind == TokenKind.RegexCharacterClass));
+        Assert.IsTrue(spans.Any(span => span.Kind == TokenKind.RegexQuantifier));
+    }
+
+    [TestMethod]
+    public void PartialUsesKeywordColour()
+    {
+        const string text = "private static partial class Service";
+        var spans = CSharpTokenizer.Tokenize(text).Single().Spans;
+
+        Assert.IsTrue(spans.Any(span => span.Kind == TokenKind.Keyword
+            && text.Substring(span.Start, span.Length) == "partial"));
+    }
+
+    [TestMethod]
+    public void AttributeNamesUseTypeColour()
+    {
+        const string text = "[GeneratedRegex(\"a+\")]";
+        var span = CSharpTokenizer.Tokenize(text).Single().Spans.Single(item => item.Start == 1);
+
+        Assert.AreEqual(TokenKind.Type, span.Kind);
+    }
+
+    [TestMethod]
     public async Task Utf16AndCanonicalPathArePreserved()
     {
         var directory = Directory.CreateTempSubdirectory("novasharp-");

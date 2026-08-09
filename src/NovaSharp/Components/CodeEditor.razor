@@ -126,6 +126,7 @@
     [Parameter, EditorRequired] public EditorDocumentState Document { get; set; } = null!;
     [Parameter, EditorRequired] public ILanguageProvider LanguageProvider { get; set; } = null!;
     [Parameter] public IReadOnlyList<LanguageDiagnostic> Diagnostics { get; set; } = [];
+    [Parameter] public long LanguageAnalysisRevision { get; set; }
     [Parameter] public string? ProjectContext { get; set; }
     [Parameter] public bool ProjectLoading { get; set; }
     [Parameter] public bool SuggestionsEnabled { get; set; } = true;
@@ -153,9 +154,15 @@
     private IReadOnlyList<EditorLine> _lines = [];
     private int[] _lineStarts = [0];
     private CancellationTokenSource? _presentationCancellation;
+    private CancellationTokenSource? _semanticRefreshCancellation;
+    private CancellationTokenSource? _diagnosticRefreshCancellation;
+    private readonly CancellationTokenSource _languageStartupCancellation = new();
     private string? _linesValue;
+    private string _semanticValue = string.Empty;
     private string? _languageReadyKey;
     private int _semanticRevision, _renderedSemanticRevision, _presentationGeneration;
+    private int _diagnosticEmptyRetries;
+    private long _observedLanguageAnalysisRevision = -1;
     private int _selectedCompletion;
     private bool _outlineOpen;
     private bool _refreshLanguageAfterRender;
@@ -166,6 +173,12 @@
     private ICollection<EditorLine> Lines => (ICollection<EditorLine>)_lines;
     private void QueuePresentation()
     {
+        if (_semanticValue != Value)
+        {
+            _semanticSpans = CSharpTokenizer.TranslateSemanticSpans(_semanticValue, Value, _semanticSpans);
+            _semanticValue = Value;
+            _semanticRevision++;
+        }
         if (_linesValue == Value && _renderedSemanticRevision == _semanticRevision) return;
         _presentationCancellation?.Cancel();
         _presentationCancellation?.Dispose();
@@ -173,17 +186,16 @@
         var generation = ++_presentationGeneration;
         var value = Value;
         var semanticRevision = _semanticRevision;
-        var spans = _semanticSpans.ToArray();
-        _ = BuildPresentationAsync(value, spans, semanticRevision, generation, _presentationCancellation.Token);
+        _ = BuildPresentationAsync(value, semanticRevision, generation, _presentationCancellation.Token);
     }
 
-    private async Task BuildPresentationAsync(string value, IReadOnlyList<SemanticSpan> spans,
-        int semanticRevision, int generation, CancellationToken cancellationToken)
+    private async Task BuildPresentationAsync(string value, int semanticRevision, int generation,
+        CancellationToken cancellationToken)
     {
         try
         {
             var presentation = await Task.Run(() =>
-                (Lines: CSharpTokenizer.Tokenize(value, spans).ToArray(), Starts: BuildLineStarts(value)), cancellationToken);
+                (Lines: CSharpTokenizer.Tokenize(value).ToArray(), Starts: BuildLineStarts(value)), cancellationToken);
             var updated = presentation.Lines;
             cancellationToken.ThrowIfCancellationRequested();
             await InvokeAsync(() =>
@@ -214,6 +226,9 @@
         var readyKey = !ProjectLoading && Document.FilePath is { } path && info.IsAvailable
             ? $"{path}|{info.DisplayName}|{info.Status}|{info.Capabilities}" : null;
         if (readyKey is not null && readyKey != _languageReadyKey) _refreshLanguageAfterRender = true;
+        if (readyKey is not null && LanguageAnalysisRevision != _observedLanguageAnalysisRevision)
+            _refreshLanguageAfterRender = true;
+        _observedLanguageAnalysisRevision = LanguageAnalysisRevision;
         _languageReadyKey = readyKey;
     }
     private string PopupStyle => $"left:{_popupX}px;top:{_popupY}px";
@@ -226,6 +241,7 @@
             _self = DotNetObjectReference.Create(this);
             await _module.InvokeVoidAsync("createEditor", _root, WordWrap, _self, ViewState.SelectionStart,
                 ViewState.SelectionEnd, ViewState.ScrollTop, ViewState.ScrollLeft);
+            _ = AwaitLanguageReadyAsync(_languageStartupCancellation.Token);
             if (Program.Phase15Solution is not null) _ = RunPhase15SmokeAsync();
             else if (Program.Phase8Solution is not null) _ = RunPhase8SmokeAsync();
             else if (Program.Phase7Solution is not null) _ = RunPhase7SmokeAsync();
@@ -248,10 +264,11 @@
     [JSInvokable]
     public async Task InputChanged(string value, int caret, string? trigger)
     {
+        _semanticRefreshCancellation?.Cancel();
+        _diagnosticRefreshCancellation?.Cancel();
+        _diagnosticEmptyRetries = 0;
         await ValueChanged.InvokeAsync(value);
         ViewState.SetSelection(caret, caret, value.Length);
-        _diagnostics = [];
-        if (Document.FilePath is { } diagnosticPath) ExtendedProvider.ClearDiagnostics(diagnosticPath);
         if (ProjectLoading || Document.FilePath is null) return;
         if (SuggestionsEnabled && Has(LanguageCapabilities.Completion)
             && (trigger is "." or " " or "<" or "@" or ":" or "-" || trigger?.Length == 1 && char.IsLetterOrDigit(trigger[0])))
@@ -435,18 +452,43 @@
     private async Task RefreshSemanticAsync()
     {
         if (ProjectLoading || Document.FilePath is null || !SemanticHighlighting || !Has(LanguageCapabilities.SemanticTokens)) return;
+        _semanticRefreshCancellation?.Cancel();
+        _semanticRefreshCancellation?.Dispose();
+        _semanticRefreshCancellation = new();
+        var cancellationToken = _semanticRefreshCancellation.Token;
         var version = Document.Version;
-        try { await Task.Delay(150); } catch (OperationCanceledException) { return; }
+        try { await Task.Delay(100, cancellationToken); }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return; }
         var spans = await _semanticRequest.RunAsync(
-            token => LanguageProvider.GetSemanticSpansAsync(Request(Value.Length), token), version);
+            token => LanguageProvider.GetSemanticSpansAsync(Request(Value.Length), token), version, cancellationToken);
+        if (cancellationToken.IsCancellationRequested) return;
         if (spans is not null)
         {
             _semanticSpans = spans;
+            _semanticValue = Value;
             _semanticRevision++;
             await InvokeAsync(QueuePresentation);
         }
-        var symbols = await ExtendedProvider.GetDocumentSymbolsAsync(Request(Value.Length), default);
+        var symbols = await ExtendedProvider.GetDocumentSymbolsAsync(Request(Value.Length), cancellationToken);
         if (Document.Version == version) _symbols = symbols;
+    }
+
+    private async Task AwaitLanguageReadyAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            for (var attempt = 0; attempt < 60 && !cancellationToken.IsCancellationRequested; attempt++)
+            {
+                if (!ProjectLoading && Document.FilePath is not null && SemanticHighlighting
+                    && Has(LanguageCapabilities.SemanticTokens))
+                {
+                    await InvokeAsync(RefreshSemanticAsync);
+                    if (_semanticSpans.Count > 0) return;
+                }
+                await Task.Delay(500, cancellationToken);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
     }
 
     private async Task RequestNavigationAsync(int caret, string command)
@@ -494,11 +536,31 @@
     private async Task RefreshDiagnosticsAsync()
     {
         if (ProjectLoading || Document.FilePath is null || !Has(LanguageCapabilities.Diagnostics)) return;
+        _diagnosticRefreshCancellation?.Cancel();
+        _diagnosticRefreshCancellation?.Dispose();
+        _diagnosticRefreshCancellation = new();
+        var cancellationToken = _diagnosticRefreshCancellation.Token;
         var version = Document.Version;
-        try { await Task.Delay(300); } catch (OperationCanceledException) { return; }
+        try { await Task.Delay(150, cancellationToken); }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return; }
         var diagnostics = await _diagnosticRequest.RunAsync(
-            token => LanguageProvider.GetDiagnosticsAsync(Request(Value.Length), token), version);
-        if (diagnostics is not null) { _diagnostics = diagnostics; await InvokeAsync(StateHasChanged); }
+            token => LanguageProvider.GetDiagnosticsAsync(Request(Value.Length), token), version, cancellationToken);
+        if (cancellationToken.IsCancellationRequested) return;
+        if (diagnostics is not null)
+        {
+            _diagnostics = diagnostics;
+            await InvokeAsync(StateHasChanged);
+            if (diagnostics.Count > 0) _diagnosticEmptyRetries = 0;
+            else if (_diagnosticEmptyRetries++ < 3)
+                _ = RetryDiagnosticsAsync(version, cancellationToken);
+        }
+    }
+
+    private async Task RetryDiagnosticsAsync(long version, CancellationToken cancellationToken)
+    {
+        try { await Task.Delay(300, cancellationToken); }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return; }
+        if (Document.Version == version) await InvokeAsync(RefreshDiagnosticsAsync);
     }
     private IReadOnlyList<LanguageDiagnostic> DiagnosticsFor(EditorLine line) => _diagnostics
         .Where(item => item.StartLine <= line.Number - 1 && (item.EndLine < 0 ? item.StartLine : item.EndLine) >= line.Number - 1)
@@ -559,6 +621,9 @@
     public async ValueTask DisposeAsync()
     {
         _completionRequest.Dispose(); _signatureRequest.Dispose(); _hoverRequest.Dispose(); _semanticRequest.Dispose();
+        _semanticRefreshCancellation?.Cancel(); _semanticRefreshCancellation?.Dispose();
+        _diagnosticRefreshCancellation?.Cancel(); _diagnosticRefreshCancellation?.Dispose();
+        _languageStartupCancellation.Cancel(); _languageStartupCancellation.Dispose();
         _diagnosticRequest.Dispose();
         _presentationCancellation?.Cancel();
         _presentationCancellation?.Dispose();

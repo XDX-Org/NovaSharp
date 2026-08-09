@@ -124,6 +124,7 @@
             <EditorGroupLayoutView @key="_workspace.Layout.Root.Id" Node="_workspace.Layout.Root" Workspace="_workspace" WordWrap="_wordWrap"
                                    ProjectSystem="_projectSystem" LanguageProvider="_languageProvider"
                                    Diagnostics="_languageProvider.Diagnostics.Entries"
+                                   LanguageAnalysisRevision="_languageAnalysisRevision"
                                    SuggestionsEnabled="_suggestions" SemanticHighlighting="Program.Configuration.Current.SemanticHighlighting"
                                    ExternalDragActive="_explorerFileDrag is not null"
                                    ActiveChanged="ActiveChangedAsync" ContentEdited="ContentEditedAsync"
@@ -270,6 +271,7 @@
     private int _quickAccessSelected;
     private int _navigationIndex = -1;
     private bool _restoringNavigation, _symbolSearchOpen, _searchOpen;
+    private long _languageAnalysisRevision;
     private bool _quickAccessOpen, _quickAccessCommands, _quickAccessBusy;
     private bool _projectReloading, _outputOpen, _terminalOpen;
     private bool _showFind, _wordWrap, _externalChange, _explorerOpen = true, _problemsOpen, _suggestions = true;
@@ -295,7 +297,8 @@
         _languageProvider = new(path => _languageServers.FirstOrDefault(server =>
                 ServerHandles(server.Kind, Path.GetExtension(path))).Manager,
             path => OpenDocuments.FirstOrDefault(document => document.FilePath is not null
-                && PathsEqual(document.FilePath, path))?.CreateSnapshot());
+                && PathsEqual(document.FilePath, path))?.CreateSnapshot(), synchronize: (path, token) =>
+                    CoordinatorFor(path)?.SynchronizeAsync(path, token) ?? Task.CompletedTask);
         _buildRun = new(_languageProvider.Diagnostics);
         _quickAccess = new(_commands);
         RegisterCommands();
@@ -364,15 +367,50 @@
                 path => OpenDocuments.FirstOrDefault(document => document.FilePath is not null
                     && PathsEqual(document.FilePath, path))?.CreateSnapshot());
             manager.DiagnosticsPublished += published => publisher.Publish(published);
-            manager.Ready += () => _ = coordinator.ReplayAsync();
-            manager.CapabilitiesChanged += () => _ = InvokeAsync(StateHasChanged);
+            manager.Ready += () => _ = ReplayAndAnalyzeAsync(definition.Kind, coordinator);
+            manager.CapabilitiesChanged += LanguageServerCapabilitiesChanged;
             _languageServers.Add((definition.Kind, manager));
             _languageCoordinators.Add(manager, coordinator);
             _languageServerStatuses[definition.Kind] = manager.Status;
         }
         await Task.WhenAll(_languageServers.Select(server => server.Manager.StartAsync()));
         await SyncLanguageDocumentsAsync();
+        await Task.WhenAll(_languageServers.Select(server => AnalyzeOpenDocumentsAsync(server.Kind)));
     }
+
+    private async Task ReplayAndAnalyzeAsync(LanguageServerKind kind, LanguageDocumentCoordinator coordinator)
+    {
+        try
+        {
+            await coordinator.ReplayAsync();
+            await AnalyzeOpenDocumentsAsync(kind);
+        }
+        catch (Exception exception) when (exception is OperationCanceledException or IOException
+            or StreamJsonRpc.ConnectionLostException) { }
+    }
+
+    private async Task AnalyzeOpenDocumentsAsync(LanguageServerKind kind)
+    {
+        var documents = OpenDocuments.Where(document => document.FilePath is { } path
+            && ServerHandles(kind, Path.GetExtension(path))).ToArray();
+        foreach (var document in documents)
+        {
+            var snapshot = document.CreateSnapshot();
+            await _languageProvider.GetDiagnosticsAsync(
+                new(snapshot.Path, null, snapshot.Version, snapshot.Text.Length), default);
+        }
+        if (documents.Length > 0) await InvokeAsync(() =>
+        {
+            _languageAnalysisRevision++;
+            StateHasChanged();
+        });
+    }
+
+    private void LanguageServerCapabilitiesChanged() => _ = InvokeAsync(() =>
+    {
+        _languageAnalysisRevision++;
+        StateHasChanged();
+    });
 
     private async Task ReplaceLanguageServersAsync()
     {
@@ -390,7 +428,11 @@
     {
         _languageServerStatuses[kind] = status;
         if (status.State == LanguageServerState.Restarting) _languageProvider.Diagnostics.SetProducerStale(kind.ToString(), true);
-        else if (status.State == LanguageServerState.Ready) _languageProvider.Diagnostics.SetProducerStale(kind.ToString(), false);
+        else if (status.State == LanguageServerState.Ready)
+        {
+            _languageProvider.Diagnostics.SetProducerStale(kind.ToString(), false);
+            _languageAnalysisRevision++;
+        }
         else if (status.State == LanguageServerState.Unavailable) _languageProvider.Diagnostics.ClearProducer(kind.ToString());
         StateHasChanged();
     });

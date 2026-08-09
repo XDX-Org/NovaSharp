@@ -24,6 +24,7 @@ internal sealed class LanguageServerProcess : IAsyncDisposable
     internal Stream Output => _process.StandardInput.BaseStream;
     internal int Id => _process.Id;
     internal bool HasExited => _process.HasExited;
+    internal int? ExitCode => _process.HasExited ? _process.ExitCode : null;
     internal Task Exited => _process.WaitForExitAsync();
     internal string Stderr { get { lock (_stderr) return _stderr.ToString(); } }
 
@@ -87,8 +88,8 @@ internal sealed class LanguageServerProcess : IAsyncDisposable
     private static IReadOnlyDictionary<string, string> SafeEnvironment()
     {
         string[] names = OperatingSystem.IsWindows()
-            ? ["PATH", "SystemRoot", "TEMP", "TMP", "DOTNET_ROOT"]
-            : ["PATH", "LANG", "LC_ALL", "TMPDIR", "DOTNET_ROOT"];
+            ? ["PATH", "SystemRoot", "TEMP", "TMP", "DOTNET_ROOT", "DOTNET_CLI_HOME", "USERPROFILE", "NUGET_PACKAGES"]
+            : ["PATH", "LANG", "LC_ALL", "TMPDIR", "DOTNET_ROOT", "DOTNET_CLI_HOME", "HOME", "NUGET_PACKAGES"];
         return names.Select(name => (name, value: Environment.GetEnvironmentVariable(name)))
             .Where(item => item.value is not null).ToDictionary(item => item.name, item => item.value!);
     }

@@ -15,6 +15,10 @@ internal sealed class LspClient : IAsyncDisposable
     internal event Action<LspLogMessageParams>? MessageLogged;
     internal event Action? CapabilitiesChanged;
     internal bool IsRegistered(string method) { lock (_registrations) return _registrations.Values.Any(item => item.Method == method); }
+    internal IReadOnlyList<LspRegistration> Registrations(string method)
+    {
+        lock (_registrations) return _registrations.Values.Where(item => item.Method == method).ToArray();
+    }
 
     internal LspClient(Stream sendingStream, Stream receivingStream)
     {
@@ -22,6 +26,7 @@ internal sealed class LspClient : IAsyncDisposable
         var formatter = new SystemTextJsonFormatter();
         formatter.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
         formatter.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
+        formatter.JsonSerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
         var handler = new HeaderDelimitedMessageHandler(sendingStream, receivingStream, formatter);
         _rpc = new JsonRpc(handler, _target);
         _rpc.StartListening();
@@ -89,7 +94,14 @@ internal sealed class LspClient : IAsyncDisposable
         }
 
         [JsonRpcMethod("workspace/configuration", UseSingleObjectParameterDeserialization = true)]
-        public IReadOnlyList<object?> Configuration(JsonElement parameters) => [];
+        public IReadOnlyList<object?> Configuration(JsonElement parameters)
+        {
+            if (!parameters.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array) return [];
+            return items.EnumerateArray().Select(item => item.TryGetProperty("section", out var section)
+                && section.GetString() is { } name && (name.EndsWith(".dotnet_compiler_diagnostics_scope", StringComparison.Ordinal)
+                    || name.EndsWith(".dotnet_analyzer_diagnostics_scope", StringComparison.Ordinal))
+                    ? (object?)"OpenFiles" : null).ToArray();
+        }
 
         [JsonRpcMethod("window/workDoneProgress/create", UseSingleObjectParameterDeserialization = true)]
         public object CreateProgress(JsonElement parameters) => new { };

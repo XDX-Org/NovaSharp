@@ -16,7 +16,8 @@ public readonly record struct TextRange(int Start, int Length);
 public readonly record struct EditorLine(int Number, string Text, IReadOnlyList<ClassifiedSpan> Spans);
 public readonly record struct ClassifiedSpan(int Start, int Length, TokenKind Kind);
 
-public enum TokenKind { Text, Keyword, String, Comment, Number, Type, Method, Property, Field, Namespace }
+public enum TokenKind { Text, Keyword, String, Comment, Number, Type, EnumType, Parameter, Method, Property, Field, Event, Namespace,
+    RegexEscape, RegexGroup, RegexCharacterClass, RegexQuantifier }
 
 internal static partial class CSharpTokenizer
 {
@@ -25,11 +26,11 @@ internal static partial class CSharpTokenizer
         "abstract", "as", "async", "await", "base", "bool", "break", "byte", "case", "catch", "char",
         "checked", "class", "const", "continue", "decimal", "default", "delegate", "do", "double", "else",
         "enum", "event", "explicit", "extern", "false", "finally", "fixed", "float", "for", "foreach", "goto",
-        "if", "implicit", "in", "int", "interface", "internal", "is", "lock", "long", "namespace", "new", "null",
-        "object", "operator", "out", "override", "params", "private", "protected", "public", "readonly", "record",
+        "if", "implicit", "in", "init", "int", "interface", "internal", "is", "lock", "long", "namespace", "new", "null",
+        "object", "operator", "out", "override", "params", "partial", "private", "protected", "public", "readonly", "record",
         "ref", "return", "sbyte", "sealed", "short", "sizeof", "stackalloc", "static", "string", "struct",
         "switch", "this", "throw", "true", "try", "typeof", "uint", "ulong", "unchecked", "unsafe", "ushort",
-        "using", "var", "virtual", "void", "volatile", "while", "yield"
+        "using", "var", "virtual", "void", "volatile", "while", "yield", "get", "set", "add", "remove"
     ];
 
     internal static IReadOnlyList<EditorLine> Tokenize(string text)
@@ -37,10 +38,18 @@ internal static partial class CSharpTokenizer
         var result = new List<EditorLine>();
         var lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
         var inBlockComment = false;
+        var inEnum = false;
+        var enumDepth = 0;
+        var awaitingEnumName = false;
+        var awaitingEnumBody = false;
+        var awaitingDeclarationType = false;
+        var awaitingEventType = false;
+        var awaitingEventName = false;
         for (var lineIndex = 0; lineIndex < lines.Length; lineIndex++)
         {
             var line = lines[lineIndex];
             var spans = new List<ClassifiedSpan>();
+            var namespaceContext = false;
             for (var i = 0; i < line.Length;)
             {
                 if (inBlockComment)
@@ -71,7 +80,9 @@ internal static partial class CSharpTokenizer
                         if (line[i] == '\\') i += Math.Min(2, line.Length - i);
                         else if (line[i++] == quote) break;
                     }
-                    spans.Add(new(start, i - start, TokenKind.String));
+                    if (quote == '"' && line[..start].Contains("GeneratedRegex", StringComparison.Ordinal))
+                        AddRegexSpans(spans, line, start, i);
+                    else spans.Add(new(start, i - start, TokenKind.String));
                 }
                 else if (char.IsDigit(line[i]))
                 {
@@ -84,14 +95,111 @@ internal static partial class CSharpTokenizer
                     var start = i++;
                     while (i < line.Length && (char.IsLetterOrDigit(line[i]) || line[i] == '_')) i++;
                     var word = line[start..i];
-                    if (Keywords.Contains(word)) spans.Add(new(start, i - start, TokenKind.Keyword));
+                    if (Keywords.Contains(word))
+                    {
+                        spans.Add(new(start, i - start, TokenKind.Keyword));
+                        if (word == "enum") { awaitingEnumName = true; awaitingEnumBody = true; }
+                        if (word == "record") awaitingDeclarationType = true;
+                        if (word == "event") awaitingEventType = true;
+                        if (word is "using" or "namespace") namespaceContext = true;
+                    }
+                    else if (awaitingEnumName)
+                    {
+                        spans.Add(new(start, i - start, TokenKind.EnumType));
+                        awaitingEnumName = false;
+                    }
+                    else if (awaitingDeclarationType)
+                    {
+                        spans.Add(new(start, i - start, TokenKind.Type));
+                        awaitingDeclarationType = false;
+                    }
+                    else if (inEnum) spans.Add(new(start, i - start, TokenKind.Field));
+                    else if (awaitingEventType)
+                    {
+                        spans.Add(new(start, i - start, TokenKind.Type));
+                        awaitingEventType = false;
+                        awaitingEventName = true;
+                    }
+                    else if (awaitingEventName)
+                    {
+                        spans.Add(new(start, i - start, TokenKind.Event));
+                        awaitingEventName = false;
+                    }
+                    else if (namespaceContext) spans.Add(new(start, i - start, TokenKind.Namespace));
+                    else if (NextNonWhitespace(line, i) == '(' && PreviousNonWhitespace(line, start) == '[')
+                        spans.Add(new(start, i - start, TokenKind.Type));
+                    else if (NextNonWhitespace(line, i) == '(') spans.Add(new(start, i - start, TokenKind.Method));
+                    else if (word[0] == '_') spans.Add(new(start, i - start, TokenKind.Field));
+                    else if (PreviousNonWhitespace(line, start) == '.') spans.Add(new(start, i - start, TokenKind.Property));
+                    else if (NextNonWhitespace(line, i) is ',' or '=' or ')')
+                        spans.Add(new(start, i - start, TokenKind.Parameter));
                     else if (char.IsUpper(word[0])) spans.Add(new(start, i - start, TokenKind.Type));
                 }
-                else i++;
+                else
+                {
+                    if (line[i] is ';' or '=') namespaceContext = false;
+                    if (line[i] == '{')
+                    {
+                        if (awaitingEnumBody) { inEnum = true; enumDepth = 1; awaitingEnumBody = false; }
+                        else if (inEnum) enumDepth++;
+                    }
+                    else if (line[i] == '}' && inEnum && --enumDepth == 0) inEnum = false;
+                    i++;
+                }
             }
             result.Add(new(lineIndex + 1, line, spans));
         }
         return result;
+    }
+
+    private static void AddRegexSpans(List<ClassifiedSpan> spans, string text, int start, int end)
+    {
+        Add(start, 1, TokenKind.String);
+        var contentEnd = end > start + 1 && text[end - 1] == '"' ? end - 1 : end;
+        for (var position = start + 1; position < contentEnd;)
+        {
+            var tokenStart = position;
+            TokenKind kind;
+            if (text[position] == '\\')
+            {
+                position += Math.Min(2, contentEnd - position);
+                kind = TokenKind.RegexEscape;
+            }
+            else
+            {
+                kind = text[position] switch
+                {
+                    '(' or ')' or '<' or '>' => TokenKind.RegexGroup,
+                    '[' or ']' => TokenKind.RegexCharacterClass,
+                    '*' or '+' or '?' or '{' or '}' or '^' or '$' or '|' or '.' => TokenKind.RegexQuantifier,
+                    _ => TokenKind.String
+                };
+                position++;
+                while (position < contentEnd && kind == TokenKind.String && text[position] != '\\'
+                    && text[position] is not ('(' or ')' or '<' or '>' or '[' or ']' or '*' or '+' or '?'
+                        or '{' or '}' or '^' or '$' or '|' or '.')) position++;
+            }
+            Add(tokenStart, position - tokenStart, kind);
+        }
+        if (contentEnd < end) Add(contentEnd, 1, TokenKind.String);
+        return;
+
+        void Add(int tokenStart, int length, TokenKind kind)
+        {
+            if (length > 0) spans.Add(new(tokenStart, length, kind));
+        }
+    }
+
+    private static char? NextNonWhitespace(string text, int position)
+    {
+        while (position < text.Length && char.IsWhiteSpace(text[position])) position++;
+        return position < text.Length ? text[position] : null;
+    }
+
+    private static char? PreviousNonWhitespace(string text, int position)
+    {
+        while (position > 0 && char.IsWhiteSpace(text[position - 1])) position--;
+        return position > 0 ? text[position - 1] : null;
     }
 
     internal static IReadOnlyList<EditorLine> Tokenize(string text, IReadOnlyList<SemanticSpan> semanticSpans)
@@ -107,6 +215,8 @@ internal static partial class CSharpTokenizer
                 .Select(span => new ClassifiedSpan(span.Start - lineStart, span.Length, SemanticKind(span.Classification)))
                 .Where(span => span.Kind != TokenKind.Text).DistinctBy(span => (span.Start, span.Length))
                 .OrderBy(span => span.Start).ThenByDescending(span => span.Length).ToArray();
+            semantic = semantic.Where(span => !line.Spans.Any(baseline => baseline.Kind == TokenKind.EnumType
+                && span.Start < baseline.Start + baseline.Length && span.Start + span.Length > baseline.Start)).ToArray();
             semantic = NonOverlapping(semantic);
             if (semantic.Length > 0)
             {
@@ -117,6 +227,31 @@ internal static partial class CSharpTokenizer
             lineStart = lineEnd + NewLineLength(text, lineEnd);
         }
         return lines;
+    }
+
+    internal static IReadOnlyList<SemanticSpan> TranslateSemanticSpans(string oldText, string newText,
+        IReadOnlyList<SemanticSpan> spans)
+    {
+        if (oldText == newText || spans.Count == 0) return spans;
+        var prefix = 0;
+        while (prefix < oldText.Length && prefix < newText.Length && oldText[prefix] == newText[prefix]) prefix++;
+        var suffix = 0;
+        while (suffix < oldText.Length - prefix && suffix < newText.Length - prefix
+            && oldText[^(suffix + 1)] == newText[^(suffix + 1)]) suffix++;
+        var oldEnd = oldText.Length - suffix;
+        var delta = newText.Length - oldText.Length;
+        var translated = new List<SemanticSpan>(spans.Count);
+        foreach (var span in spans)
+        {
+            var spanEnd = span.Start + span.Length;
+            if (oldEnd == prefix && span.Start < prefix && spanEnd >= prefix)
+                translated.Add(span with { Length = span.Length + delta });
+            else if (spanEnd <= prefix) translated.Add(span);
+            else if (span.Start >= oldEnd) translated.Add(span with { Start = span.Start + delta });
+            else if (prefix >= span.Start && oldEnd <= spanEnd && span.Length + delta > 0)
+                translated.Add(span with { Length = span.Length + delta });
+        }
+        return translated;
     }
 
     private static ClassifiedSpan[] NonOverlapping(IEnumerable<ClassifiedSpan> spans)
@@ -135,6 +270,12 @@ internal static partial class CSharpTokenizer
         var value when value.Contains("method", StringComparison.OrdinalIgnoreCase) => TokenKind.Method,
         var value when value.Contains("property", StringComparison.OrdinalIgnoreCase) => TokenKind.Property,
         var value when value.Contains("field", StringComparison.OrdinalIgnoreCase) => TokenKind.Field,
+        var value when value.Contains("parameter", StringComparison.OrdinalIgnoreCase) => TokenKind.Parameter,
+        var value when value.Contains("enumMember", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("enum", StringComparison.OrdinalIgnoreCase)
+                && value.Contains("member", StringComparison.OrdinalIgnoreCase)
+            => TokenKind.Field,
+        var value when value.Contains("event", StringComparison.OrdinalIgnoreCase) => TokenKind.Event,
         var value when value.Contains("namespace", StringComparison.OrdinalIgnoreCase) => TokenKind.Namespace,
         var value when value.Contains("class", StringComparison.OrdinalIgnoreCase)
             || value.Contains("struct", StringComparison.OrdinalIgnoreCase)

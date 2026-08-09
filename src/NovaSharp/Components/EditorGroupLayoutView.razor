@@ -7,6 +7,7 @@
         <EditorGroupLayoutView @key="split.First.Id" Node="split.First" Workspace="Workspace" WordWrap="WordWrap"
                                ProjectSystem="ProjectSystem" LanguageProvider="LanguageProvider"
                                Diagnostics="Diagnostics"
+                               LanguageAnalysisRevision="LanguageAnalysisRevision"
                                SuggestionsEnabled="SuggestionsEnabled" SemanticHighlighting="SemanticHighlighting"
                                ExternalDragActive="ExternalDragActive"
                                ActiveChanged="ActiveChanged" ContentEdited="ContentEdited" CloseRequested="CloseRequested"
@@ -15,6 +16,7 @@
         <EditorGroupLayoutView @key="split.Second.Id" Node="split.Second" Workspace="Workspace" WordWrap="WordWrap"
                                ProjectSystem="ProjectSystem" LanguageProvider="LanguageProvider"
                                Diagnostics="Diagnostics"
+                               LanguageAnalysisRevision="LanguageAnalysisRevision"
                                SuggestionsEnabled="SuggestionsEnabled" SemanticHighlighting="SemanticHighlighting"
                                ExternalDragActive="ExternalDragActive"
                                ActiveChanged="ActiveChanged" ContentEdited="ContentEdited" CloseRequested="CloseRequested"
@@ -79,6 +81,7 @@ else if (Node is EditorGroup group)
                             WordWrap="WordWrap" ViewState="active.ViewState" ViewStateChanged="ActiveChanged"
                             Document="active.Document" LanguageProvider="LanguageProvider"
                             Diagnostics="Diagnostics"
+                            LanguageAnalysisRevision="LanguageAnalysisRevision"
                             ProjectContext="@(active.Document.FilePath is { } path ? ProjectSystem.GetActiveDocument(path)?.Project.Id.Id.ToString() : null)"
                             ProjectLoading="ProjectSystem.State.IsLoading"
                             SuggestionsEnabled="SuggestionsEnabled" SemanticHighlighting="SemanticHighlighting"
@@ -107,6 +110,7 @@ else if (Node is EditorGroup group)
     [Parameter, EditorRequired] public RoslynProjectSystem ProjectSystem { get; set; } = null!;
     [Parameter, EditorRequired] public ILanguageProvider LanguageProvider { get; set; } = null!;
     [Parameter] public IReadOnlyList<LanguageDiagnostic> Diagnostics { get; set; } = [];
+    [Parameter] public long LanguageAnalysisRevision { get; set; }
     [Parameter] public bool SuggestionsEnabled { get; set; } = true;
     [Parameter] public bool SemanticHighlighting { get; set; } = true;
     [Parameter] public EventCallback ActiveChanged { get; set; }

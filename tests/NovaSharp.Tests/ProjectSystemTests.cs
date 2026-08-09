@@ -168,6 +168,22 @@ public sealed class ProjectSystemTests
 
     [TestMethod]
     [Timeout(30000)]
+    public async Task SavingSourceDoesNotReloadTheWorkspace()
+    {
+        using var fixture = new ProjectFixture();
+        await using var projectSystem = new RoslynProjectSystem();
+        await projectSystem.OpenAsync(fixture.SolutionFile);
+        projectSystem.StopWatching();
+        var version = projectSystem.CompletedLoadVersion;
+
+        projectSystem.NotifyProjectInputChanged(Path.Combine(fixture.Root, "App", "Saved.cs"));
+        await Task.Delay(500);
+
+        Assert.AreEqual(version, projectSystem.CompletedLoadVersion);
+    }
+
+    [TestMethod]
+    [Timeout(30000)]
     public async Task NamedFiveHundredDocumentFixtureMeetsSolutionLoadBudget()
     {
         using var fixture = new PerformanceFixture();
