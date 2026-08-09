@@ -116,15 +116,25 @@ internal sealed partial class WebLanguageProvider(RoslynProjectSystem projectSys
     private readonly Dictionary<string, CompletionEntry> _completionItems = [];
     private long _completionId;
     internal int RetainedCompletionCount { get { lock (_completionItems) return _completionItems.Count; } }
+    internal int RetainedCompletionBytes
+    {
+        get
+        {
+            lock (_completionItems)
+                return _completionItems.Values.Sum(item => 64 + 2 * (item.Id.Length + item.DisplayText.Length
+                    + item.FilterText.Length + item.SortText.Length + item.Kind.Length + (item.Detail?.Length ?? 0)));
+        }
+    }
 
     public LanguageProviderInfo GetInfo(string documentPath)
     {
         var extension = Path.GetExtension(documentPath).ToLowerInvariant();
         var id = extension == ".css" ? "css" : extension is ".html" or ".htm" ? "html" : "razor";
         var name = id == "css" ? "CSS" : id == "html" ? "HTML" : "Razor";
-        return new(id, name, LanguageCapabilities.Completion | LanguageCapabilities.Hover
-            | LanguageCapabilities.SemanticTokens | LanguageCapabilities.Diagnostics | LanguageCapabilities.Formatting
-            | LanguageCapabilities.Symbols | LanguageCapabilities.Navigation | LanguageCapabilities.Rename);
+        var capabilities = LanguageCapabilities.Completion | LanguageCapabilities.Hover
+            | LanguageCapabilities.SemanticTokens | LanguageCapabilities.Diagnostics | LanguageCapabilities.Formatting;
+        if (id != "css") capabilities |= LanguageCapabilities.Symbols | LanguageCapabilities.Navigation | LanguageCapabilities.Rename;
+        return new(id, name, capabilities);
     }
 
     public void ClearDiagnostics(string documentPath) => diagnostics.Remove(documentPath);
@@ -349,7 +359,7 @@ internal sealed partial class WebLanguageProvider(RoslynProjectSystem projectSys
     private IEnumerable<string> ComponentNames(string path) => ComponentFiles(path).Select(item => Path.GetFileNameWithoutExtension(item)!);
     private IEnumerable<string> ProjectTypeNames(string path)
     {
-        var root = projectSystem.State.Path is { } project ? Path.GetDirectoryName(project) : Path.GetDirectoryName(path);
+        var root = DiscoveryRoot(path);
         if (root is null || !Directory.Exists(root)) return [];
         return SafeFiles(root, "*.cs")
             .Where(item => !item.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
@@ -359,11 +369,22 @@ internal sealed partial class WebLanguageProvider(RoslynProjectSystem projectSys
     }
     private IEnumerable<string> ComponentFiles(string path)
     {
-        var root = projectSystem.State.Path is { } project ? Path.GetDirectoryName(project) : Path.GetDirectoryName(path);
+        var root = DiscoveryRoot(path);
         if (root is null || !Directory.Exists(root)) return [];
         return SafeFiles(root, "*.razor")
             .Where(item => !item.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
                 && !item.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal));
+    }
+    private string? DiscoveryRoot(string path)
+    {
+        if (projectSystem.State.Path is { } project) return Path.GetDirectoryName(project);
+        for (var directory = Path.GetDirectoryName(path); directory is not null; directory = Path.GetDirectoryName(directory))
+            try
+            {
+                if (Directory.EnumerateFiles(directory, "*.csproj", SearchOption.TopDirectoryOnly).Any()) return directory;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
+        return Path.GetDirectoryName(path);
     }
     private static IReadOnlyList<string> SafeFiles(string root, string pattern)
     {
@@ -462,6 +483,7 @@ internal sealed class LanguageProviderRegistry : ILanguageProvider, IExtendedLan
     }
     internal LanguageDiagnosticStore Diagnostics { get; }
     internal int RetainedCompletionCount => _csharp.RetainedCompletionCount + _web.RetainedCompletionCount;
+    internal int RetainedWebCompletionBytes => _web.RetainedCompletionBytes;
     internal int RetainedProjectionCount => 0;
     internal void Register(IEnumerable<string> extensions, ILanguageProvider provider)
     {

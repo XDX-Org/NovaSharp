@@ -25,7 +25,7 @@ JavaScript/TypeScript language services and browser debugging are not preview re
 
 ## Budgets
 
-On the 2,000-element Phase 15 fixture, projection updates must finish within 250 ms and first completion and semantic results within 1 second each. Providers retain zero projection snapshots; component/type discovery scans at most 200 C# files and retains at most 200 completion entries. A service restart must finish within 50 ms and preserve open document text.
+On the 2,000-element Phase 15 fixture, projection updates must finish within 250 ms and first completion and semantic results within 1 second each. Providers retain zero projection snapshots; component/type discovery scans at most 200 C# files and retains at most 200 completion entries or 64 KiB of web-completion text and metadata. A service restart must finish within 50 ms and preserve open document text.
 
 ## Design constraints
 

@@ -103,14 +103,23 @@ public sealed class ProjectSystemTests
         await projectSystem.OpenAsync(fixture.SolutionFile);
         using var document = new EditorDocumentState();
         await document.OpenAsync(fixture.SharedFile);
+        using var webDocument = new EditorDocumentState();
+        await webDocument.OpenAsync(fixture.WebComponent);
         projectSystem.Track(document);
+        projectSystem.Track(webDocument);
         document.Content = "public class Shared { public string Buffer => \"kept\"; }";
+        webDocument.Content = "<article>dirty Razor buffer</article>";
 
         await projectSystem.ReloadAsync();
         await WaitUntilAsync(async () => (await projectSystem.GetActiveDocument(fixture.SharedFile)!.GetTextAsync())
             .ToString().Contains("Buffer", StringComparison.Ordinal));
 
         Assert.IsTrue(document.IsDirty);
+        Assert.IsTrue(webDocument.IsDirty);
+        Assert.AreEqual("<article>dirty Razor buffer</article>", webDocument.Content);
+        var webProvider = new LanguageProviderRegistry(projectSystem);
+        Assert.IsFalse((await webProvider.GetSemanticSpansAsync(
+            new(webDocument.FilePath!, null, webDocument.Version, 2), default)).IsDegraded);
         Assert.IsTrue(projectSystem.GetContexts(fixture.SharedFile).Count >= 2);
         Assert.IsTrue(projectSystem.RetainedSolutionSnapshotCount <= 3);
     }
@@ -197,6 +206,7 @@ public sealed class ProjectSystemTests
         internal string SharedFile => Path.Combine(Root, "Shared.cs");
         internal string SolutionFile => Path.Combine(Root, "Fixture.slnx");
         internal string AppProject => Path.Combine(Root, "App", "App.csproj");
+        internal string WebComponent => Path.Combine(Root, "Web", "Component.razor");
 
         internal ProjectFixture()
         {
