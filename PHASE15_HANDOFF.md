@@ -21,33 +21,23 @@ ADR 0006 records the in-process service, projection ownership, bounds, degraded 
 - Local Release builds pass with warnings as errors.
 - All 95 tests pass locally.
 - Windows x64, macOS Intel, and macOS Apple Silicon build/test/package jobs pass.
-- Linux reaches the older Phase 9 packaged smoke but has not yet reached the Phase 11 or Phase 15 gates.
-- Latest run: https://github.com/XDX-Org/NovaSharp/actions/runs/31278775518
+- The full Windows x64, Linux x64, macOS Intel, and macOS Apple Silicon matrix passes.
+- Linux packaged interaction smokes pass through the Phase 15 gate.
+- Successful run: https://github.com/XDX-Org/NovaSharp/actions/runs/31309030640
 
-Do not mark Phase 15 complete until the Linux Phase 15 packaged interaction smoke and the full matrix pass.
+Phase 15 is complete.
 
-## Current blocker
+## Resolved blocker
 
-The Linux Phase 9 smoke reports `ResultsStreamed = false`. Its Quick Open assertions now pass. The remaining failure is specific to synthetic search-input events under hosted WebKit; `SearchPanel` itself and `WorkspaceSearchService` are covered by passing tests.
+The Linux Phase 9 smoke no longer relies on synthetic search-input events under hosted WebKit. It invokes an internal `SearchPanel` bridge while retaining visible-panel, rendered-results, and replace-preview assertions. The previously unreached Phase 11 smoke similarly uses the terminal service bridge for PTY input/output while retaining visible-host, resize, and process-exit assertions.
 
-Findings and fixes already pushed:
+Final fixes:
 
-- `fd00606` rerenders Quick Open after its asynchronous file scan.
-- `1976ba4` makes workspace features prefer the active solution directory over stale Explorer session state.
-- `63a189b` verifies the two rendered `Shared.cs` entries without relying on synthetic Quick Open typing.
-- `7f50b44` changes the search query to `oninput`, but hosted WebKit still drops the programmatic event.
-
-## Next action
-
-Remove synthetic typing from the Phase 9 smoke while retaining UI coverage:
-
-1. Add `@ref` for `SearchPanel` in `WorkbenchPanel`.
-2. Add an internal `SearchPanel.RunSmokeAsync(string query)` that assigns `_query`, calls the existing `StartAsync`, and rerenders.
-3. Add a `[JSInvokable]` bridge method on `WorkbenchPanel` that calls it.
-4. In `runPhase9Smoke`, invoke that bridge after confirming the Search panel is visible, then keep the existing rendered-results and replace-preview assertions.
-5. Run all 95 tests, push, and monitor the complete matrix through the Phase 15 Linux gate.
-6. Once green, update `docs/delivery-plan.md` to `Complete` and replace this blocker section with the successful run URL.
+- `a347216` replaces synthetic Phase 9 search typing with the `SearchPanel` bridge.
+- `e2d683f` refreshes the bridge's workspace parameters before running the search.
+- `80fd600` stabilizes the previously unreached Phase 11 packaged interaction smoke.
+- Run 31309030640 passes the complete supported-platform matrix and every Linux packaged smoke through Phase 15.
 
 ## Commit range
 
-Phase 15 starts at `26b0292` on top of Phase 11 commit `a24cf72`. Current branch head is `7f50b44`; the branch is pushed and the worktree was clean at handoff.
+Phase 15 starts at `26b0292` on top of Phase 11 commit `a24cf72`. Completion evidence is recorded by run 31309030640.
