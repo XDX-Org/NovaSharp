@@ -60,6 +60,13 @@
         await InvokeAsync(StateHasChanged);
         return _matches.Count;
     }
+    internal async Task<int> RunSmokeAsync(string query, string? rootPath,
+        IReadOnlyList<EditorDocumentState> openDocuments)
+    {
+        RootPath = rootPath;
+        OpenDocuments = openDocuments;
+        return await RunSmokeAsync(query);
+    }
     private async Task StartAsync()
     {
         Cancel(); _matches.Clear(); _issues.Clear(); _limitReached = false;

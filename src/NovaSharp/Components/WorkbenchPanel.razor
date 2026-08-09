@@ -792,9 +792,11 @@
             projectFileEditable, contextMenuPresent, dragSourcePresent, error));
 
     [JSInvokable]
-    public Task<int> RunPhase9SearchSmokeAsync(string query) =>
-        _searchPanel?.RunSmokeAsync(query)
-        ?? throw new InvalidOperationException("Search panel is unavailable.");
+    public Task<int> RunPhase9SearchSmokeAsync(string query)
+    {
+        if (_searchPanel is null) throw new InvalidOperationException("Search panel is unavailable.");
+        return _searchPanel.RunSmokeAsync(query, WorkspaceRoot, OpenDocuments);
+    }
 
     [JSInvokable]
     public Task CompletePhase9SmokeAsync(bool quickOpenVisible, bool duplicateFilesVisible, bool searchVisible,
