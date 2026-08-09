@@ -55,6 +55,18 @@ public sealed class WebLanguageFeaturesTests
     }
 
     [TestMethod]
+    public async Task RazorDiagnosticsIgnoreGenericTypesInsideCodeBlocks()
+    {
+        await using var fixture = await WebFixture.CreateAsync("CodeEditor.razor",
+            "<div>Editor</div>\n@code { private IReadOnlyList<NavigationTarget> targets = []; public Phase15SmokeResult? Result { get; set; } }");
+
+        var diagnostics = await fixture.Provider.GetDiagnosticsAsync(
+            fixture.Request(fixture.Document.Content!.Length), default);
+
+        Assert.IsFalse(diagnostics.Value!.Any(item => item.Id is "WEB001" or "WEB002"));
+    }
+
+    [TestMethod]
     public async Task RegistrySelectsCapabilitiesWithoutEditorTypeKnowledge()
     {
         await using var system = new RoslynProjectSystem();

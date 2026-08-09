@@ -228,8 +228,12 @@ internal sealed partial class WebLanguageProvider(RoslynProjectSystem projectSys
     {
         if (Snapshot(request) is not { } snapshot) return Task.FromResult(Degraded<IReadOnlyList<LanguageDiagnostic>>(request));
         var results = new List<LanguageDiagnostic>();
+        var projection = WebProjectionParser.Parse(request.DocumentId, snapshot.Text, request.Version);
+        var htmlSegments = projection.Segments.Where(item => item.Kind == WebProjectionKind.Html).ToArray();
         var stack = new Stack<Match>();
-        foreach (Match match in ElementRegex().Matches(snapshot.Text))
+        foreach (Match match in ElementRegex().Matches(snapshot.Text).Where(match =>
+            htmlSegments.Any(segment => match.Index >= segment.HostStart
+                && match.Index + match.Length <= segment.HostStart + segment.Length)))
         {
             var name = match.Groups["name"].Value;
             if (match.Value.StartsWith("</", StringComparison.Ordinal))

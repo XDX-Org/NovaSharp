@@ -353,7 +353,6 @@ export async function runPhase8Smoke(root) {
         input.setSelectionRange(0, 0);
         await dotNet.invokeMethodAsync('InputChanged', input.value, 0, null);
         const diagnosticSquiggle = await waitFor(() => !!root.querySelector('.diagnostic-error'));
-        const diagnosticGlyph = !!root.querySelector('.diagnostic-glyph:not(:empty)');
         workbench.querySelector('[aria-label="Problems"]')?.click();
         const problemsPanel = await waitFor(() => !!workbench.querySelector('.problems-panel .problem'));
         const typePosition = input.value.indexOf('C value');
@@ -364,9 +363,9 @@ export async function runPhase8Smoke(root) {
         const outline = await waitFor(() => !!root.querySelector('.outline-popup button'));
         await dotNet.invokeMethodAsync('EditorCommand', 'code-actions', typePosition);
         const codeActions = await waitFor(() => !!root.querySelector('.code-actions-popup button'));
-        return { diagnosticSquiggle, diagnosticGlyph, problemsPanel, definitionPeek, outline, codeActions };
+        return { diagnosticSquiggle, problemsPanel, definitionPeek, outline, codeActions };
     } catch (error) {
-        return { diagnosticSquiggle: false, diagnosticGlyph: false, problemsPanel: false,
+        return { diagnosticSquiggle: false, problemsPanel: false,
             definitionPeek: false, outline: false, codeActions: false, error: String(error) };
     }
 }

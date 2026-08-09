@@ -129,6 +129,7 @@ button.output-line { cursor: pointer; text-decoration: underline; text-decoratio
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 .problems-list > p { margin: 18px; color: #929cab; }
 .problem { display: grid; width: 100%; grid-template-columns: 18px minmax(160px, 1fr) auto auto; gap: 8px; padding: 5px 12px; border: 0; border-radius: 0; color: inherit; background: transparent; text-align: left; }
+.problem-message { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .problem:hover { background: #292e36; }
 .problem-severity { color: #75a7e8; }
 .problem.error .problem-severity { color: #f06a6a; }
@@ -296,9 +297,6 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
 .diagnostic-error { text-decoration-color: #f06a6a; }
 .diagnostic-warning { text-decoration-color: #d9b56d; }
 .diagnostic-information, .diagnostic-hidden { text-decoration-color: #75a7e8; }
-.diagnostic-glyph { display: inline-block; width: 12px; font-size: 8px; text-align: left; }
-.diagnostic-line.error .diagnostic-glyph { color: #f06a6a; }
-.diagnostic-line.warning .diagnostic-glyph { color: #d9b56d; }
 .diagnostic-overview { position: absolute; z-index: 7; top: 24px; right: 2px; bottom: 0; width: 5px; pointer-events: none; }
 .overview-mark { position: absolute; right: 0; width: 5px; height: 3px; background: #75a7e8; }
 .overview-mark.error { background: #f06a6a; }
@@ -379,6 +377,6 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
     .build-controls select:first-child { width: 120px; }
 }
 
-.empty-state, .error { padding: 24px; color: #8f99a8; }
-.error { color: #ff8a8a; }
+.empty-state, .group-editor > .error { padding: 12px; color: #8f99a8; }
+.group-editor > .error { color: #ff8a8a; }
 #blazor-error-ui { display: none; position: fixed; right: 16px; bottom: 16px; padding: 12px; background: #5b2525; }

@@ -203,7 +203,7 @@ jobs:
           if (-not $process.WaitForExit(60000)) { $process.Kill($true); throw 'Phase 8 native smoke timed out.' }
           if ($process.ExitCode -ne 0 -and -not (Test-Path $report)) { throw "Phase 8 native smoke exited with $($process.ExitCode) before reporting." }
           $result = Get-Content $report | ConvertFrom-Json
-          $required = 'DiagnosticSquiggle', 'DiagnosticGlyph', 'ProblemsPanel', 'DefinitionPeek', 'Outline', 'CodeActions'
+          $required = 'DiagnosticSquiggle', 'ProblemsPanel', 'DefinitionPeek', 'Outline', 'CodeActions'
           foreach ($name in $required) { if (-not $result.$name) { throw "Phase 8 smoke assertion failed: $name ($($result.Error))" } }
       - name: Run packaged Linux Phase 9 native-host smoke
         if: runner.os == 'Linux'

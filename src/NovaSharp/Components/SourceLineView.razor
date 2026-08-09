@@ -1,12 +1,8 @@
-<div class="source-line @SeverityClass" @key="Line.Number"><span class="line-number"><span class="diagnostic-glyph" aria-hidden="true">@Glyph</span>@Line.Number</span><code>@RenderLine()</code></div>
+<div class="source-line" @key="Line.Number"><span class="line-number">@Line.Number</span><code>@RenderLine()</code></div>
 
 @code {
     [Parameter, EditorRequired] public EditorLine Line { get; set; }
     [Parameter] public IReadOnlyList<LanguageDiagnostic> Diagnostics { get; set; } = [];
-    private LanguageDiagnosticSeverity? Highest => Diagnostics.Select(item => (LanguageDiagnosticSeverity?)item.Severity).Max();
-    private string? SeverityClass => Highest is { } severity ? $"diagnostic-line {severity.ToString().ToLowerInvariant()}" : null;
-    private string Glyph => Highest switch { LanguageDiagnosticSeverity.Error => "●", LanguageDiagnosticSeverity.Warning => "▲", LanguageDiagnosticSeverity.Information => "◆", _ => "" };
-
     private RenderFragment RenderLine() => builder =>
     {
         var position = 0;

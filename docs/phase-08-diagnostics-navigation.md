@@ -8,7 +8,7 @@ Turn language analysis into an IDE workflow for finding, understanding, and fixi
 
 ## Scope
 
-- Syntax, compiler, and analyzer diagnostics as editor squiggles, glyphs, hover details, and a Problems panel.
+- Syntax, compiler, and analyzer diagnostics as editor squiggles, hover details, and a Problems panel.
 - Filter/group Problems by severity, project, file, and source; activation navigates to the exact range.
 - Go to definition/type definition/implementation, Peek Definition, find references, and document/workspace symbols.
 - Document outline for the active document.
@@ -18,7 +18,7 @@ Turn language analysis into an IDE workflow for finding, understanding, and fixi
 
 ## Design constraints
 
-- The .NET diagnostic store is authoritative. Visible line rows project intersecting diagnostic spans into underlines, gutter glyphs, overview marks, and accessible hover/focus details; virtualization must not limit the Problems list.
+- The .NET diagnostic store is authoritative. Visible line rows project intersecting diagnostic spans into underlines, overview marks, and accessible hover/focus details; virtualization must not limit the Problems list.
 - Diagnostic and semantic decorations are versioned interval data merged during line presentation, following DnSpyXDX's existing visible-token decoration approach.
 - Diagnostics are keyed by document version and producer. Publishing one producer's result must not erase another's.
 - Navigation chooses an existing view when sensible; Peek is transient and must not alter tab history until promoted.
@@ -42,7 +42,7 @@ Connect editing to [workspace-wide search and replacement](phase-09-search-repla
 
 Completed on `phase-8`:
 
-- versioned compiler/analyzer diagnostics with merged squiggles, gutter glyphs, overview marks, accessible details, and a non-virtualized Problems store;
+- versioned compiler/analyzer diagnostics with merged squiggles, overview marks, accessible details, and a non-virtualized Problems store;
 - Problems filtering/grouping and exact-range activation;
 - definition, type definition, implementation, Peek, references, document outline, and workspace symbols;
 - Back/Forward view restoration across groups and project-context-aware navigation;

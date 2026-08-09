@@ -22,6 +22,7 @@ Source control UI, remote development, collaboration, notebooks, AI completion, 
 | 10. Build, run, and output | In progress | Implementation and 87 local tests pass; four-platform and packaged Linux smoke evidence pending |
 | 11. Integrated terminal | In progress | Implementation and 89 local tests pass; four-platform and packaged Linux interaction evidence pending |
 | 15. Razor, HTML, and CSS | Complete | 99 tests, four-platform build/test/package, and Linux Phase 2–15 interaction gates pass in run 31310379518 |
+| 15.2. Real language servers | Planned | Replace all editor language intelligence with pinned, packaged LSP servers; see `phase-15-2-LSPs.md` |
 | 12–14, 16–18 | Planned | Completion criteria not yet met |
 
 Status values are `planned`, `in progress`, `blocked`, and `complete`. Update this table only from test or release evidence; documentation or partial UI alone does not complete a phase.

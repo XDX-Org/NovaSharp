@@ -16,6 +16,7 @@ NovaSharp is being built in small, runnable phases. Each phase must leave the ap
 10. [Build, run, and output](phase-10-build-run.md) — MSBuild orchestration, process control, and structured output.
 11. [Integrated terminal](phase-11-terminal.md) — terminal emulation and cross-platform process sessions.
 15. [Razor, HTML, and CSS](phase-15-web-languages.md) — project-aware Razor/Blazor editing and web-language services.
+15.2. [Real language servers](phase-15-2-LSPs.md) — replace in-process approximations with packaged LSPs for C#, Razor, HTML, and CSS.
 12. [Debug adapter foundation](phase-12-debug-adapter.md) — debugger protocol, lifecycle, source identity, and breakpoint binding.
 13. [Debugging experience](phase-13-debugging-experience.md) — stepping, stacks, variables, watches, evaluation, and debug console.
 14. [Durable workbench](phase-14-durable-workbench.md) — settings, layouts, accessibility, recovery, and performance hardening.
