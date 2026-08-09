@@ -6,10 +6,21 @@ export function createEditor(root, wordWrap, dotNet, selectionStart, selectionEn
     input.scrollTop = scrollTop;
     input.scrollLeft = scrollLeft;
 
+    let viewStateTimer;
+    const persistViewState = () => {
+        clearTimeout(viewStateTimer);
+        viewStateTimer = undefined;
+        dotNet.invokeMethodAsync('ViewportChanged', input.selectionStart, input.selectionEnd,
+            input.scrollTop, input.scrollLeft);
+    };
+    const scheduleViewState = () => {
+        clearTimeout(viewStateTimer);
+        viewStateTimer = setTimeout(persistViewState, 160);
+    };
     const sync = () => {
         presentation.scrollTop = input.scrollTop;
         presentation.scrollLeft = input.scrollLeft;
-        dotNet.invokeMethodAsync('ScrollChanged', input.scrollTop, input.scrollLeft);
+        scheduleViewState();
     };
     const keydown = event => {
         const popup = root.querySelector('.completion-popup');
@@ -106,7 +117,10 @@ export function createEditor(root, wordWrap, dotNet, selectionStart, selectionEn
     const inputChanged = event => {
         if (!composing) dotNet.invokeMethodAsync('InputChanged', input.value, input.selectionStart, event.data ?? null);
     };
-    const selectionChange = () => dotNet?.invokeMethodAsync('SelectionChanged', input.selectionStart, input.selectionEnd);
+    const selectionChange = scheduleViewState;
+    const blur = () => {
+        if (viewStateTimer !== undefined) persistViewState();
+    };
     input.addEventListener('scroll', sync);
     input.addEventListener('keydown', keydown);
     input.addEventListener('compositionstart', compositionStart);
@@ -115,6 +129,7 @@ export function createEditor(root, wordWrap, dotNet, selectionStart, selectionEn
     input.addEventListener('compositionend', compositionEnd);
     input.addEventListener('select', selectionChange);
     input.addEventListener('keyup', selectionChange);
+    input.addEventListener('blur', blur);
     let hoverTimer;
     let hoverCloseTimer;
     let hoverPosition = -1;
@@ -143,7 +158,8 @@ export function createEditor(root, wordWrap, dotNet, selectionStart, selectionEn
     root.addEventListener('pointerover', rootPointerover);
     root.addEventListener('pointerout', rootPointerout);
     root.__novaEditor = { input, dotNet, sync, keydown, compositionStart, compositionInput, inputChanged, compositionEnd,
-        selectionChange, pointermove, pointerleave, rootPointerover, rootPointerout,
+        selectionChange, blur, pointermove, pointerleave, rootPointerover, rootPointerout,
+        get viewStateTimer() { return viewStateTimer; },
         get hoverTimer() { return hoverTimer; }, get hoverCloseTimer() { return hoverCloseTimer; } };
 }
 
@@ -158,6 +174,8 @@ export function disposeEditor(root) {
     editor.input.removeEventListener('compositionend', editor.compositionEnd);
     editor.input.removeEventListener('select', editor.selectionChange);
     editor.input.removeEventListener('keyup', editor.selectionChange);
+    editor.input.removeEventListener('blur', editor.blur);
+    clearTimeout(editor.viewStateTimer);
     clearTimeout(editor.hoverTimer);
     clearTimeout(editor.hoverCloseTimer);
     editor.input.removeEventListener('pointermove', editor.pointermove);
@@ -269,7 +287,7 @@ export async function runSmokeChecks(root) {
         await new Promise(resolve => setTimeout(resolve, 100));
         renderedRows = root.querySelectorAll('.source-line').length;
     }
-    const rowLimit = Math.ceil(root.clientHeight / 20) + 18;
+    const rowLimit = Math.ceil(root.clientHeight / 20) + 66;
     return {
         inputPresent: true,
         selectionReplacement,

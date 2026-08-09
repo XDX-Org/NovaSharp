@@ -22,10 +22,12 @@ public sealed record HoverResult(TextRange Range, IReadOnlyList<string> Sections
 public sealed record SemanticSpan(int Start, int Length, string Classification);
 public sealed record FormatResult(string Text, int SelectionStart, int SelectionLength);
 public enum LanguageDiagnosticSeverity { Hidden, Information, Warning, Error }
-public enum LanguageDiagnosticSource { Compiler, Analyzer, Build }
+public enum LanguageDiagnosticSource { Compiler, Analyzer, Build, LanguageServer }
 public sealed record LanguageDiagnostic(string Id, LanguageDiagnosticSource Source, LanguageDiagnosticSeverity Severity,
     string Message, string DocumentPath, TextRange Range, int StartLine, int StartColumn, string? ProjectName,
-    int EndLine = -1, int EndColumn = -1);
+    int EndLine = -1, int EndColumn = -1, IReadOnlyList<int>? Tags = null,
+    IReadOnlyList<string>? RelatedInformation = null, string? CodeDescription = null, string? Producer = null,
+    bool IsStale = false);
 
 public interface ILanguageProvider
 {
@@ -68,6 +70,7 @@ internal interface IExtendedLanguageProvider
     Task<IReadOnlyList<CodeActionEntry>> GetCodeActionsAsync(LanguageRequest request, CancellationToken cancellationToken);
 }
 
+#if DEBUG
 internal sealed partial class CSharpLanguageProvider(RoslynProjectSystem projectSystem, LanguageDiagnosticStore? diagnosticStore = null)
     : ILanguageProvider, IExtendedLanguageProvider
 {
@@ -259,6 +262,8 @@ internal sealed partial class CSharpLanguageProvider(RoslynProjectSystem project
     private static LanguageResponse<T> Degraded<T>(LanguageRequest request) => new(request.Version, default, true);
 }
 
+#endif
+
 internal sealed class LatestLanguageRequest : IDisposable
 {
     private CancellationTokenSource? _pending;
@@ -278,7 +283,7 @@ internal sealed class LatestLanguageRequest : IDisposable
         Status = "Running";
         try
         {
-            var response = await operation(pending.Token);
+            var response = await Task.Run(() => operation(pending.Token), pending.Token);
             if (sequence != Interlocked.Read(ref _sequence)) { Status = "Superseded"; return default; }
             if (response.SourceVersion != currentVersion) { Status = $"Version {response.SourceVersion}, expected {currentVersion}"; return default; }
             Status = response.IsDegraded ? "Degraded" : response.Value is null ? "No value" : "Completed";

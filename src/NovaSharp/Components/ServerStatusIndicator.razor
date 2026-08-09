@@ -1,0 +1,29 @@
+@using NovaSharp.LanguageServers
+
+<span class="language-server-indicator @StateClass" role="status" aria-label="@AriaLabel" title="@Tooltip">
+    <span class="language-server-dot" aria-hidden="true"></span>
+    <span class="language-server-label" aria-hidden="true">@Label</span>
+</span>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public LanguageServerStatus Status { get; set; } = new(LanguageServerState.Stopped);
+
+    private string StateClass => Status.State switch
+    {
+        LanguageServerState.Ready => "online",
+        LanguageServerState.Starting or LanguageServerState.LoadingWorkspace or LanguageServerState.Restarting => "loading",
+        _ => "offline"
+    };
+    private string StateText => StateClass switch { "online" => "online", "loading" => "loading", _ => "offline" };
+    private string AriaLabel => $"{Label} language server {StateText}";
+    private string Tooltip
+    {
+        get
+        {
+            var server = Status.Name is null ? Label : Status.Version is null ? Status.Name : $"{Status.Name} {Status.Version}";
+            var detail = string.IsNullOrWhiteSpace(Status.Detail) ? null : $" — {Status.Detail}";
+            return $"{server}: {Status.State}{detail}";
+        }
+    }
+}

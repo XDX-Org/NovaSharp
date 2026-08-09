@@ -5,7 +5,7 @@ internal sealed class LanguageDiagnosticStore
     private static readonly StringComparer Paths = OperatingSystem.IsWindows()
         ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
     private readonly object _gate = new();
-    private readonly Dictionary<(string Path, LanguageDiagnosticSource Source),
+    private readonly Dictionary<(string Path, LanguageDiagnosticSource Source, string Producer),
         (long Version, IReadOnlyList<LanguageDiagnostic> Entries)> _entries = new();
 
     internal event Action? Changed;
@@ -21,9 +21,9 @@ internal sealed class LanguageDiagnosticStore
     }
 
     internal bool Replace(string documentPath, long version, LanguageDiagnosticSource source,
-        IReadOnlyList<LanguageDiagnostic> diagnostics)
+        IReadOnlyList<LanguageDiagnostic> diagnostics, string producer = "default")
     {
-        var key = (Path.GetFullPath(documentPath), source);
+        var key = (Path.GetFullPath(documentPath), source, producer);
         lock (_gate)
         {
             if (_entries.TryGetValue(key, out var current) && current.Version > version) return false;
@@ -52,6 +52,24 @@ internal sealed class LanguageDiagnosticStore
     {
         lock (_gate)
             foreach (var key in _entries.Keys.Where(key => key.Source == source).ToArray()) _entries.Remove(key);
+        Changed?.Invoke();
+    }
+
+    internal void SetProducerStale(string producer, bool stale)
+    {
+        lock (_gate)
+            foreach (var key in _entries.Keys.Where(key => key.Producer == producer).ToArray())
+            {
+                var current = _entries[key];
+                _entries[key] = (current.Version, current.Entries.Select(item => item with { IsStale = stale }).ToArray());
+            }
+        Changed?.Invoke();
+    }
+
+    internal void ClearProducer(string producer)
+    {
+        lock (_gate)
+            foreach (var key in _entries.Keys.Where(key => key.Producer == producer).ToArray()) _entries.Remove(key);
         Changed?.Invoke();
     }
 }

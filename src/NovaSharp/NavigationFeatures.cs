@@ -17,6 +17,7 @@ public sealed record WorkspaceDocumentEdit(string DocumentPath, long? ExpectedVe
 public sealed record WorkspaceEdit(string Title, IReadOnlyList<WorkspaceDocumentEdit> Documents);
 public sealed record CodeActionEntry(string Title, string Kind, WorkspaceEdit Edit, bool IsPreferred = false);
 
+#if DEBUG
 internal sealed partial class CSharpLanguageProvider
 {
     public async Task<IReadOnlyList<NavigationTarget>> GetDefinitionsAsync(LanguageRequest request,
@@ -218,3 +219,4 @@ internal sealed partial class CSharpLanguageProvider
     private static IReadOnlyList<NavigationTarget> DistinctTargets(IEnumerable<NavigationTarget> targets) => targets
         .DistinctBy(item => (item.DocumentPath, item.Range.Start, item.Range.Length)).ToArray();
 }
+#endif

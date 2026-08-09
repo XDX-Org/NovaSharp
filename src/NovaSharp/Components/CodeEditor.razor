@@ -18,7 +18,7 @@
         }
         else
         {
-            <Virtualize TItem="EditorLine" Items="@Lines" Context="line" ItemSize="20" OverscanCount="8">
+            <Virtualize TItem="EditorLine" Items="@Lines" Context="line" ItemSize="20" OverscanCount="32">
                 <SourceLineView Line="line" Diagnostics="DiagnosticsFor(line)" />
             </Virtualize>
         }
@@ -80,7 +80,22 @@
             @for (var index = 0; index < _hover.Sections.Count; index++)
             {
                 var section = _hover.Sections[index];
-                <div class="@(index == 0 ? "hover-signature" : section.StartsWith("Project:", StringComparison.Ordinal) ? "hover-context" : "hover-description")">@section</div>
+                @if (section.StartsWith("Diagnostic|", StringComparison.Ordinal))
+                {
+                    var parts = section.Split('|', 4);
+                    <div class="hover-diagnostic @parts[1].ToLowerInvariant()">
+                        <strong>@parts[1]@if (!string.IsNullOrWhiteSpace(parts[2])) { <code>@parts[2]</code> }</strong>
+                        <span>@parts[3]</span>
+                    </div>
+                }
+                else if (section.StartsWith("DiagnosticSource|", StringComparison.Ordinal))
+                {
+                    <div class="hover-diagnostic-source">Source: @section[17..]</div>
+                }
+                else
+                {
+                    <div class="@(IsFirstSemanticSection(index) ? "hover-signature" : section.StartsWith("Project:", StringComparison.Ordinal) ? "hover-context" : "hover-description")">@section</div>
+                }
             }
         </div>
     }
@@ -110,6 +125,7 @@
     [Parameter, EditorRequired] public EventCallback<string> ValueChanged { get; set; }
     [Parameter, EditorRequired] public EditorDocumentState Document { get; set; } = null!;
     [Parameter, EditorRequired] public ILanguageProvider LanguageProvider { get; set; } = null!;
+    [Parameter] public IReadOnlyList<LanguageDiagnostic> Diagnostics { get; set; } = [];
     [Parameter] public string? ProjectContext { get; set; }
     [Parameter] public bool ProjectLoading { get; set; }
     [Parameter] public bool SuggestionsEnabled { get; set; } = true;
@@ -135,27 +151,70 @@
     private IReadOnlyList<LanguageDiagnostic> _diagnostics = [];
     private IReadOnlyList<CodeActionEntry> _codeActions = [];
     private IReadOnlyList<EditorLine> _lines = [];
+    private int[] _lineStarts = [0];
+    private CancellationTokenSource? _presentationCancellation;
     private string? _linesValue;
-    private int _semanticRevision, _renderedSemanticRevision;
+    private string? _languageReadyKey;
+    private int _semanticRevision, _renderedSemanticRevision, _presentationGeneration;
     private int _selectedCompletion;
     private bool _outlineOpen;
+    private bool _refreshLanguageAfterRender;
     private double _popupX = 72, _popupY = 24;
     private IExtendedLanguageProvider ExtendedProvider => (IExtendedLanguageProvider)LanguageProvider;
     private LanguageProviderInfo LanguageInfo => Document.FilePath is { } path
         ? ExtendedProvider.GetInfo(path) : new("text", "Text", LanguageCapabilities.None, false, "Language services unavailable");
-    private ICollection<EditorLine> Lines
+    private ICollection<EditorLine> Lines => (ICollection<EditorLine>)_lines;
+    private void QueuePresentation()
     {
-        get
+        if (_linesValue == Value && _renderedSemanticRevision == _semanticRevision) return;
+        _presentationCancellation?.Cancel();
+        _presentationCancellation?.Dispose();
+        _presentationCancellation = new();
+        var generation = ++_presentationGeneration;
+        var value = Value;
+        var semanticRevision = _semanticRevision;
+        var spans = _semanticSpans.ToArray();
+        _ = BuildPresentationAsync(value, spans, semanticRevision, generation, _presentationCancellation.Token);
+    }
+
+    private async Task BuildPresentationAsync(string value, IReadOnlyList<SemanticSpan> spans,
+        int semanticRevision, int generation, CancellationToken cancellationToken)
+    {
+        try
         {
-            if (_linesValue == Value && _renderedSemanticRevision == _semanticRevision) return (ICollection<EditorLine>)_lines;
-            var updated = CSharpTokenizer.Tokenize(Value, _semanticSpans).ToArray();
-            if (_lines.Count == updated.Length)
-                for (var index = 0; index < updated.Length; index++)
-                    if (_lines[index].Text == updated[index].Text && _lines[index].Spans.SequenceEqual(updated[index].Spans))
-                        updated[index] = _lines[index];
-            _lines = updated; _linesValue = Value; _renderedSemanticRevision = _semanticRevision;
-            return updated;
+            var presentation = await Task.Run(() =>
+                (Lines: CSharpTokenizer.Tokenize(value, spans).ToArray(), Starts: BuildLineStarts(value)), cancellationToken);
+            var updated = presentation.Lines;
+            cancellationToken.ThrowIfCancellationRequested();
+            await InvokeAsync(() =>
+            {
+                if (generation != _presentationGeneration || cancellationToken.IsCancellationRequested) return;
+                if (_lines.Count == updated.Length)
+                    for (var index = 0; index < updated.Length; index++)
+                        if (_lines[index].Text == updated[index].Text && _lines[index].Spans.SequenceEqual(updated[index].Spans))
+                            updated[index] = _lines[index];
+                _lines = updated;
+                _lineStarts = presentation.Starts;
+                _linesValue = value;
+                _renderedSemanticRevision = semanticRevision;
+                StateHasChanged();
+            });
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (Document.FilePath is { } diagnosticPath)
+            _diagnostics = Diagnostics.Where(item => string.Equals(Path.GetFullPath(item.DocumentPath),
+                Path.GetFullPath(diagnosticPath), OperatingSystem.IsWindows()
+                    ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)).ToArray();
+        QueuePresentation();
+        var info = LanguageInfo;
+        var readyKey = !ProjectLoading && Document.FilePath is { } path && info.IsAvailable
+            ? $"{path}|{info.DisplayName}|{info.Status}|{info.Capabilities}" : null;
+        if (readyKey is not null && readyKey != _languageReadyKey) _refreshLanguageAfterRender = true;
+        _languageReadyKey = readyKey;
     }
     private string PopupStyle => $"left:{_popupX}px;top:{_popupY}px";
     private string OverviewTop(LanguageDiagnostic diagnostic) => $"{Math.Clamp((diagnostic.StartLine + .5) / Math.Max(1, Lines.Count) * 100, 0, 99).ToString(System.Globalization.CultureInfo.InvariantCulture)}%";
@@ -167,8 +226,6 @@
             _self = DotNetObjectReference.Create(this);
             await _module.InvokeVoidAsync("createEditor", _root, WordWrap, _self, ViewState.SelectionStart,
                 ViewState.SelectionEnd, ViewState.ScrollTop, ViewState.ScrollLeft);
-            _ = RefreshSemanticAsync();
-            _ = RefreshDiagnosticsAsync();
             if (Program.Phase15Solution is not null) _ = RunPhase15SmokeAsync();
             else if (Program.Phase8Solution is not null) _ = RunPhase8SmokeAsync();
             else if (Program.Phase7Solution is not null) _ = RunPhase7SmokeAsync();
@@ -178,7 +235,13 @@
                 await Program.CompleteSmokeAsync(result);
             }
         }
-        else if (_module is not null && _hover is not null)
+        if (_refreshLanguageAfterRender && _module is not null && _languageReadyKey is not null)
+        {
+            _refreshLanguageAfterRender = false;
+            _ = RefreshSemanticAsync();
+            _ = RefreshDiagnosticsAsync();
+        }
+        else if (!firstRender && _module is not null && _hover is not null)
             await _module.InvokeVoidAsync("fitEditorPopup", _root, ".hover-popup");
     }
 
@@ -208,7 +271,9 @@
         {
             case "completion" when Has(LanguageCapabilities.Completion): await RequestCompletionAsync(caret, true); break;
             case "signature" when Has(LanguageCapabilities.SignatureHelp): await RequestSignatureAsync(caret); break;
-            case "hover" when Has(LanguageCapabilities.Hover): await RequestHoverAsync(caret); break;
+            case "hover" when Has(LanguageCapabilities.Hover) && (IsHoverable(caret) || DiagnosticAt(caret) is not null):
+                await RequestHoverAsync(caret); break;
+            case "hover": _hover = null; break;
             case "hover-close": _hover = null; break;
             case "completion-next": MoveCompletion(1); break;
             case "completion-previous": MoveCompletion(-1); break;
@@ -310,9 +375,61 @@
 
     private async Task RequestHoverAsync(int caret)
     {
-        var version = Document.Version;
-        _hover = await _hoverRequest.RunAsync(token => LanguageProvider.GetHoverAsync(Request(caret), token), version);
+        var diagnostic = DiagnosticAt(caret);
+        HoverResult? semantic = null;
+        if (IsHoverable(caret))
+        {
+            var version = Document.Version;
+            semantic = await _hoverRequest.RunAsync(token => LanguageProvider.GetHoverAsync(Request(caret), token), version);
+        }
+        if (diagnostic is not null)
+        {
+            var sections = new List<string>
+            {
+                $"Diagnostic|{diagnostic.Severity}|{diagnostic.Id}|{diagnostic.Message}",
+                $"DiagnosticSource|{diagnostic.Source}"
+            };
+            if (semantic is not null) sections.AddRange(semantic.Sections);
+            _hover = new(diagnostic.Range, sections);
+        }
+        else _hover = semantic;
         await UpdateAnchorAsync(caret);
+    }
+
+    private LanguageDiagnostic? DiagnosticAt(int caret) => _diagnostics
+            .Where(item => caret >= item.Range.Start && caret < item.Range.Start + Math.Max(1, item.Range.Length))
+            .OrderBy(item => item.Range.Length)
+            .ThenByDescending(item => item.Severity)
+            .FirstOrDefault();
+
+    private bool IsFirstSemanticSection(int index) => !_hover!.Sections.Take(index)
+        .Any(section => !section.StartsWith("Diagnostic|", StringComparison.Ordinal)
+            && !section.StartsWith("DiagnosticSource|", StringComparison.Ordinal));
+
+    private bool IsHoverable(int position)
+    {
+        if (_linesValue != Value || position < 0 || position > Value.Length || _lines.Count == 0) return false;
+        var lineIndex = Array.BinarySearch(_lineStarts, position);
+        if (lineIndex < 0) lineIndex = ~lineIndex - 1;
+        lineIndex = Math.Clamp(lineIndex, 0, _lines.Count - 1);
+        var column = position - _lineStarts[lineIndex];
+        var span = _lines[lineIndex].Spans.FirstOrDefault(item => column >= item.Start && column < item.Start + item.Length);
+        return span.Kind is not TokenKind.String and not TokenKind.Comment;
+    }
+
+    private static int[] BuildLineStarts(string text)
+    {
+        var starts = new List<int> { 0 };
+        for (var index = 0; index < text.Length; index++)
+        {
+            if (text[index] == '\r')
+            {
+                if (index + 1 < text.Length && text[index + 1] == '\n') index++;
+                starts.Add(index + 1);
+            }
+            else if (text[index] == '\n') starts.Add(index + 1);
+        }
+        return starts.ToArray();
     }
 
     private async Task RefreshSemanticAsync()
@@ -322,7 +439,12 @@
         try { await Task.Delay(150); } catch (OperationCanceledException) { return; }
         var spans = await _semanticRequest.RunAsync(
             token => LanguageProvider.GetSemanticSpansAsync(Request(Value.Length), token), version);
-        if (spans is not null) { _semanticSpans = spans; _semanticRevision++; await InvokeAsync(StateHasChanged); }
+        if (spans is not null)
+        {
+            _semanticSpans = spans;
+            _semanticRevision++;
+            await InvokeAsync(QueuePresentation);
+        }
         var symbols = await ExtendedProvider.GetDocumentSymbolsAsync(Request(Value.Length), default);
         if (Document.Version == version) _symbols = symbols;
     }
@@ -426,10 +548,20 @@
         return ViewStateChanged.InvokeAsync();
     }
 
+    [JSInvokable]
+    public Task ViewportChanged(int start, int end, double top, double left)
+    {
+        ViewState.SetSelection(start, end, Value.Length);
+        ViewState.SetScroll(top, left);
+        return ViewStateChanged.InvokeAsync();
+    }
+
     public async ValueTask DisposeAsync()
     {
         _completionRequest.Dispose(); _signatureRequest.Dispose(); _hoverRequest.Dispose(); _semanticRequest.Dispose();
         _diagnosticRequest.Dispose();
+        _presentationCancellation?.Cancel();
+        _presentationCancellation?.Dispose();
         if (_module is not null)
         {
             try { await _module.InvokeVoidAsync("disposeEditor", _root); }

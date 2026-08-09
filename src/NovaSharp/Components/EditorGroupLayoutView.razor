@@ -6,6 +6,7 @@
          data-ratio="@split.Ratio.ToString(System.Globalization.CultureInfo.InvariantCulture)">
         <EditorGroupLayoutView @key="split.First.Id" Node="split.First" Workspace="Workspace" WordWrap="WordWrap"
                                ProjectSystem="ProjectSystem" LanguageProvider="LanguageProvider"
+                               Diagnostics="Diagnostics"
                                SuggestionsEnabled="SuggestionsEnabled" SemanticHighlighting="SemanticHighlighting"
                                ExternalDragActive="ExternalDragActive"
                                ActiveChanged="ActiveChanged" ContentEdited="ContentEdited" CloseRequested="CloseRequested"
@@ -13,6 +14,7 @@
         <EditorSplitter @key="split.Id" Split="split" Workspace="Workspace" Resized="ActiveChanged" />
         <EditorGroupLayoutView @key="split.Second.Id" Node="split.Second" Workspace="Workspace" WordWrap="WordWrap"
                                ProjectSystem="ProjectSystem" LanguageProvider="LanguageProvider"
+                               Diagnostics="Diagnostics"
                                SuggestionsEnabled="SuggestionsEnabled" SemanticHighlighting="SemanticHighlighting"
                                ExternalDragActive="ExternalDragActive"
                                ActiveChanged="ActiveChanged" ContentEdited="ContentEdited" CloseRequested="CloseRequested"
@@ -76,6 +78,7 @@ else if (Node is EditorGroup group)
                 <CodeEditor Value="@(active.Document.Content ?? string.Empty)" ValueChanged="value => Edit(active, value)"
                             WordWrap="WordWrap" ViewState="active.ViewState" ViewStateChanged="ActiveChanged"
                             Document="active.Document" LanguageProvider="LanguageProvider"
+                            Diagnostics="Diagnostics"
                             ProjectContext="@(active.Document.FilePath is { } path ? ProjectSystem.GetActiveDocument(path)?.Project.Id.Id.ToString() : null)"
                             ProjectLoading="ProjectSystem.State.IsLoading"
                             SuggestionsEnabled="SuggestionsEnabled" SemanticHighlighting="SemanticHighlighting"
@@ -103,6 +106,7 @@ else if (Node is EditorGroup group)
     [Parameter] public bool ExternalDragActive { get; set; }
     [Parameter, EditorRequired] public RoslynProjectSystem ProjectSystem { get; set; } = null!;
     [Parameter, EditorRequired] public ILanguageProvider LanguageProvider { get; set; } = null!;
+    [Parameter] public IReadOnlyList<LanguageDiagnostic> Diagnostics { get; set; } = [];
     [Parameter] public bool SuggestionsEnabled { get; set; } = true;
     [Parameter] public bool SemanticHighlighting { get; set; } = true;
     [Parameter] public EventCallback ActiveChanged { get; set; }

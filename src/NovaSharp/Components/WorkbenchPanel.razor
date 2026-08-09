@@ -1,5 +1,6 @@
 @using PhotinoEx.Core.Models
 @using Microsoft.AspNetCore.Components.Web
+@using NovaSharp.LanguageServers
 @implements IDisposable
 @inject IJSRuntime JS
 
@@ -122,6 +123,7 @@
         <div class="editor-area">
             <EditorGroupLayoutView @key="_workspace.Layout.Root.Id" Node="_workspace.Layout.Root" Workspace="_workspace" WordWrap="_wordWrap"
                                    ProjectSystem="_projectSystem" LanguageProvider="_languageProvider"
+                                   Diagnostics="_languageProvider.Diagnostics.Entries"
                                    SuggestionsEnabled="_suggestions" SemanticHighlighting="Program.Configuration.Current.SemanticHighlighting"
                                    ExternalDragActive="_explorerFileDrag is not null"
                                    ActiveChanged="ActiveChangedAsync" ContentEdited="ContentEditedAsync"
@@ -164,6 +166,12 @@
                 @foreach (var context in ActiveContexts) { <option value="@context.Id.Id">@context.Name</option> }
             </select>
         }
+        <div class="language-server-indicators" aria-label="Language servers">
+            <ServerStatusIndicator Label="C#" Status="ServerStatus(LanguageServerKind.RoslynRazor)" />
+            <ServerStatusIndicator Label="Razor" Status="ServerStatus(LanguageServerKind.RoslynRazor)" />
+            <ServerStatusIndicator Label="HTML" Status="ServerStatus(LanguageServerKind.Html)" />
+            <ServerStatusIndicator Label="CSS" Status="ServerStatus(LanguageServerKind.Css)" />
+        </div>
     </footer>
     @if (_renamePosition is not null)
     {
@@ -221,13 +229,23 @@
 @code {
     private readonly EditorGroupWorkspace _workspace = new();
     private readonly RoslynProjectSystem _projectSystem = new();
-    private readonly LanguageProviderRegistry _languageProvider;
+    private readonly LspLanguageProvider _languageProvider;
     private readonly HashSet<EditorDocumentState> _projectDocuments = [];
     private readonly WorkspaceEditTransaction _workspaceEdits = new();
     private readonly CommandRegistry _commands = new();
     private readonly QuickAccessService _quickAccess;
     private readonly BuildRunService _buildRun;
     private readonly TerminalService _terminal = new();
+    private readonly List<(LanguageServerKind Kind, LanguageServerManager Manager)> _languageServers = [];
+    private readonly Dictionary<LanguageServerManager, LanguageDocumentCoordinator> _languageCoordinators = [];
+    private readonly HashSet<EditorDocumentState> _languageDocuments = [];
+    private readonly SemaphoreSlim _languageSync = new(1, 1);
+    private readonly Dictionary<LanguageServerKind, LanguageServerStatus> _languageServerStatuses = new()
+    {
+        [LanguageServerKind.RoslynRazor] = new(LanguageServerState.Stopped, Detail: "Waiting for workspace restoration."),
+        [LanguageServerKind.Html] = new(LanguageServerState.Stopped, Detail: "Waiting for workspace restoration."),
+        [LanguageServerKind.Css] = new(LanguageServerState.Stopped, Detail: "Waiting for workspace restoration.")
+    };
     private readonly List<NavigationState> _navigationHistory = [];
     private readonly EditorDocumentState _emptyDocument = new();
     private EditorLayoutPersistence _persistence = null!;
@@ -274,7 +292,10 @@
 
     public WorkbenchPanel()
     {
-        _languageProvider = new(_projectSystem);
+        _languageProvider = new(path => _languageServers.FirstOrDefault(server =>
+                ServerHandles(server.Kind, Path.GetExtension(path))).Manager,
+            path => OpenDocuments.FirstOrDefault(document => document.FilePath is not null
+                && PathsEqual(document.FilePath, path))?.CreateSnapshot());
         _buildRun = new(_languageProvider.Diagnostics);
         _quickAccess = new(_commands);
         RegisterCommands();
@@ -323,7 +344,56 @@
         if (Program.Phase15Solution is not null) await _projectSystem.OpenAsync(Program.Phase15Solution);
         if (Program.Phase11Workspace is not null) _terminalOpen = true;
         TrackActiveDocument();
+        _ = StartLanguageServersAsync();
     }
+
+    private async Task StartLanguageServersAsync()
+    {
+        var configured = Program.Phase15Solution ?? Program.Phase9Solution ?? Program.Phase8Solution
+            ?? Program.Phase7Solution ?? Program.Phase6Solution;
+        var workspace = configured is null
+            ? Program.Phase11Workspace ?? Program.Phase5Workspace ?? Program.Phase4Workspace
+                ?? Program.Phase3Workspace ?? WorkspaceRoot ?? Directory.GetCurrentDirectory()
+            : Path.GetDirectoryName(configured)!;
+        foreach (var definition in LanguageServerCatalog.Discover(workspace).Definitions)
+        {
+            var manager = new LanguageServerManager(definition, workspace);
+            manager.StatusChanged += status => LanguageServerStatusChanged(definition.Kind, status);
+            var coordinator = new LanguageDocumentCoordinator(manager);
+            var publisher = new LspDiagnosticPublisher(definition.Kind.ToString(), _languageProvider.Diagnostics,
+                path => OpenDocuments.FirstOrDefault(document => document.FilePath is not null
+                    && PathsEqual(document.FilePath, path))?.CreateSnapshot());
+            manager.DiagnosticsPublished += published => publisher.Publish(published);
+            manager.Ready += () => _ = coordinator.ReplayAsync();
+            manager.CapabilitiesChanged += () => _ = InvokeAsync(StateHasChanged);
+            _languageServers.Add((definition.Kind, manager));
+            _languageCoordinators.Add(manager, coordinator);
+            _languageServerStatuses[definition.Kind] = manager.Status;
+        }
+        await Task.WhenAll(_languageServers.Select(server => server.Manager.StartAsync()));
+        await SyncLanguageDocumentsAsync();
+    }
+
+    private async Task ReplaceLanguageServersAsync()
+    {
+        foreach (var coordinator in _languageCoordinators.Values) await coordinator.DisposeAsync();
+        foreach (var server in _languageServers) await server.Manager.DisposeAsync();
+        _languageCoordinators.Clear();
+        _languageServers.Clear();
+        _languageDocuments.Clear();
+        await StartLanguageServersAsync();
+    }
+
+    private LanguageServerStatus ServerStatus(LanguageServerKind kind) => _languageServerStatuses[kind];
+
+    private void LanguageServerStatusChanged(LanguageServerKind kind, LanguageServerStatus status) => _ = InvokeAsync(() =>
+    {
+        _languageServerStatuses[kind] = status;
+        if (status.State == LanguageServerState.Restarting) _languageProvider.Diagnostics.SetProducerStale(kind.ToString(), true);
+        else if (status.State == LanguageServerState.Ready) _languageProvider.Diagnostics.SetProducerStale(kind.ToString(), false);
+        else if (status.State == LanguageServerState.Unavailable) _languageProvider.Diagnostics.ClearProducer(kind.ToString());
+        StateHasChanged();
+    });
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -368,6 +438,7 @@
         if (files is not [var path]) return;
         _languageProvider.Diagnostics.Clear();
         await _projectSystem.OpenAsync(path);
+        await ReplaceLanguageServersAsync();
         _status = _projectSystem.State.Progress;
         await SaveLayoutAsync();
     }
@@ -438,7 +509,7 @@
         _openMenu = null;
         await JS.InvokeVoidAsync("novaSharp.focusEditorGroup", _workbench, _self, direction);
     }
-    private async Task SaveAsync() { _openMenu = null; try { await _document.SaveAsync(); _status = "Saved"; } catch (Exception ex) { _status = ex.Message; } }
+    private async Task SaveAsync() { _openMenu = null; try { await _document.SaveAsync(); await NotifySavedAsync(_document); _status = "Saved"; } catch (Exception ex) { _status = ex.Message; } }
     private async Task SaveAsAsync()
     {
         _openMenu = null;
@@ -446,7 +517,7 @@
             [new FileFilter("C#", "*.cs"), new FileFilter("Razor component", "*.razor"),
                 new FileFilter("Razor page", "*.cshtml"), new FileFilter("HTML", "*.html"),
                 new FileFilter("HTML", "*.htm"), new FileFilter("CSS", "*.css")]);
-        if (!string.IsNullOrWhiteSpace(path)) try { await _document.SaveAsync(path); _status = "Saved"; } catch (Exception ex) { _status = ex.Message; }
+        if (!string.IsNullOrWhiteSpace(path)) try { await _document.SaveAsync(path); await SyncLanguageDocumentsAsync(); await NotifySavedAsync(_document); _status = "Saved"; } catch (Exception ex) { _status = ex.Message; }
     }
     private void Undo() { _openMenu = null; _document.Undo(); StateHasChanged(); }
     private void Redo() { _openMenu = null; _document.Redo(); StateHasChanged(); }
@@ -479,6 +550,15 @@
             _ => { if (!_searchOpen) ToggleSearch(); return Task.CompletedTask; }));
         _commands.Register(new("workbench.action.problems", "Toggle Problems", null, () => true,
             _ => { ToggleProblems(); return Task.CompletedTask; }));
+        _commands.Register(new("languages.restartCSharpRazor", "Restart C# and Razor language server", null,
+            () => ServerManager(LanguageServerKind.RoslynRazor) is not null,
+            token => ServerManager(LanguageServerKind.RoslynRazor)!.RestartAsync(token)));
+        _commands.Register(new("languages.restartHtml", "Restart HTML language server", null,
+            () => ServerManager(LanguageServerKind.Html) is not null,
+            token => ServerManager(LanguageServerKind.Html)!.RestartAsync(token)));
+        _commands.Register(new("languages.restartCss", "Restart CSS language server", null,
+            () => ServerManager(LanguageServerKind.Css) is not null,
+            token => ServerManager(LanguageServerKind.Css)!.RestartAsync(token)));
         _commands.Register(new("workbench.action.files.save", "Save", "Ctrl+S", () => _document.IsDirty,
             _ => SaveAsync()));
         _commands.Register(new("workbench.action.splitEditor", "Split Editor Right", "Ctrl+\\", () => true,
@@ -726,7 +806,46 @@
         }
         foreach (var document in current)
             if (_projectDocuments.Add(document)) _projectSystem.Track(document);
+        _ = SyncLanguageDocumentsAsync();
     }
+
+    private async Task SyncLanguageDocumentsAsync()
+    {
+        await _languageSync.WaitAsync();
+        try
+        {
+            var current = OpenDocuments.Where(document => document.FilePath is not null).ToHashSet();
+            foreach (var document in _languageDocuments.Except(current).ToArray())
+            {
+                var coordinator = CoordinatorFor(document.FilePath!);
+                if (coordinator is not null) await coordinator.CloseAsync(document);
+                _languageDocuments.Remove(document);
+            }
+            foreach (var document in current)
+                if (_languageDocuments.Add(document) && CoordinatorFor(document.FilePath!) is { } coordinator)
+                    await coordinator.OpenAsync(document);
+        }
+        finally { _languageSync.Release(); }
+    }
+
+    private Task NotifySavedAsync(EditorDocumentState document) => CoordinatorFor(document.FilePath)?.SavedAsync(document) ?? Task.CompletedTask;
+    private LanguageDocumentCoordinator? CoordinatorFor(string? path)
+    {
+        if (path is null) return null;
+        var manager = _languageServers.FirstOrDefault(server => ServerHandles(server.Kind, Path.GetExtension(path))).Manager;
+        return manager is not null && _languageCoordinators.TryGetValue(manager, out var coordinator) ? coordinator : null;
+    }
+    private LanguageServerManager? ServerManager(LanguageServerKind kind) =>
+        _languageServers.FirstOrDefault(server => server.Kind == kind).Manager;
+    private static bool ServerHandles(LanguageServerKind kind, string extension) => kind switch
+    {
+        LanguageServerKind.RoslynRazor => extension.Equals(".cs", StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(".razor", StringComparison.OrdinalIgnoreCase) || extension.Equals(".cshtml", StringComparison.OrdinalIgnoreCase),
+        LanguageServerKind.Html => extension.Equals(".html", StringComparison.OrdinalIgnoreCase) || extension.Equals(".htm", StringComparison.OrdinalIgnoreCase),
+        LanguageServerKind.Css => extension.Equals(".css", StringComparison.OrdinalIgnoreCase), _ => false
+    };
+    private static bool PathsEqual(string left, string right) => string.Equals(Path.GetFullPath(left), Path.GetFullPath(right),
+        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 
     private void SelectContext(ChangeEventArgs args)
     {
@@ -899,6 +1018,9 @@
         _projectSystem.DisposeAsync().AsTask().GetAwaiter().GetResult();
         _buildRun.DisposeAsync().AsTask().GetAwaiter().GetResult();
         _terminal.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        Task.WhenAll(_languageCoordinators.Values.Select(coordinator => coordinator.DisposeAsync().AsTask())).GetAwaiter().GetResult();
+        Task.WhenAll(_languageServers.Select(server => server.Manager.DisposeAsync().AsTask())).GetAwaiter().GetResult();
+        _languageSync.Dispose();
         if (Program.ConfirmWorkbenchClose == ConfirmClose) Program.ConfirmWorkbenchClose = null;
     }
 

@@ -1,7 +1,7 @@
 @if (Node.Items.Length > 0)
 {
-    <details class="project-node" open="@(Node.Kind is ProjectNodeKind.Solution or ProjectNodeKind.Project)">
-        <summary class="tree-row" title="@Node.Path"
+    <details class="project-node" open="@_open">
+        <summary class="tree-row" title="@Node.Path" @onclick="Toggle"
                  data-file-path="@(Node.Kind is ProjectNodeKind.Project or ProjectNodeKind.Solution ? Node.Path : null)"
                  @ondblclick="OpenAsync"
                  @oncontextmenu="ShowContextMenuAsync" @oncontextmenu:preventDefault @oncontextmenu:stopPropagation>
@@ -9,12 +9,15 @@
             <span class="tree-name">@Node.Name</span>
             @if (Node.Detail is not null) { <span class="project-detail">@Node.Detail</span> }
         </summary>
-        <div role="group">
-            @foreach (var child in Node.Items)
-            {
-                <ProjectTreeNodeView Node="child" FileOpened="FileOpened" ContextRequested="ContextRequested" />
-            }
-        </div>
+        @if (_open)
+        {
+            <div role="group">
+                @foreach (var child in Node.Items)
+                {
+                    <ProjectTreeNodeView Node="child" FileOpened="FileOpened" ContextRequested="ContextRequested" @key="child.Id" />
+                }
+            </div>
+        }
     </details>
 }
 else
@@ -32,6 +35,15 @@ else
     [Parameter, EditorRequired] public ProjectNode Node { get; set; } = null!;
     [Parameter] public EventCallback<string> FileOpened { get; set; }
     [Parameter] public EventCallback<ProjectNodeContextRequest> ContextRequested { get; set; }
+    private string? _nodeId;
+    private bool _open;
+    protected override void OnParametersSet()
+    {
+        if (_nodeId == Node.Id) return;
+        _nodeId = Node.Id;
+        _open = Node.Kind is ProjectNodeKind.Solution or ProjectNodeKind.Project;
+    }
+    private void Toggle() => _open = !_open;
     private string Icon => Node.Kind switch
     {
         ProjectNodeKind.Solution => "SLN", ProjectNodeKind.Project => "C#",

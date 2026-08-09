@@ -1,3 +1,4 @@
+#if DEBUG
 using System.Text.RegularExpressions;
 
 namespace NovaSharp;
@@ -550,3 +551,4 @@ internal sealed class UnavailableLanguageProvider : ILanguageProvider, IExtended
     public Task<WorkspaceEdit?> RenameAsync(LanguageRequest request, string name, CancellationToken token) => Task.FromResult<WorkspaceEdit?>(null);
     public Task<IReadOnlyList<CodeActionEntry>> GetCodeActionsAsync(LanguageRequest request, CancellationToken token) => Task.FromResult<IReadOnlyList<CodeActionEntry>>([]);
 }
+#endif

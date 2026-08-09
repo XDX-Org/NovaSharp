@@ -36,11 +36,16 @@ internal sealed class WorkspacePersistence(string path)
 
 internal sealed class WorkspaceService : IDisposable
 {
+    private static readonly StringComparer Paths = OperatingSystem.IsWindows()
+        ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
     private static readonly HashSet<string> DefaultIgnored = new(StringComparer.OrdinalIgnoreCase) { ".git", "bin", "obj" };
     private static readonly HashSet<string> SupportedExtensions = new(StringComparer.OrdinalIgnoreCase)
         { ".cs", ".csproj", ".sln", ".slnx", ".razor", ".cshtml", ".html", ".htm", ".css", ".json", ".xml", ".md", ".txt" };
     private readonly HashSet<string> _ignored;
     private FileSystemWatcher? _watcher;
+    private readonly object _changeGate = new();
+    private readonly HashSet<string> _pendingChanges = new(Paths);
+    private Timer? _changeTimer;
 
     internal WorkspaceService(IEnumerable<string>? ignoredNames = null) =>
         _ignored = new(DefaultIgnored.Concat(ignoredNames ?? []), StringComparer.OrdinalIgnoreCase);
@@ -63,6 +68,12 @@ internal sealed class WorkspaceService : IDisposable
     {
         _watcher?.Dispose();
         _watcher = null;
+        lock (_changeGate)
+        {
+            _changeTimer?.Dispose();
+            _changeTimer = null;
+            _pendingChanges.Clear();
+        }
         RootPath = null;
         Changed?.Invoke(null);
     }
@@ -191,8 +202,30 @@ internal sealed class WorkspaceService : IDisposable
     private void OnChanged(object sender, FileSystemEventArgs args)
     {
         if (args is RenamedEventArgs renamed)
-            Changed?.Invoke(Path.GetDirectoryName(renamed.OldFullPath));
-        Changed?.Invoke(Path.GetDirectoryName(args.FullPath));
+            QueueChange(Path.GetDirectoryName(renamed.OldFullPath));
+        QueueChange(Path.GetDirectoryName(args.FullPath));
+    }
+
+    private void QueueChange(string? path)
+    {
+        if (path is null) return;
+        lock (_changeGate)
+        {
+            _pendingChanges.Add(path);
+            _changeTimer ??= new(_ => FlushChanges(), null, Timeout.Infinite, Timeout.Infinite);
+            _changeTimer.Change(75, Timeout.Infinite);
+        }
+    }
+
+    private void FlushChanges()
+    {
+        string[] paths;
+        lock (_changeGate)
+        {
+            paths = _pendingChanges.ToArray();
+            _pendingChanges.Clear();
+        }
+        foreach (var path in paths) Changed?.Invoke(path);
     }
 
     internal void HandleWatcherError(Exception exception)

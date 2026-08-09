@@ -212,7 +212,7 @@ public sealed class RoslynProjectSystem : IAsyncDisposable
             var workspace = candidate = MSBuildWorkspace.Create();
             workspace.LoadMetadataForReferencedProjects = true;
             workspace.RegisterWorkspaceFailedHandler(args => OnWorkspaceFailed(path, version, args));
-            var progress = new Progress<ProjectLoadProgress>(item =>
+            var progress = new ThrottledProgress<ProjectLoadProgress>(TimeSpan.FromMilliseconds(100), item =>
             {
                 State = State with { Progress = $"{item.Operation}: {Path.GetFileName(item.FilePath)}" };
                 Changed?.Invoke();
@@ -221,6 +221,9 @@ public sealed class RoslynProjectSystem : IAsyncDisposable
                 ? (await workspace.OpenProjectAsync(path, progress, cancellationToken)).Solution
                 : await workspace.OpenSolutionAsync(path, progress, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
+            var tree = await Task.Run(() => BuildTree(solution, path), cancellationToken);
+            var projectCount = solution.ProjectIds.Count;
+            var documentCount = solution.Projects.Sum(project => project.DocumentIds.Count);
             await _mutationGate.WaitAsync(cancellationToken);
             try
             {
@@ -243,8 +246,7 @@ public sealed class RoslynProjectSystem : IAsyncDisposable
                 if (contextDiagnostics.Length > 0)
                     Diagnostics.Replace(DiagnosticSource.ProjectSystem, path, version,
                         contextDiagnostics);
-                State = new(path, BuildTree(solution, path), false, "Loaded", stopwatch.Elapsed,
-                    solution.ProjectIds.Count, solution.Projects.Sum(project => project.DocumentIds.Count));
+                State = new(path, tree, false, "Loaded", stopwatch.Elapsed, projectCount, documentCount);
                 Interlocked.Exchange(ref _completedLoadVersion, version);
                 StartWatching(path, solution);
             }
@@ -310,6 +312,20 @@ public sealed class RoslynProjectSystem : IAsyncDisposable
         }).ToImmutableArray();
         return new($"s:{path}", Path.GetFileNameWithoutExtension(path), ProjectNodeKind.Solution, path, projects)
             { Detail = $"{projects.Length} project{(projects.Length == 1 ? "" : "s")}" };
+    }
+
+    private sealed class ThrottledProgress<T>(TimeSpan interval, Action<T> handler) : IProgress<T>
+    {
+        private readonly long _intervalTicks = Math.Max(1, (long)(interval.TotalSeconds * Stopwatch.Frequency));
+        private long _lastReport;
+
+        public void Report(T value)
+        {
+            var now = Stopwatch.GetTimestamp();
+            var previous = Interlocked.Read(ref _lastReport);
+            if (now - previous < _intervalTicks || Interlocked.CompareExchange(ref _lastReport, now, previous) != previous) return;
+            handler(value);
+        }
     }
 
     private static ImmutableArray<ProjectNode> EnumerateProjectFiles(IEnumerable<Project> contexts)
