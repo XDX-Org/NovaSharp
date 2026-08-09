@@ -53,11 +53,12 @@
 
     private WorkspaceSearchOptions Options() => new(_query, _regex, _matchCase, _wholeWord,
         Split(_include), Split(_exclude));
-    internal async Task RunSmokeAsync(string query)
+    internal async Task<int> RunSmokeAsync(string query)
     {
         _query = query;
         await StartAsync();
         await InvokeAsync(StateHasChanged);
+        return _matches.Count;
     }
     private async Task StartAsync()
     {

@@ -782,8 +782,9 @@ window.novaSharp.runPhase9Smoke = async function (workbench, bridge) {
         workbench.querySelector('.quick-access-backdrop')?.click();
         workbench.querySelector('[aria-label="Search"]')?.click();
         const searchVisible = await waitFor(() => !!workbench.querySelector('.search-panel'));
-        await bridge.invokeMethodAsync('RunPhase9SearchSmokeAsync', 'needle');
+        const resultCount = await bridge.invokeMethodAsync('RunPhase9SearchSmokeAsync', 'needle');
         const resultsStreamed = await waitFor(() => workbench.querySelectorAll('.search-results button').length >= 2);
+        if (!resultsStreamed) throw new Error(`Search returned ${resultCount} results but did not render them.`);
         workbench.querySelector('.search-actions button:last-child')?.click();
         const replacePreview = await waitFor(() => !!workbench.querySelector('.edit-preview'));
         await bridge.invokeMethodAsync('CompletePhase9SmokeAsync', quickOpenVisible, duplicateFilesVisible,
