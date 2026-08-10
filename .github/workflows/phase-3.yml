@@ -36,7 +36,7 @@ jobs:
       - name: Acquire pinned language servers
         shell: bash
         run: tools/acquire-language-servers.sh ${{ matrix.rid }}
-      - run: dotnet restore NovaSharp.slnx -r ${{ matrix.rid }}
+      - run: dotnet restore NovaSharp.slnx -r ${{ matrix.rid }} -p:Configuration=Release
       - run: dotnet build NovaSharp.slnx --no-restore --configuration Release --warnaserror
       - name: Verify release excludes legacy language providers
         shell: pwsh

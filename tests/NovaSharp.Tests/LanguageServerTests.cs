@@ -263,6 +263,51 @@ public sealed class LanguageServerTests
 
     [TestMethod]
     [DoNotParallelize]
+    public async Task PackagedHtmlAndCssServersProvideNegotiatedFeatures()
+    {
+        var root = Directory.CreateTempSubdirectory("novasharp-web-lsp-");
+        var catalog = LanguageServerCatalog.Discover(root.FullName);
+        foreach (var fixture in new[]
+        {
+            (Kind: LanguageServerKind.Html, Name: "index.html", Text: "<div title=\"x\">Text</div>", Position: 2),
+            (Kind: LanguageServerKind.Css, Name: "site.css", Text: "a { color: red; }", Position: 5)
+        })
+        {
+            var definition = catalog.Definitions.Single(item => item.Kind == fixture.Kind);
+            if (definition.Launch is null) continue;
+            var path = Path.Combine(root.FullName, fixture.Name);
+            await File.WriteAllTextAsync(path, fixture.Text);
+            await using var manager = new LanguageServerManager(definition, root.FullName);
+            await manager.StartAsync();
+            Assert.IsTrue(manager.IsReady, manager.Status.Detail);
+            using var document = new EditorDocumentState();
+            await document.OpenAsync(path);
+            await using var coordinator = new LanguageDocumentCoordinator(manager);
+            await coordinator.OpenAsync(document);
+            var provider = new LspLanguageProvider(_ => manager, _ => document.CreateSnapshot(),
+                synchronize: (_, token) => coordinator.SynchronizeAsync(path, token));
+            var info = provider.GetInfo(path);
+            Assert.IsTrue(info.Capabilities.HasFlag(LanguageCapabilities.Completion));
+            Assert.IsTrue(info.Capabilities.HasFlag(LanguageCapabilities.Hover));
+            Assert.IsTrue(info.Capabilities.HasFlag(LanguageCapabilities.Formatting));
+            document.Content = fixture.Kind == LanguageServerKind.Html ? "<" : "a { ";
+            var completions = (await provider.GetCompletionsAsync(
+                new(path, null, document.Version, document.Content.Length), true, default)).Value;
+            Assert.IsNotNull(completions);
+            Assert.IsNotEmpty(completions.Items);
+            document.Content = fixture.Text;
+            await coordinator.SynchronizeAsync(path);
+            var hover = (await provider.GetHoverAsync(new(path, null, document.Version, fixture.Position), default)).Value;
+            Assert.IsNotNull(hover);
+            var formatted = (await provider.FormatAsync(new(path, null, document.Version, 0), default)).Value;
+            Assert.IsNotNull(formatted);
+            Assert.Contains(fixture.Kind == LanguageServerKind.Html ? "div" : "color", formatted.Text);
+        }
+        root.Delete(true);
+    }
+
+    [TestMethod]
+    [DoNotParallelize]
     public async Task PackagedRoslynSurvivesRapidDocumentChanges()
     {
         var root = Path.Combine(Path.GetTempPath(), $"novasharp-lsp-{Guid.NewGuid():N}");
