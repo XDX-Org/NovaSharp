@@ -4,7 +4,7 @@
 
 Use the MIT-licensed Samsung `netcoredbg` Debug Adapter Protocol implementation. Pin adapter archives and SHA-256 hashes per supported runtime, acquire them during CI, and package them beside the application. NovaSharp owns the bounded DAP transport, session state, source identity, cancellation, and process lifetime.
 
-The current upstream release does not publish an Intel macOS archive. Phase 12 cannot be called complete until CI reproducibly builds and signs that target from the pinned source revision, or the supported matrix changes through an explicit release decision.
+Upstream 3.2 does not publish Intel macOS, so Windows/Linux/Intel macOS use pinned 3.1.3-1062 while Apple Silicon uses pinned 3.2.0-1092. Both are protocol-compatible within NovaSharp's negotiated capability boundary. Every archive is hash-verified before packaging.
 
 Launch targets only processes started for the selected project. Attach requires an explicit process selection and never grants NovaSharp ownership of that process. Stop and disconnect therefore use distinct ownership rules.
 

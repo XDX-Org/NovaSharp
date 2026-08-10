@@ -58,6 +58,26 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "copyrightText": "Copyright Microsoft Corporation"
+    },
+    {
+      "SPDXID": "SPDXRef-Netcoredbg313",
+      "name": "Samsung netcoredbg",
+      "versionInfo": "3.1.3-1062",
+      "downloadLocation": "https://github.com/Samsung/netcoredbg/releases/tag/3.1.3-1062",
+      "filesAnalyzed": false,
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
+      "copyrightText": "Copyright Samsung Electronics Co., Ltd."
+    },
+    {
+      "SPDXID": "SPDXRef-Netcoredbg320",
+      "name": "Samsung netcoredbg",
+      "versionInfo": "3.2.0-1092",
+      "downloadLocation": "https://github.com/Samsung/netcoredbg/releases/tag/3.2.0-1092",
+      "filesAnalyzed": false,
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
+      "copyrightText": "Copyright Samsung Electronics Co., Ltd."
     }
   ],
   "relationships": [
@@ -65,6 +85,8 @@
     { "spdxElementId": "SPDXRef-DOCUMENT", "relationshipType": "DESCRIBES", "relatedSpdxElement": "SPDXRef-Node" },
     { "spdxElementId": "SPDXRef-DOCUMENT", "relationshipType": "DESCRIBES", "relatedSpdxElement": "SPDXRef-HtmlLanguageService" },
     { "spdxElementId": "SPDXRef-DOCUMENT", "relationshipType": "DESCRIBES", "relatedSpdxElement": "SPDXRef-CssLanguageService" },
-    { "spdxElementId": "SPDXRef-DOCUMENT", "relationshipType": "DESCRIBES", "relatedSpdxElement": "SPDXRef-LanguageserverNode" }
+    { "spdxElementId": "SPDXRef-DOCUMENT", "relationshipType": "DESCRIBES", "relatedSpdxElement": "SPDXRef-LanguageserverNode" },
+    { "spdxElementId": "SPDXRef-DOCUMENT", "relationshipType": "DESCRIBES", "relatedSpdxElement": "SPDXRef-Netcoredbg313" },
+    { "spdxElementId": "SPDXRef-DOCUMENT", "relationshipType": "DESCRIBES", "relatedSpdxElement": "SPDXRef-Netcoredbg320" }
   ]
 }

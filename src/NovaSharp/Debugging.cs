@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 
@@ -165,6 +166,101 @@ internal sealed class DebugSessionCoordinator
     }
 
     internal bool IsCurrentPause(long epoch) => State == DebugSessionState.Paused && PauseEpoch == epoch;
+}
+
+internal static class DebugAdapterCatalog
+{
+    internal static string Resolve(string? baseDirectory = null)
+    {
+        baseDirectory ??= AppContext.BaseDirectory;
+        var executable = OperatingSystem.IsWindows() ? "netcoredbg.exe" : "netcoredbg";
+        var packaged = Path.Combine(baseDirectory, "DebugAdapters", "netcoredbg", executable);
+        if (File.Exists(packaged)) return packaged;
+        throw new FileNotFoundException("The packaged managed debug adapter is unavailable.", packaged);
+    }
+}
+
+internal sealed class DebugAdapterSession : IAsyncDisposable
+{
+    private readonly Process _process;
+    private readonly DebugProtocolClient _protocol;
+    internal DebugSessionCoordinator Coordinator { get; } = new();
+
+    private DebugAdapterSession(Process process, DebugProtocolClient protocol)
+    {
+        _process = process;
+        _protocol = protocol;
+        protocol.EventReceived += OnEvent;
+    }
+
+    internal static async Task<DebugAdapterSession> LaunchAsync(DebugLaunchConfiguration configuration,
+        string? adapterPath = null, CancellationToken cancellationToken = default)
+    {
+        var program = Path.GetFullPath(configuration.Program);
+        var workingDirectory = Path.GetFullPath(configuration.WorkingDirectory);
+        if (!File.Exists(program)) throw new FileNotFoundException("Debug target does not exist.", program);
+        if (!Directory.Exists(workingDirectory)) throw new DirectoryNotFoundException("Debug working directory does not exist.");
+        adapterPath ??= DebugAdapterCatalog.Resolve();
+        var start = new ProcessStartInfo(adapterPath) { RedirectStandardInput = true, RedirectStandardOutput = true,
+            RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
+        start.ArgumentList.Add("--interpreter=vscode");
+        var process = Process.Start(start) ?? throw new InvalidOperationException("Debug adapter did not start.");
+        var protocol = new DebugProtocolClient(process.StandardOutput.BaseStream, process.StandardInput.BaseStream);
+        var session = new DebugAdapterSession(process, protocol);
+        session.Coordinator.Transition(DebugSessionState.Starting);
+        try
+        {
+            await protocol.RequestAsync("initialize", new { clientID = "novasharp", clientName = "NovaSharp",
+                adapterID = "coreclr", pathFormat = "path", linesStartAt1 = true, columnsStartAt1 = true,
+                supportsVariableType = true, supportsRunInTerminalRequest = false }, TimeSpan.FromSeconds(5), cancellationToken);
+            session.Coordinator.Transition(DebugSessionState.Configuring);
+            await protocol.RequestAsync("launch", new { name = "NovaSharp", type = "coreclr", request = "launch",
+                program, cwd = workingDirectory, args = configuration.Arguments,
+                env = configuration.Environment, stopAtEntry = configuration.StopAtEntry }, TimeSpan.FromSeconds(10), cancellationToken);
+            await protocol.RequestAsync("configurationDone", null, TimeSpan.FromSeconds(5), cancellationToken);
+            if (session.Coordinator.State == DebugSessionState.Configuring) session.Coordinator.Transition(DebugSessionState.Running);
+            return session;
+        }
+        catch
+        {
+            session.Coordinator.Transition(DebugSessionState.Failed);
+            await session.DisposeAsync();
+            throw;
+        }
+    }
+
+    internal Task ContinueAsync(int threadId, CancellationToken cancellationToken = default) => ControlAsync("continue", new { threadId }, cancellationToken);
+    internal Task PauseAsync(int threadId, CancellationToken cancellationToken = default) => ControlAsync("pause", new { threadId }, cancellationToken);
+    internal Task StepAsync(string command, int threadId, CancellationToken cancellationToken = default) =>
+        command is "next" or "stepIn" or "stepOut" ? ControlAsync(command, new { threadId }, cancellationToken)
+            : throw new ArgumentOutOfRangeException(nameof(command));
+
+    private async Task ControlAsync(string command, object arguments, CancellationToken cancellationToken)
+    {
+        await _protocol.RequestAsync(command, arguments, TimeSpan.FromSeconds(5), cancellationToken);
+        if (command is "continue" or "next" or "stepIn" or "stepOut" && Coordinator.State == DebugSessionState.Paused)
+            Coordinator.Transition(DebugSessionState.Running);
+    }
+
+    private void OnEvent(string name, JsonElement body)
+    {
+        if (name == "stopped" && Coordinator.State is DebugSessionState.Running or DebugSessionState.Configuring)
+            Coordinator.Transition(DebugSessionState.Paused);
+        else if (name == "continued" && Coordinator.State == DebugSessionState.Paused)
+            Coordinator.Transition(DebugSessionState.Running);
+        else if (name is "terminated" or "exited" && Coordinator.State is DebugSessionState.Running or DebugSessionState.Paused)
+            Coordinator.Transition(DebugSessionState.Terminated);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _protocol.EventReceived -= OnEvent;
+        try { await _protocol.RequestAsync("disconnect", new { terminateDebuggee = true }, TimeSpan.FromSeconds(3)); } catch { }
+        await _protocol.DisposeAsync();
+        if (!_process.HasExited) _process.Kill(entireProcessTree: true);
+        await _process.WaitForExitAsync();
+        _process.Dispose();
+    }
 }
 
 internal sealed record DebugStackFrame(int Id, string Name, string? SourcePath, int Line, int Column);

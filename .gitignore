@@ -27,6 +27,7 @@ bld/
 project.lock.json
 project.fragment.lock.json
 artifacts/
+/src/NovaSharp/DebugAdapters/Assets/
 
 # ASP.NET Scaffolding
 ScaffoldingReadMe.txt
