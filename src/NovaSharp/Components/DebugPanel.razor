@@ -10,10 +10,15 @@
             <button @onclick='() => Step("stepIn")' disabled="@(State != DebugSessionState.Paused)">Step into</button>
             <button @onclick='() => Step("stepOut")' disabled="@(State != DebugSessionState.Paused)">Step out</button>
             <button @onclick="Stop" disabled="@(Session is null)">Stop</button>
+            <button @onclick="RefreshStack" disabled="@(State != DebugSessionState.Paused)">Refresh stack</button>
         </header>
         @if (Session?.Breakpoints.Count > 0)
         {
             <ul aria-label="Breakpoints">@foreach (var breakpoint in Session.Breakpoints) { <li>@Path.GetFileName(breakpoint.SourcePath):@breakpoint.Line — @breakpoint.State</li> }</ul>
+        }
+        @if (Session?.Inspection.Frames.Count > 0)
+        {
+            <ol aria-label="Call stack">@foreach (var frame in Session.Inspection.Frames) { <li>@frame.Name — @Path.GetFileName(frame.SourcePath):@frame.Line</li> }</ol>
         }
     </section>
 }
@@ -27,4 +32,5 @@
     private Task Pause() => Session?.PauseAsync(Session.CurrentThreadId ?? 0) ?? Task.CompletedTask;
     private Task Step(string command) => Session?.CurrentThreadId is { } thread ? Session.StepAsync(command, thread) : Task.CompletedTask;
     private Task Stop() => Stopped.InvokeAsync();
+    private async Task RefreshStack() { if (Session is not null) await Session.LoadStackAsync(); }
 }

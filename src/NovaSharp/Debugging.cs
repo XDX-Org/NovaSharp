@@ -187,6 +187,7 @@ public sealed class DebugAdapterSession : IAsyncDisposable
     private readonly DebugProtocolClient _protocol;
     private readonly TaskCompletionSource _initialized = new(TaskCreationOptions.RunContinuationsAsynchronously);
     internal DebugSessionCoordinator Coordinator { get; } = new();
+    internal DebugInspectionStore Inspection { get; } = new();
     internal IReadOnlyList<DebugBreakpoint> Breakpoints { get; private set; } = [];
     internal int? CurrentThreadId { get; private set; }
 
@@ -265,6 +266,36 @@ public sealed class DebugAdapterSession : IAsyncDisposable
                 Message = bound[index].TryGetProperty("message", out var message) ? message.GetString() : null }).ToArray();
     }
 
+    internal async Task<IReadOnlyList<DebugStackFrame>> LoadStackAsync(CancellationToken cancellationToken = default)
+    {
+        if (Coordinator.State != DebugSessionState.Paused || CurrentThreadId is not { } threadId) return [];
+        var epoch = Coordinator.PauseEpoch;
+        var body = await _protocol.RequestAsync("stackTrace", new { threadId, startFrame = 0, levels = 256 }, TimeSpan.FromSeconds(5), cancellationToken);
+        var frames = body.TryGetProperty("stackFrames", out var values) ? values.EnumerateArray().Select(frame => new DebugStackFrame(
+            frame.GetProperty("id").GetInt32(), frame.GetProperty("name").GetString() ?? "frame",
+            frame.TryGetProperty("source", out var source) && source.TryGetProperty("path", out var path) ? path.GetString() : null,
+            frame.TryGetProperty("line", out var line) ? line.GetInt32() : 0,
+            frame.TryGetProperty("column", out var column) ? column.GetInt32() : 0)).ToArray() : [];
+        Inspection.SetFrames(epoch, frames);
+        return Inspection.Frames;
+    }
+
+    internal async Task<IReadOnlyList<DebugVariable>> LoadVariablesAsync(int variablesReference, int start = 0, int count = 100,
+        CancellationToken cancellationToken = default)
+    {
+        if (Coordinator.State != DebugSessionState.Paused) return [];
+        var epoch = Coordinator.PauseEpoch;
+        var body = await _protocol.RequestAsync("variables", new { variablesReference, start, count }, TimeSpan.FromSeconds(5), cancellationToken);
+        var variables = body.TryGetProperty("variables", out var values) ? values.EnumerateArray().Select(value => new DebugVariable(
+            value.GetProperty("name").GetString() ?? "", value.GetProperty("value").GetString() ?? "",
+            value.TryGetProperty("type", out var type) ? type.GetString() : null,
+            value.TryGetProperty("variablesReference", out var reference) ? reference.GetInt32() : 0,
+            value.TryGetProperty("namedVariables", out var named) ? named.GetInt32() : null,
+            value.TryGetProperty("indexedVariables", out var indexed) ? indexed.GetInt32() : null)).ToArray() : [];
+        Inspection.SetVariables(epoch, variablesReference, variables);
+        return variables;
+    }
+
     private async Task ControlAsync(string command, object arguments, CancellationToken cancellationToken)
     {
         await _protocol.RequestAsync(command, arguments, TimeSpan.FromSeconds(5), cancellationToken);
@@ -291,10 +322,12 @@ public sealed class DebugAdapterSession : IAsyncDisposable
         {
             CurrentThreadId = body.TryGetProperty("threadId", out var thread) ? thread.GetInt32() : null;
             Coordinator.Transition(DebugSessionState.Paused);
+            Inspection.BeginPause(Coordinator.PauseEpoch);
         }
         else if (name == "continued" && Coordinator.State == DebugSessionState.Paused)
         {
             CurrentThreadId = null;
+            Inspection.Resume();
             Coordinator.Transition(DebugSessionState.Running);
         }
         else if (name is "terminated" or "exited" && Coordinator.State is DebugSessionState.Running or DebugSessionState.Paused)
