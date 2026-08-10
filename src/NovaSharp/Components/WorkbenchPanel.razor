@@ -91,10 +91,8 @@
         @if (StartupProjects.Count > 0)
         {
             <div class="build-controls" aria-label="Build and run settings">
-                <select aria-label="Startup project" title="Startup project" value="@StartupProject" @onchange="SelectStartupProject">
-                    @foreach (var project in StartupProjects) { <option value="@project">@Path.GetFileNameWithoutExtension(project)</option> }
-                </select>
-                <select aria-label="Build configuration" title="Build configuration" @bind="_buildConfiguration"><option>Debug</option><option>Release</option></select>
+                <span title="Active build configuration">@Path.GetFileNameWithoutExtension(StartupProject) · @_buildConfiguration@(!string.IsNullOrEmpty(_targetFramework) ? $" · {_targetFramework}" : "")</span>
+                <button title="Open Build Configurator" aria-label="Build Configurator" @onclick="OpenBuildConfigurator">Configure…</button>
                 <button title="Build startup project (Ctrl+Shift+B)" aria-label="Build startup project" @onclick="() => StartBuildAsync(BuildOperation.Build)">Build</button>
                 <button title="Run without debugging (Ctrl+F5)" aria-label="Run startup project" @onclick="() => StartBuildAsync(BuildOperation.Run)">Run</button>
                 <button title="Stop build or run" aria-label="Stop build or run" disabled="@(_buildRun.ActiveTask is null)" @onclick="StopBuild">■</button>
@@ -174,6 +172,22 @@
             <ServerStatusIndicator Label="CSS" Status="ServerStatus(LanguageServerKind.Css)" />
         </div>
     </footer>
+    @if (_buildConfiguratorOpen)
+    {
+        <div class="modal-backdrop" @onclick="CloseBuildConfigurator">
+            <form class="modal-dialog build-configurator" role="dialog" aria-modal="true" aria-labelledby="build-configurator-title" @onclick:stopPropagation @onsubmit="ApplyBuildConfigurator">
+                <h2 id="build-configurator-title">Build Configurator</h2>
+                <label>Startup project<select value="@_configuredProject" @onchange="ConfigureProjectChanged">@foreach (var project in StartupProjects) { <option value="@project">@Path.GetFileNameWithoutExtension(project)</option> }</select></label>
+                <label>Configuration<select @bind="_configuredConfiguration">@foreach (var configuration in _availableConfigurations) { <option>@configuration</option> }</select></label>
+                <label>Target framework<select @bind="_configuredFramework">@foreach (var framework in _availableFrameworks) { <option>@framework</option> }</select></label>
+                <label>Launch profile<select @bind="_configuredProfile"><option value="">None</option>@foreach (var profile in _availableProfiles) { <option value="@profile.Name">@profile.Name</option> }</select></label>
+                <label>Arguments<input @bind="_configuredArguments" /></label>
+                <label>Working directory<input @bind="_configuredWorkingDirectory" /></label>
+                <p><strong>Preview:</strong> dotnet run --project @Path.GetFileName(_configuredProject) --configuration @_configuredConfiguration --framework @_configuredFramework</p>
+                <div class="modal-actions"><button type="submit">Apply</button><button type="button" @onclick="CloseBuildConfigurator">Cancel</button></div>
+            </form>
+        </div>
+    }
     @if (_renamePosition is not null)
     {
         <div class="modal-backdrop" @onclick="CancelRename">
@@ -266,6 +280,12 @@
     private string _renameName = "", _symbolQuery = "";
     private string _quickAccessQuery = "";
     private string _buildConfiguration = "Debug";
+    private string? _targetFramework, _launchProfile, _runWorkingDirectory;
+    private IReadOnlyList<string> _runArguments = [];
+    private bool _buildConfiguratorOpen;
+    private string _configuredProject = "", _configuredConfiguration = "Debug", _configuredFramework = "", _configuredProfile = "", _configuredArguments = "", _configuredWorkingDirectory = "";
+    private IReadOnlyList<string> _availableConfigurations = ["Debug", "Release"], _availableFrameworks = [];
+    private IReadOnlyList<LaunchProfile> _availableProfiles = [];
     private string? _startupProject;
     private WorkspaceEdit? _pendingWorkspaceEdit;
     private WorkspaceEditPreview? _editPreview;
@@ -655,10 +675,44 @@
         if (StartupProject is not { } project) { _status = "Open a project or solution first."; return; }
         _outputOpen = true;
         await SaveLayoutAsync();
-        var request = new BuildRequest(project, operation, _buildConfiguration);
+        var request = new BuildRequest(project, operation, _buildConfiguration, _targetFramework, _launchProfile,
+            operation == BuildOperation.Run ? _runArguments : null, WorkingDirectory: _runWorkingDirectory);
         var completed = await _buildRun.ExecuteAsync(request);
         _status = $"{operation}: {completed.State}";
     }
+    private void OpenBuildConfigurator()
+    {
+        if (StartupProject is not { } project) return;
+        _buildConfiguratorOpen = true;
+        LoadBuildConfigurator(project);
+    }
+    private void ConfigureProjectChanged(ChangeEventArgs args) => LoadBuildConfigurator(args.Value?.ToString() ?? StartupProject!);
+    private void LoadBuildConfigurator(string project)
+    {
+        _configuredProject = project;
+        _availableConfigurations = BuildConfigurationDiscovery.Configurations(project);
+        _availableFrameworks = BuildConfigurationDiscovery.Frameworks(project);
+        var settings = Path.Combine(Path.GetDirectoryName(project)!, "Properties", "launchSettings.json");
+        _availableProfiles = BuildConfigurationDiscovery.Profiles(settings);
+        _configuredConfiguration = _availableConfigurations.Contains(_buildConfiguration) ? _buildConfiguration : _availableConfigurations.First();
+        _configuredFramework = _availableFrameworks.Contains(_targetFramework ?? "") ? _targetFramework! : _availableFrameworks.FirstOrDefault() ?? "";
+        _configuredProfile = _availableProfiles.Any(profile => profile.Name == _launchProfile) ? _launchProfile! : "";
+        _configuredArguments = string.Join(' ', _runArguments);
+        _configuredWorkingDirectory = _runWorkingDirectory ?? Path.GetDirectoryName(project)!;
+    }
+    private void ApplyBuildConfigurator()
+    {
+        if (!Directory.Exists(_configuredWorkingDirectory)) { _status = "Working directory does not exist."; return; }
+        _startupProject = _configuredProject;
+        _buildConfiguration = _configuredConfiguration;
+        _targetFramework = string.IsNullOrEmpty(_configuredFramework) ? null : _configuredFramework;
+        _launchProfile = string.IsNullOrEmpty(_configuredProfile) ? null : _configuredProfile;
+        try { _runArguments = BuildConfigurationDiscovery.ParseArguments(_configuredArguments); }
+        catch (InvalidOperationException ex) { _status = ex.Message; return; }
+        _runWorkingDirectory = Path.GetFullPath(_configuredWorkingDirectory);
+        _buildConfiguratorOpen = false;
+    }
+    private void CloseBuildConfigurator() => _buildConfiguratorOpen = false;
     private void StopBuild() => _buildRun.Stop();
     private async Task RestartRunAsync()
     {

@@ -10,7 +10,7 @@ public enum OutputStream { System, StandardOutput, StandardError }
 
 public sealed record BuildRequest(string ProjectPath, BuildOperation Operation, string Configuration = "Debug",
     string? TargetFramework = null, string? LaunchProfile = null, IReadOnlyList<string>? Arguments = null,
-    IReadOnlyDictionary<string, string>? Environment = null);
+    IReadOnlyDictionary<string, string>? Environment = null, string? WorkingDirectory = null);
 
 public sealed record OutputEntry(long Sequence, DateTime TimestampUtc, OutputStream Stream, string Text,
     string? FilePath = null, int Line = 0, int Column = 0);
@@ -147,7 +147,7 @@ internal sealed partial class BuildRunService : IAsyncDisposable
         var arguments = CreateArguments(request);
         var startInfo = new ProcessStartInfo
         {
-            FileName = "dotnet", WorkingDirectory = Path.GetDirectoryName(request.ProjectPath)!,
+            FileName = "dotnet", WorkingDirectory = request.WorkingDirectory ?? Path.GetDirectoryName(request.ProjectPath)!,
             UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true,
             RedirectStandardInput = true, CreateNoWindow = true
         };

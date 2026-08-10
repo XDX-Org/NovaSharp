@@ -63,7 +63,7 @@ internal static class BuildConfigurationDiscovery
             ?? throw new InvalidOperationException("Launch profile is not available.");
         var arguments = new List<string> { "run", "--project", project, "--configuration", options.Configuration,
             "--framework", options.TargetFramework, "--no-launch-profile" };
-        var applicationArguments = options.Arguments.Count > 0 ? options.Arguments : SplitArguments(profile?.CommandLineArgs);
+        var applicationArguments = options.Arguments.Count > 0 ? options.Arguments : ParseArguments(profile?.CommandLineArgs);
         if (applicationArguments.Count > 0) { arguments.Add("--"); arguments.AddRange(applicationArguments); }
         var environment = new Dictionary<string, string>(profile?.Environment ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase);
         foreach (var item in options.Environment) environment[item.Key] = item.Value;
@@ -74,7 +74,7 @@ internal static class BuildConfigurationDiscovery
         ? value[..(value.IndexOf('=') + 1)] + "[redacted]" : value;
 
     private static string? Text(JsonElement value, string property) => value.TryGetProperty(property, out var item) && item.ValueKind == JsonValueKind.String ? item.GetString() : null;
-    private static IReadOnlyList<string> SplitArguments(string? value)
+    internal static IReadOnlyList<string> ParseArguments(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return [];
         var result = new List<string>();
