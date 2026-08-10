@@ -101,14 +101,14 @@ public sealed class DebuggingTests
         Directory.CreateDirectory(root);
         try
         {
-            await File.WriteAllTextAsync(Path.Combine(root, "Fixture.csproj"), "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings></PropertyGroup></Project>");
+            await File.WriteAllTextAsync(Path.Combine(root, "Fixture.csproj"), "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net9.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings></PropertyGroup></Project>");
             var source = Path.Combine(root, "Program.cs");
             await File.WriteAllTextAsync(source, "var value = 41;\nConsole.WriteLine(value + 1);\n");
             using var build = Process.Start(new ProcessStartInfo("dotnet") { WorkingDirectory = root, UseShellExecute = false,
                 RedirectStandardOutput = true, RedirectStandardError = true, ArgumentList = { "build", "--nologo", "--configuration", "Debug" } })!;
             await build.WaitForExitAsync();
             Assert.AreEqual(0, build.ExitCode, await build.StandardError.ReadToEndAsync());
-            var program = Path.Combine(root, "bin", "Debug", "net10.0", "Fixture.dll");
+            var program = Path.Combine(root, "bin", "Debug", "net9.0", "Fixture.dll");
             await using var session = await DebugAdapterSession.LaunchAsync(new(program, root, [], StopAtEntry: true, Breakpoints: [new(source, 2)]), adapter);
             var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
             while (session.Coordinator.State == DebugSessionState.Running && DateTime.UtcNow < deadline) await Task.Delay(20);
