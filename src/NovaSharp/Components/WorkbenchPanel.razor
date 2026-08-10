@@ -95,6 +95,7 @@
                 <button title="Open Build Configurator" aria-label="Build Configurator" @onclick="OpenBuildConfigurator">Configure…</button>
                 <button title="Build startup project (Ctrl+Shift+B)" aria-label="Build startup project" @onclick="() => StartBuildAsync(BuildOperation.Build)">Build</button>
                 <button title="Run without debugging (Ctrl+F5)" aria-label="Run startup project" @onclick="() => StartBuildAsync(BuildOperation.Run)">Run</button>
+                <button title="Start debugging (F5)" aria-label="Start debugging" @onclick="StartDebugAsync">Debug</button>
                 <button title="Stop build or run" aria-label="Stop build or run" disabled="@(_buildRun.ActiveTask is null)" @onclick="StopBuild">■</button>
             </div>
         }
@@ -134,6 +135,7 @@
                          Export="ExportOutputAsync" Clear="_buildRun.Output.Clear" />
             <TerminalPanel Open="_terminalOpen" Service="_terminal" WorkingDirectory="@(Program.Phase11Workspace ?? WorkspaceRoot)"
                            ConfirmClose="ConfirmTerminalCloseAsync" />
+            <DebugPanel Open="_debugOpen" Session="_debugSession" Stopped="StopDebugAsync" />
         </div>
         <SearchPanel @ref="_searchPanel" Open="_searchOpen" RootPath="WorkspaceRoot" OpenDocuments="OpenDocuments"
                      Activated="OpenSearchMatchAsync" PreviewRequested="PreviewSearchReplace"
@@ -255,6 +257,7 @@
     private readonly QuickAccessService _quickAccess;
     private readonly BuildRunService _buildRun;
     private readonly TerminalService _terminal = new();
+    private DebugAdapterSession? _debugSession;
     private readonly List<(LanguageServerKind Kind, LanguageServerManager Manager)> _languageServers = [];
     private readonly Dictionary<LanguageServerManager, LanguageDocumentCoordinator> _languageCoordinators = [];
     private readonly HashSet<EditorDocumentState> _languageDocuments = [];
@@ -299,7 +302,7 @@
     private bool _restoringNavigation, _symbolSearchOpen, _searchOpen;
     private long _languageAnalysisRevision;
     private bool _quickAccessOpen, _quickAccessCommands, _quickAccessBusy;
-    private bool _projectReloading, _outputOpen, _terminalOpen;
+    private bool _projectReloading, _outputOpen, _terminalOpen, _debugOpen;
     private bool _showFind, _wordWrap, _externalChange, _explorerOpen = true, _problemsOpen, _suggestions = true;
     private DocumentTab? ActiveTab => _workspace.FocusedGroup.ActiveTab;
     private EditorDocumentState _document => ActiveTab?.Document ?? _emptyDocument;
@@ -740,6 +743,32 @@
     }
     private void CloseBuildConfigurator() => _buildConfiguratorOpen = false;
     private void StopBuild() => _buildRun.Stop();
+    private async Task StartDebugAsync()
+    {
+        if (StartupProject is not { } project) return;
+        if (_debugSession is not null) await StopDebugAsync();
+        var built = await _buildRun.ExecuteAsync(new(project, BuildOperation.Build, _buildConfiguration, _targetFramework));
+        if (built.State != BuildTaskState.Succeeded) { _status = "Build failed; debugging was not started."; return; }
+        var framework = _targetFramework ?? BuildConfigurationDiscovery.Frameworks(project).FirstOrDefault();
+        if (framework is null) { _status = "No target framework is available for debugging."; return; }
+        var program = Path.Combine(Path.GetDirectoryName(project)!, "bin", _buildConfiguration, framework,
+            Path.GetFileNameWithoutExtension(project) + ".dll");
+        try
+        {
+            _debugSession = await DebugAdapterSession.LaunchAsync(new(program, _runWorkingDirectory ?? Path.GetDirectoryName(project)!, _runArguments));
+            _debugSession.Coordinator.StateChanged += DebugStateChanged;
+            _debugOpen = true;
+        }
+        catch (Exception ex) { _status = ex.Message; }
+    }
+    private async Task StopDebugAsync()
+    {
+        if (_debugSession is null) return;
+        _debugSession.Coordinator.StateChanged -= DebugStateChanged;
+        await _debugSession.DisposeAsync();
+        _debugSession = null;
+    }
+    private void DebugStateChanged(DebugSessionState state) => _ = InvokeAsync(StateHasChanged);
     private async Task RestartRunAsync()
     {
         _openMenu = null;
@@ -1164,6 +1193,7 @@
     {
         _recoverySave?.Cancel();
         _recoverySave?.Dispose();
+        if (_debugSession is not null) _debugSession.DisposeAsync().AsTask().GetAwaiter().GetResult();
         CloseQuickAccess();
         _ = SaveLayoutAsync();
         _workspace.Changed -= WorkspaceChanged;

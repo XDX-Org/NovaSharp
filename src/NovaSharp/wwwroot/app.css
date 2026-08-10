@@ -241,6 +241,9 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
 .modal-dialog p { margin: 0 0 20px; color: #9ca6b5; line-height: 1.45; }
 .build-configurator label { display: grid; gap: 4px; margin: 10px 0; color: #b9c2d0; }
 .build-configurator input, .build-configurator select { min-width: 0; height: 30px; }
+.debug-panel { max-height: 180px; overflow: auto; padding: 8px 12px; border-top: 1px solid #343a46; background: #1d2027; }
+.debug-panel header { display: flex; align-items: center; gap: 7px; }
+.debug-panel header span { margin-right: auto; color: #9ca6b5; }
 .edit-preview { width: min(620px, 100%); }
 .edit-preview ul { max-height: 260px; overflow: auto; padding-left: 22px; color: #b8c0cc; font: var(--text-small)/1.5 var(--font-code); }
 .symbol-results { max-height: 340px; overflow: auto; margin-bottom: 14px; }

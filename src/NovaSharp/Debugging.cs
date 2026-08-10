@@ -181,13 +181,14 @@ internal static class DebugAdapterCatalog
     }
 }
 
-internal sealed class DebugAdapterSession : IAsyncDisposable
+public sealed class DebugAdapterSession : IAsyncDisposable
 {
     private readonly Process _process;
     private readonly DebugProtocolClient _protocol;
     private readonly TaskCompletionSource _initialized = new(TaskCreationOptions.RunContinuationsAsynchronously);
     internal DebugSessionCoordinator Coordinator { get; } = new();
     internal IReadOnlyList<DebugBreakpoint> Breakpoints { get; private set; } = [];
+    internal int? CurrentThreadId { get; private set; }
 
     private DebugAdapterSession(Process process, DebugProtocolClient protocol)
     {
@@ -287,9 +288,15 @@ internal sealed class DebugAdapterSession : IAsyncDisposable
                 } : item).ToArray();
         }
         else if (name == "stopped" && Coordinator.State is DebugSessionState.Running or DebugSessionState.Configuring)
+        {
+            CurrentThreadId = body.TryGetProperty("threadId", out var thread) ? thread.GetInt32() : null;
             Coordinator.Transition(DebugSessionState.Paused);
+        }
         else if (name == "continued" && Coordinator.State == DebugSessionState.Paused)
+        {
+            CurrentThreadId = null;
             Coordinator.Transition(DebugSessionState.Running);
+        }
         else if (name is "terminated" or "exited" && Coordinator.State is DebugSessionState.Running or DebugSessionState.Paused)
             Coordinator.Transition(DebugSessionState.Terminated);
     }

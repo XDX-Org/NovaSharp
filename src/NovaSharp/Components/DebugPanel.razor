@@ -1,0 +1,30 @@
+@if (Open)
+{
+    <section class="debug-panel" aria-label="Debugger">
+        <header>
+            <strong>Debugger</strong>
+            <span aria-live="polite">@State</span>
+            <button @onclick="Continue" disabled="@(State != DebugSessionState.Paused)">Continue</button>
+            <button @onclick="Pause" disabled="@(State != DebugSessionState.Running)">Pause</button>
+            <button @onclick='() => Step("next")' disabled="@(State != DebugSessionState.Paused)">Step over</button>
+            <button @onclick='() => Step("stepIn")' disabled="@(State != DebugSessionState.Paused)">Step into</button>
+            <button @onclick='() => Step("stepOut")' disabled="@(State != DebugSessionState.Paused)">Step out</button>
+            <button @onclick="Stop" disabled="@(Session is null)">Stop</button>
+        </header>
+        @if (Session?.Breakpoints.Count > 0)
+        {
+            <ul aria-label="Breakpoints">@foreach (var breakpoint in Session.Breakpoints) { <li>@Path.GetFileName(breakpoint.SourcePath):@breakpoint.Line — @breakpoint.State</li> }</ul>
+        }
+    </section>
+}
+
+@code {
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public DebugAdapterSession? Session { get; set; }
+    [Parameter] public EventCallback Stopped { get; set; }
+    private DebugSessionState State => Session?.Coordinator.State ?? DebugSessionState.Idle;
+    private Task Continue() => Session?.CurrentThreadId is { } thread ? Session.ContinueAsync(thread) : Task.CompletedTask;
+    private Task Pause() => Session?.PauseAsync(Session.CurrentThreadId ?? 0) ?? Task.CompletedTask;
+    private Task Step(string command) => Session?.CurrentThreadId is { } thread ? Session.StepAsync(command, thread) : Task.CompletedTask;
+    private Task Stop() => Stopped.InvokeAsync();
+}
