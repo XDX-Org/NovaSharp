@@ -109,14 +109,23 @@ public sealed class DebuggingTests
             await build.WaitForExitAsync();
             Assert.AreEqual(0, build.ExitCode, await build.StandardError.ReadToEndAsync());
             var program = Path.Combine(root, "bin", "Debug", "net10.0", "Fixture.dll");
-            await using var session = await DebugAdapterSession.LaunchAsync(new(program, root, [], Breakpoints: [new(source, 2)]), adapter);
+            await using var session = await DebugAdapterSession.LaunchAsync(new(program, root, [], StopAtEntry: true, Breakpoints: [new(source, 2)]), adapter);
             var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
             while ((session.Coordinator.State == DebugSessionState.Running
                 || session.Breakpoints.Single().State != DebugBreakpointState.Verified) && DateTime.UtcNow < deadline) await Task.Delay(20);
             Assert.AreEqual(DebugBreakpointState.Verified, session.Breakpoints.Single().State, session.Breakpoints.Single().Message);
             Assert.AreEqual(DebugSessionState.Paused, session.Coordinator.State);
             var frames = await session.LoadStackAsync();
+            if (frames[0].Line != 2)
+            {
+                var epoch = session.Coordinator.PauseEpoch;
+                deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+                await session.ContinueAsync(session.CurrentThreadId!.Value);
+                while (session.Coordinator.PauseEpoch == epoch && DateTime.UtcNow < deadline) await Task.Delay(20);
+                frames = await session.LoadStackAsync();
+            }
             Assert.IsTrue(frames.Count > 0);
+            Assert.AreEqual(2, frames[0].Line);
             var evaluation = await session.EvaluateAsync("value", frames[0].Id);
             Assert.AreEqual("41", evaluation!.Result);
         }
