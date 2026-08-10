@@ -286,6 +286,7 @@
     private readonly EditorDocumentState _emptyDocument = new();
     private EditorLayoutPersistence _persistence = null!;
     private WorkbenchPersistence _recovery = null!;
+    private BuildConfigurationStore _buildConfigurationStore = null!;
     private CancellationTokenSource? _recoverySave;
     private WorkspaceExplorer? _explorer;
     private SearchPanel? _searchPanel;
@@ -359,6 +360,7 @@
             "NovaSharp", "workbench-session.json"));
         var applicationData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NovaSharp");
         _recovery = new(Path.Combine(applicationData, "workbench-state.json"), Path.Combine(applicationData, "recovery"));
+        _buildConfigurationStore = new(Path.Combine(applicationData, "build-configurations"));
         _workspace.Changed += WorkspaceChanged;
         _projectSystem.Changed += ProjectSystemChanged;
         _languageProvider.Diagnostics.Changed += DiagnosticsChanged;
@@ -727,11 +729,19 @@
         var completed = await _buildRun.ExecuteAsync(request);
         _status = $"{operation}: {completed.State}";
     }
-    private void OpenBuildConfigurator()
+    private async Task OpenBuildConfigurator()
     {
         if (StartupProject is not { } project) return;
         _buildConfiguratorOpen = true;
         LoadBuildConfigurator(project);
+        if (await _buildConfigurationStore.LoadAsync(project) is { } saved)
+        {
+            if (_availableConfigurations.Contains(saved.Configuration)) _configuredConfiguration = saved.Configuration;
+            if (saved.TargetFramework is not null && _availableFrameworks.Contains(saved.TargetFramework)) _configuredFramework = saved.TargetFramework;
+            if (saved.LaunchProfile is not null && _availableProfiles.Any(profile => profile.Name == saved.LaunchProfile)) _configuredProfile = saved.LaunchProfile;
+            _configuredArguments = string.Join(' ', saved.Arguments.Select(argument => argument.Any(char.IsWhiteSpace) ? $"\"{argument}\"" : argument));
+            if (Directory.Exists(saved.WorkingDirectory)) _configuredWorkingDirectory = saved.WorkingDirectory;
+        }
     }
     private void ConfigureProjectChanged(ChangeEventArgs args) => LoadBuildConfigurator(args.Value?.ToString() ?? StartupProject!);
     private void LoadBuildConfigurator(string project)
@@ -747,7 +757,7 @@
         _configuredArguments = string.Join(' ', _runArguments);
         _configuredWorkingDirectory = _runWorkingDirectory ?? Path.GetDirectoryName(project)!;
     }
-    private void ApplyBuildConfigurator()
+    private async Task ApplyBuildConfigurator()
     {
         if (!Directory.Exists(_configuredWorkingDirectory)) { _status = "Working directory does not exist."; return; }
         _startupProject = _configuredProject;
@@ -757,6 +767,8 @@
         try { _runArguments = BuildConfigurationDiscovery.ParseArguments(_configuredArguments); }
         catch (InvalidOperationException ex) { _status = ex.Message; return; }
         _runWorkingDirectory = Path.GetFullPath(_configuredWorkingDirectory);
+        await _buildConfigurationStore.SaveAsync(new(1, Path.GetFullPath(_configuredProject), _buildConfiguration,
+            _targetFramework, _launchProfile, _runArguments, _runWorkingDirectory));
         _buildConfiguratorOpen = false;
     }
     private void CloseBuildConfigurator() => _buildConfiguratorOpen = false;

@@ -28,6 +28,21 @@ public sealed class BuildConfigurationTests
         Assert.AreEqual("PASSWORD=[redacted]", BuildConfigurationDiscovery.Redact("PASSWORD=value"));
     }
 
+    [TestMethod]
+    public async Task WorkspaceSelectionPersistsOutsideProjectWithoutSecrets()
+    {
+        using var fixture = new BuildConfigurationFixture();
+        var storage = Path.Combine(fixture.Root, "state");
+        var store = new BuildConfigurationStore(storage);
+        var value = new PersistedBuildConfiguration(1, fixture.Project, "Release", "net10.0", "Local", ["one"], fixture.Root);
+        var projectBefore = File.ReadAllText(fixture.Project);
+        await store.SaveAsync(value);
+        var restored = await store.LoadAsync(fixture.Project);
+        Assert.AreEqual("Release", restored!.Configuration);
+        CollectionAssert.AreEqual(new[] { "one" }, restored.Arguments.ToArray());
+        Assert.AreEqual(projectBefore, File.ReadAllText(fixture.Project));
+    }
+
     private sealed class BuildConfigurationFixture : IDisposable
     {
         internal string Root { get; } = Path.Combine(Path.GetTempPath(), "novasharp-config-" + Guid.NewGuid().ToString("N"));

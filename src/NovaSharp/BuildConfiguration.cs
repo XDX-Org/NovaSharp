@@ -97,3 +97,43 @@ internal static class BuildConfigurationDiscovery
         || name.Contains("token", StringComparison.OrdinalIgnoreCase) || name.Contains("secret", StringComparison.OrdinalIgnoreCase)
         || name.Contains("api_key", StringComparison.OrdinalIgnoreCase) || name.Contains("apikey", StringComparison.OrdinalIgnoreCase);
 }
+
+internal sealed record PersistedBuildConfiguration(int SchemaVersion, string ProjectPath, string Configuration,
+    string? TargetFramework, string? LaunchProfile, IReadOnlyList<string> Arguments, string WorkingDirectory);
+
+internal sealed class BuildConfigurationStore(string directory)
+{
+    internal async Task SaveAsync(PersistedBuildConfiguration value, CancellationToken cancellationToken = default)
+    {
+        Validate(value);
+        await AtomicFile.WriteAsync(PathFor(value.ProjectPath), JsonSerializer.SerializeToUtf8Bytes(value), cancellationToken);
+    }
+
+    internal async Task<PersistedBuildConfiguration?> LoadAsync(string projectPath, CancellationToken cancellationToken = default)
+    {
+        var path = PathFor(projectPath);
+        if (!File.Exists(path)) return null;
+        try
+        {
+            await using var stream = File.OpenRead(path);
+            var value = await JsonSerializer.DeserializeAsync<PersistedBuildConfiguration>(stream, cancellationToken: cancellationToken);
+            if (value is null) return null;
+            Validate(value);
+            return value;
+        }
+        catch (Exception ex) when (ex is IOException or JsonException or InvalidDataException or UnauthorizedAccessException) { return null; }
+    }
+
+    private string PathFor(string projectPath)
+    {
+        var key = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(Path.GetFullPath(projectPath))));
+        return Path.Combine(directory, key + ".json");
+    }
+
+    private static void Validate(PersistedBuildConfiguration value)
+    {
+        if (value.SchemaVersion != 1 || !Path.IsPathFullyQualified(value.ProjectPath) || !Path.IsPathFullyQualified(value.WorkingDirectory)
+            || string.IsNullOrWhiteSpace(value.Configuration) || value.Arguments.Count > 256 || value.Arguments.Any(argument => argument.Length > 8192))
+            throw new InvalidDataException("Invalid persisted build configuration.");
+    }
+}
