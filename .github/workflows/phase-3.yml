@@ -294,6 +294,20 @@ jobs:
           $result = Get-Content $report | ConvertFrom-Json
           $required = 'LanguageSelected', 'ComponentCompletion', 'SemanticTokens', 'Diagnostics', 'Formatting'
           foreach ($name in $required) { if (-not $result.$name) { throw "Phase 15 smoke assertion failed: $name ($($result.Error))" } }
+      - name: Create versioned release archive and checksum
+        shell: pwsh
+        run: |
+          $name = "NovaSharp-0.1.0-preview.1-${{ matrix.rid }}"
+          New-Item -ItemType Directory -Force release | Out-Null
+          if ($IsWindows) {
+            Compress-Archive -Path artifacts/app/* -DestinationPath "release/$name.zip"
+            $archive = "release/$name.zip"
+          } else {
+            tar -C artifacts/app -czf "release/$name.tar.gz" .
+            $archive = "release/$name.tar.gz"
+          }
+          $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $(Split-Path $archive -Leaf)" | Set-Content -Encoding ascii "$archive.sha256"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -310,3 +324,4 @@ jobs:
             phase11-smoke.json
             phase15-smoke.json
             artifacts/app
+            release
