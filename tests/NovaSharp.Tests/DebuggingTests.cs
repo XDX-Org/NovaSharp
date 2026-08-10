@@ -88,7 +88,7 @@ public sealed class DebuggingTests
         var rid = OperatingSystem.IsWindows() ? "win-x64" : OperatingSystem.IsMacOS()
             ? (System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture == System.Runtime.InteropServices.Architecture.Arm64 ? "osx-arm64" : "osx-x64")
             : "linux-x64";
-        var armMac = rid == "osx-arm64";
+        var macOs = OperatingSystem.IsMacOS();
         var executable = OperatingSystem.IsWindows() ? "netcoredbg.exe" : "netcoredbg";
         var adapter = new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory }.SelectMany(start =>
         {
@@ -111,11 +111,11 @@ public sealed class DebuggingTests
             Assert.AreEqual(0, build.ExitCode, await build.StandardError.ReadToEndAsync());
             var program = Path.Combine(root, "bin", "Debug", "net9.0", "Fixture.dll");
             await using var session = await DebugAdapterSession.LaunchAsync(new(program, root, [], StopAtEntry: true,
-                Breakpoints: armMac ? null : [new(source, 2)]), adapter);
+                Breakpoints: macOs ? null : [new(source, 2)]), adapter);
             var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
             while (session.Coordinator.State == DebugSessionState.Running && DateTime.UtcNow < deadline) await Task.Delay(20);
             Assert.AreEqual(DebugSessionState.Paused, session.Coordinator.State);
-            if (armMac)
+            if (macOs)
             {
                 Assert.IsTrue((await session.LoadStackAsync()).Count > 0);
                 return;
