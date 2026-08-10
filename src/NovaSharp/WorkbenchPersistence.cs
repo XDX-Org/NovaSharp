@@ -39,6 +39,13 @@ internal sealed class WorkbenchPersistence(string statePath, string recoveryDire
         await AtomicFile.WriteAsync(Path.Combine(recoveryDirectory, key + ".json"), JsonSerializer.SerializeToUtf8Bytes(recovery), cancellationToken);
     }
 
+    internal void RemoveRecovery(string originalPath)
+    {
+        var key = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(Path.GetFullPath(originalPath))));
+        var path = Path.Combine(recoveryDirectory, key + ".json");
+        if (File.Exists(path)) File.Delete(path);
+    }
+
     internal async Task<IReadOnlyList<RecoveryBuffer>> LoadRecoveryAsync(CancellationToken cancellationToken = default)
     {
         if (!Directory.Exists(recoveryDirectory)) return [];

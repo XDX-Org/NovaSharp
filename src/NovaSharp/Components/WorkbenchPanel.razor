@@ -268,6 +268,8 @@
     private readonly List<NavigationState> _navigationHistory = [];
     private readonly EditorDocumentState _emptyDocument = new();
     private EditorLayoutPersistence _persistence = null!;
+    private WorkbenchPersistence _recovery = null!;
+    private CancellationTokenSource? _recoverySave;
     private WorkspaceExplorer? _explorer;
     private SearchPanel? _searchPanel;
     private ElementReference _workbench;
@@ -334,6 +336,8 @@
         _suggestions = Program.Configuration.Current.AutoCompletion;
         _persistence = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "NovaSharp", "workbench-session.json"));
+        var applicationData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NovaSharp");
+        _recovery = new(Path.Combine(applicationData, "workbench-state.json"), Path.Combine(applicationData, "recovery"));
         _workspace.Changed += WorkspaceChanged;
         _projectSystem.Changed += ProjectSystemChanged;
         _languageProvider.Diagnostics.Changed += DiagnosticsChanged;
@@ -370,6 +374,11 @@
         if (Program.Phase9Solution is not null) await _projectSystem.OpenAsync(Program.Phase9Solution);
         if (Program.Phase15Solution is not null) await _projectSystem.OpenAsync(Program.Phase15Solution);
         if (Program.Phase11Workspace is not null) _terminalOpen = true;
+        foreach (var recovery in await _recovery.LoadRecoveryAsync())
+        {
+            var document = OpenDocuments.FirstOrDefault(item => item.FilePath is not null && PathsEqual(item.FilePath, recovery.OriginalPath));
+            if (document is not null && document.Content != recovery.Content) document.Content = recovery.Content;
+        }
         TrackActiveDocument();
         _ = StartLanguageServersAsync();
     }
@@ -580,7 +589,24 @@
     }
 
     private async Task ActiveChangedAsync() { TrackActiveDocument(); await SaveLayoutAsync(); }
-    private async Task ContentEditedAsync() { _status = null; StateHasChanged(); await SaveLayoutAsync(); }
+    private async Task ContentEditedAsync()
+    {
+        _status = null;
+        StateHasChanged();
+        await SaveLayoutAsync();
+        _recoverySave?.Cancel();
+        _recoverySave?.Dispose();
+        _recoverySave = new();
+        var token = _recoverySave.Token;
+        var path = _document.FilePath;
+        var content = _document.Content;
+        if (path is null || content is null || !_document.IsDirty) return;
+        _ = Task.Run(async () =>
+        {
+            try { await Task.Delay(500, token); await _recovery.CaptureRecoveryAsync(path, content, token); }
+            catch (OperationCanceledException) { }
+        }, token);
+    }
     private void Split(SplitDirection direction) { _openMenu = null; _status = null; _workspace.Split(_workspace.Layout.FocusedGroupId, direction); }
     private void Equalize() { _openMenu = null; _workspace.Equalize(); _ = SaveLayoutAsync(); }
     private async Task TransferToNextAsync(bool copy)
@@ -607,7 +633,7 @@
         _openMenu = null;
         await JS.InvokeVoidAsync("novaSharp.focusEditorGroup", _workbench, _self, direction);
     }
-    private async Task SaveAsync() { _openMenu = null; try { await _document.SaveAsync(); await NotifySavedAsync(_document); _status = "Saved"; } catch (Exception ex) { _status = ex.Message; } }
+    private async Task SaveAsync() { _openMenu = null; try { await _document.SaveAsync(); if (_document.FilePath is { } path) _recovery.RemoveRecovery(path); await NotifySavedAsync(_document); _status = "Saved"; } catch (Exception ex) { _status = ex.Message; } }
     private async Task SaveAsAsync()
     {
         _openMenu = null;
@@ -615,7 +641,7 @@
             [new FileFilter("C#", "*.cs"), new FileFilter("Razor component", "*.razor"),
                 new FileFilter("Razor page", "*.cshtml"), new FileFilter("HTML", "*.html"),
                 new FileFilter("HTML", "*.htm"), new FileFilter("CSS", "*.css")]);
-        if (!string.IsNullOrWhiteSpace(path)) try { await _document.SaveAsync(path); await SyncLanguageDocumentsAsync(); await NotifySavedAsync(_document); _status = "Saved"; } catch (Exception ex) { _status = ex.Message; }
+        if (!string.IsNullOrWhiteSpace(path)) try { await _document.SaveAsync(path); _recovery.RemoveRecovery(path); await SyncLanguageDocumentsAsync(); await NotifySavedAsync(_document); _status = "Saved"; } catch (Exception ex) { _status = ex.Message; }
     }
     private void Undo() { _openMenu = null; _document.Undo(); StateHasChanged(); }
     private void Redo() { _openMenu = null; _document.Redo(); StateHasChanged(); }
@@ -1136,6 +1162,8 @@
 
     public void Dispose()
     {
+        _recoverySave?.Cancel();
+        _recoverySave?.Dispose();
         CloseQuickAccess();
         _ = SaveLayoutAsync();
         _workspace.Changed -= WorkspaceChanged;
