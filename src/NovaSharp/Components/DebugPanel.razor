@@ -18,7 +18,15 @@
         }
         @if (Session?.Inspection.Frames.Count > 0)
         {
-            <ol aria-label="Call stack">@foreach (var frame in Session.Inspection.Frames) { <li>@frame.Name — @Path.GetFileName(frame.SourcePath):@frame.Line</li> }</ol>
+            <ol aria-label="Call stack">@foreach (var frame in Session.Inspection.Frames) { <li><button @onclick="() => SelectFrame(frame)">@frame.Name — @Path.GetFileName(frame.SourcePath):@frame.Line</button></li> }</ol>
+        }
+        @if (_scopes.Count > 0)
+        {
+            <div class="debug-scopes" aria-label="Scopes">@foreach (var scope in _scopes) { <button @onclick="() => LoadVariables(scope)">@scope.Name</button> }</div>
+        }
+        @if (_variables.Count > 0)
+        {
+            <table aria-label="Variables"><tbody>@foreach (var variable in _variables) { <tr><th>@variable.Name</th><td>@variable.Value</td><td>@variable.Type</td></tr> }</tbody></table>
         }
         <form class="debug-evaluate" @onsubmit="Evaluate" aria-label="Watch expression">
             <input aria-label="Expression" @bind="_expression" disabled="@(State != DebugSessionState.Paused)" />
@@ -35,14 +43,28 @@
     private DebugSessionState State => Session?.Coordinator.State ?? DebugSessionState.Idle;
     private string _expression = "";
     private DebugEvaluation? _evaluation;
+    private IReadOnlyList<DebugScope> _scopes = [];
+    private IReadOnlyList<DebugVariable> _variables = [];
+    private int? _selectedFrame;
     private Task Continue() => Session?.CurrentThreadId is { } thread ? Session.ContinueAsync(thread) : Task.CompletedTask;
     private Task Pause() => Session?.PauseAsync(Session.CurrentThreadId ?? 0) ?? Task.CompletedTask;
     private Task Step(string command) => Session?.CurrentThreadId is { } thread ? Session.StepAsync(command, thread) : Task.CompletedTask;
     private Task Stop() => Stopped.InvokeAsync();
     private async Task RefreshStack() { if (Session is not null) await Session.LoadStackAsync(); }
+    private async Task SelectFrame(DebugStackFrame frame)
+    {
+        if (Session is null) return;
+        _selectedFrame = frame.Id;
+        _variables = [];
+        _scopes = await Session.LoadScopesAsync(frame.Id);
+    }
+    private async Task LoadVariables(DebugScope scope)
+    {
+        if (Session is not null) _variables = await Session.LoadVariablesAsync(scope.VariablesReference);
+    }
     private async Task Evaluate()
     {
         if (Session is null) return;
-        _evaluation = await Session.EvaluateAsync(_expression, Session.Inspection.Frames.FirstOrDefault()?.Id);
+        _evaluation = await Session.EvaluateAsync(_expression, _selectedFrame ?? Session.Inspection.Frames.FirstOrDefault()?.Id);
     }
 }

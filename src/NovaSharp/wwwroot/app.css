@@ -246,6 +246,9 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
 .debug-panel header span { margin-right: auto; color: #9ca6b5; }
 .debug-evaluate { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
 .debug-evaluate input { min-width: 220px; }
+.debug-scopes { display: flex; gap: 4px; }
+.debug-panel table { border-collapse: collapse; }
+.debug-panel th, .debug-panel td { padding: 2px 8px; text-align: left; }
 .theme-light { filter: invert(.88) hue-rotate(180deg); }
 .theme-light img, .theme-light svg { filter: invert(1) hue-rotate(180deg); }
 .high-contrast { --syntax-default: #fff; --syntax-keyword: #ff66ff; --syntax-string: #ffff66; --syntax-comment: #66ff66; }
