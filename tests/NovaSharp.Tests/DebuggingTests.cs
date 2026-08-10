@@ -41,4 +41,31 @@ public sealed class DebuggingTests
         await using var client = new DebugProtocolClient(new MemoryStream(), new MemoryStream(), maxMessageBytes: 32);
         await Assert.ThrowsAsync<DebugProtocolException>(() => client.RequestAsync("initialize", new { value = new string('x', 100) }, TimeSpan.FromSeconds(1)));
     }
+
+    [TestMethod]
+    public void InspectionIsBoundedPagedAndRejectedAfterResume()
+    {
+        var store = new DebugInspectionStore(maxFrames: 2, maxVariables: 3);
+        store.BeginPause(4);
+        Assert.IsTrue(store.SetFrames(4, Enumerable.Range(1, 4).Select(id => new DebugStackFrame(id, $"frame{id}", null, id, 1))));
+        Assert.AreEqual(2, store.Frames.Count);
+        Assert.IsTrue(store.SetVariables(4, 12, Enumerable.Range(1, 5).Select(id => new DebugVariable($"v{id}", id.ToString(), "int", 0, null, null))));
+        Assert.AreEqual("v2", store.Variables(12, 1, 1).Single().Name);
+        store.Resume();
+        Assert.IsFalse(store.SetFrames(4, []));
+        Assert.AreEqual(0, store.Variables(12).Count);
+    }
+
+    [TestMethod]
+    public void BreakpointsTrackLineEditsAndReturnToPending()
+    {
+        var path = Path.GetFullPath("source.cs");
+        var store = new BreakpointStore();
+        store.Replace(path, [new(path, 10, State: DebugBreakpointState.Verified, BoundLine: 10)]);
+        store.ApplyLineEdit(path, 5, 0, 3);
+        var breakpoint = store.ForSource(path).Single();
+        Assert.AreEqual(13, breakpoint.Line);
+        Assert.AreEqual(DebugBreakpointState.Pending, breakpoint.State);
+        Assert.IsNull(breakpoint.BoundLine);
+    }
 }

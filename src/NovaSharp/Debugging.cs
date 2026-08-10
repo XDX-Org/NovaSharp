@@ -166,3 +166,77 @@ internal sealed class DebugSessionCoordinator
 
     internal bool IsCurrentPause(long epoch) => State == DebugSessionState.Paused && PauseEpoch == epoch;
 }
+
+internal sealed record DebugStackFrame(int Id, string Name, string? SourcePath, int Line, int Column);
+internal sealed record DebugVariable(string Name, string Value, string? Type, int VariablesReference, int? NamedVariables, int? IndexedVariables);
+
+internal sealed class DebugInspectionStore(int maxFrames = 256, int maxVariables = 10_000)
+{
+    private long _epoch;
+    private IReadOnlyList<DebugStackFrame> _frames = [];
+    private readonly Dictionary<int, IReadOnlyList<DebugVariable>> _variables = [];
+    internal IReadOnlyList<DebugStackFrame> Frames => _frames;
+
+    internal void BeginPause(long epoch)
+    {
+        _epoch = epoch;
+        _frames = [];
+        _variables.Clear();
+    }
+
+    internal bool SetFrames(long epoch, IEnumerable<DebugStackFrame> frames)
+    {
+        if (epoch != _epoch) return false;
+        _frames = frames.Take(maxFrames).ToArray();
+        return true;
+    }
+
+    internal bool SetVariables(long epoch, int reference, IEnumerable<DebugVariable> variables)
+    {
+        if (epoch != _epoch || reference <= 0) return false;
+        var retained = variables.Take(maxVariables).ToArray();
+        _variables[reference] = retained;
+        return true;
+    }
+
+    internal IReadOnlyList<DebugVariable> Variables(int reference, int start = 0, int count = 100)
+    {
+        if (start < 0 || count is < 1 or > 1000) throw new ArgumentOutOfRangeException();
+        return _variables.TryGetValue(reference, out var values) ? values.Skip(start).Take(count).ToArray() : [];
+    }
+
+    internal void Resume()
+    {
+        _epoch = -1;
+        _frames = [];
+        _variables.Clear();
+    }
+}
+
+internal sealed class BreakpointStore
+{
+    private readonly Dictionary<string, List<DebugBreakpoint>> _bySource = new(StringComparer.OrdinalIgnoreCase);
+    internal IReadOnlyList<DebugBreakpoint> ForSource(string sourcePath) => _bySource.TryGetValue(Path.GetFullPath(sourcePath), out var values) ? values : [];
+
+    internal void Replace(string sourcePath, IEnumerable<DebugBreakpoint> breakpoints)
+    {
+        var normalized = Path.GetFullPath(sourcePath);
+        var values = breakpoints.Select(item => item with { SourcePath = normalized }).OrderBy(item => item.Line).ToList();
+        if (values.Any(item => item.Line < 1)) throw new ArgumentOutOfRangeException(nameof(breakpoints));
+        _bySource[normalized] = values;
+    }
+
+    internal void ApplyLineEdit(string sourcePath, int startLine, int removedLineCount, int insertedLineCount)
+    {
+        var normalized = Path.GetFullPath(sourcePath);
+        if (!_bySource.TryGetValue(normalized, out var values)) return;
+        var delta = insertedLineCount - removedLineCount;
+        for (var index = 0; index < values.Count; index++)
+        {
+            var breakpoint = values[index];
+            if (breakpoint.Line < startLine) continue;
+            var nextLine = breakpoint.Line < startLine + removedLineCount ? startLine : Math.Max(1, breakpoint.Line + delta);
+            values[index] = breakpoint with { Line = nextLine, State = DebugBreakpointState.Pending, BoundLine = null, Message = null };
+        }
+    }
+}
