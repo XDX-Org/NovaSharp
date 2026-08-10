@@ -76,3 +76,39 @@ internal sealed class ExtensionRegistry(Version supportedApiVersion)
 
     internal bool Disable(string extensionId) => _enabled.Remove(extensionId);
 }
+
+internal enum ExtensionActivationState { Inactive, Activating, Active, Failed, Disabled }
+internal sealed record ExtensionActivationResult(ExtensionActivationState State, ExtensionDiagnostic? Diagnostic = null);
+
+internal sealed class ExtensionActivationCoordinator(TimeSpan? activationTimeout = null)
+{
+    private readonly Dictionary<string, ExtensionActivationResult> _states = new(StringComparer.Ordinal);
+    private readonly TimeSpan _timeout = activationTimeout ?? TimeSpan.FromSeconds(5);
+    internal IReadOnlyDictionary<string, ExtensionActivationResult> States => _states;
+
+    internal async Task<ExtensionActivationResult> ActivateAsync(ExtensionManifest manifest,
+        Func<CancellationToken, Task> isolatedActivation, CancellationToken cancellationToken = default)
+    {
+        if (_states.TryGetValue(manifest.Id, out var current) && current.State == ExtensionActivationState.Disabled) return current;
+        _states[manifest.Id] = new(ExtensionActivationState.Activating);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(_timeout);
+        try
+        {
+            await isolatedActivation(timeout.Token);
+            return _states[manifest.Id] = new(ExtensionActivationState.Active);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return Fail(manifest.Id, "EXT_TIMEOUT", "Extension activation exceeded its time limit.");
+        }
+        catch (Exception)
+        {
+            return Fail(manifest.Id, "EXT_CRASH", "Extension activation failed in its isolated host.");
+        }
+    }
+
+    internal void Disable(string extensionId) => _states[extensionId] = new(ExtensionActivationState.Disabled);
+    private ExtensionActivationResult Fail(string id, string code, string message) => _states[id] =
+        new(ExtensionActivationState.Failed, new(id, code, message));
+}

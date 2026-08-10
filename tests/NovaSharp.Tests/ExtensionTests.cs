@@ -23,6 +23,22 @@ public sealed class ExtensionTests
         Assert.Throws<InvalidDataException>(() => ExtensionManifestReader.Read(fixture.Manifest));
     }
 
+    [TestMethod]
+    public async Task SlowAndCrashingActivationFailsWithoutEscapingCoordinator()
+    {
+        using var fixture = new ExtensionFixture("{\"manifestVersion\":1,\"id\":\"sample.slow\",\"name\":\"Slow\",\"version\":\"1.0\",\"apiVersion\":\"1.0\",\"entryPoint\":\"extension.dll\"}");
+        var manifest = ExtensionManifestReader.Read(fixture.Manifest);
+        var coordinator = new ExtensionActivationCoordinator(TimeSpan.FromMilliseconds(20));
+        var slow = await coordinator.ActivateAsync(manifest, token => Task.Delay(TimeSpan.FromMinutes(1), token));
+        Assert.AreEqual("EXT_TIMEOUT", slow.Diagnostic!.Code);
+        var crash = await coordinator.ActivateAsync(manifest, _ => throw new InvalidOperationException("private host detail"));
+        Assert.AreEqual("EXT_CRASH", crash.Diagnostic!.Code);
+        Assert.IsFalse(crash.Diagnostic.Message.Contains("private host detail", StringComparison.Ordinal));
+        coordinator.Disable(manifest.Id);
+        var disabled = await coordinator.ActivateAsync(manifest, _ => Task.CompletedTask);
+        Assert.AreEqual(ExtensionActivationState.Disabled, disabled.State);
+    }
+
     private sealed class ExtensionFixture : IDisposable
     {
         private readonly string _root = Path.Combine(Path.GetTempPath(), "novasharp-extension-" + Guid.NewGuid().ToString("N"));
