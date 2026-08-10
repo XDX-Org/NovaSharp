@@ -174,7 +174,7 @@
     {
         if (_semanticValue != Value)
         {
-            _semanticSpans = CSharpTokenizer.TranslateSemanticSpans(_semanticValue, Value, _semanticSpans);
+            _semanticSpans = [];
             _semanticValue = Value;
             _semanticRevision++;
         }
@@ -184,17 +184,19 @@
         _presentationCancellation = new();
         var generation = ++_presentationGeneration;
         var value = Value;
+        var semanticSpans = _semanticValue == value ? _semanticSpans : [];
         var semanticRevision = _semanticRevision;
-        _ = BuildPresentationAsync(value, semanticRevision, generation, _presentationCancellation.Token);
+        _ = BuildPresentationAsync(value, semanticSpans, semanticRevision, generation, _presentationCancellation.Token);
     }
 
-    private async Task BuildPresentationAsync(string value, int semanticRevision, int generation,
+    private async Task BuildPresentationAsync(string value, IReadOnlyList<SemanticSpan> semanticSpans,
+        int semanticRevision, int generation,
         CancellationToken cancellationToken)
     {
         try
         {
             var presentation = await Task.Run(() =>
-                (Lines: CSharpTokenizer.Tokenize(value).ToArray(), Starts: BuildLineStarts(value)), cancellationToken);
+                (Lines: CSharpTokenizer.Tokenize(value, semanticSpans).ToArray(), Starts: BuildLineStarts(value)), cancellationToken);
             var updated = presentation.Lines;
             cancellationToken.ThrowIfCancellationRequested();
             await InvokeAsync(() =>
@@ -378,6 +380,8 @@
         _completion = null;
         await _module.InvokeVoidAsync("applyEditorEdit", _root, edit.Replacement.Start, edit.Replacement.Length,
             edit.NewText, edit.NewPosition);
+        if (edit.Command is not null && Document.FilePath is { } path)
+            await ExtendedProvider.ExecuteCommandAsync(path, edit.Command, default);
     }
 
     private async Task RequestSignatureAsync(int caret)
@@ -455,15 +459,16 @@
         _semanticRefreshCancellation = new();
         var cancellationToken = _semanticRefreshCancellation.Token;
         var version = Document.Version;
+        var value = Value;
         try { await Task.Delay(100, cancellationToken); }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return; }
         var spans = await _semanticRequest.RunAsync(
-            token => LanguageProvider.GetSemanticSpansAsync(Request(Value.Length), token), version, cancellationToken);
-        if (cancellationToken.IsCancellationRequested) return;
+            token => LanguageProvider.GetSemanticSpansAsync(Request(value.Length), token), version, cancellationToken);
+        if (cancellationToken.IsCancellationRequested || Document.Version != version || Value != value) return;
         if (spans is not null)
         {
             _semanticSpans = spans;
-            _semanticValue = Value;
+            _semanticValue = value;
             _semanticRevision++;
             await InvokeAsync(QueuePresentation);
         }
@@ -525,10 +530,13 @@
     private Task NavigateDiagnosticAsync(LanguageDiagnostic diagnostic) => LanguageCommand.InvokeAsync(new("navigate",
         ViewState.SelectionStart, new(diagnostic.DocumentPath, diagnostic.Range, diagnostic.StartLine,
             diagnostic.StartColumn, diagnostic.Message, diagnostic.ProjectName ?? "", NavigationKind.Reference)));
-    private Task ApplyCodeActionAsync(CodeActionEntry action)
+    private async Task ApplyCodeActionAsync(CodeActionEntry action)
     {
         _codeActions = [];
-        return LanguageCommand.InvokeAsync(new("workspace-edit", ViewState.SelectionStart, Edit: action.Edit));
+        if (action.Edit is not null)
+            await LanguageCommand.InvokeAsync(new("workspace-edit", ViewState.SelectionStart, Edit: action.Edit));
+        else if (action.Command is not null && Document.FilePath is { } path)
+            await ExtendedProvider.ExecuteCommandAsync(path, action.Command, default);
     }
 
     private async Task RefreshDiagnosticsAsync()

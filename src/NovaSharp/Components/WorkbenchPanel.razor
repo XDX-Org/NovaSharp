@@ -199,6 +199,10 @@
                                 <small> — @string.Join(", ", item.ExpectedRanges.Select(range => $"{range.Start}–{range.Start + range.Length}"))</small>
                             }
                         </li>
+                    }
+                    @foreach (var item in _editPreview.Resources ?? [])
+                    {
+                        <li>@item.Kind: @item.Path@if (item.NewPath is not null) { <text> → @item.NewPath</text> }</li>
                     }</ul>
                 <div class="modal-actions"><button @onclick="ApplyWorkspaceEditAsync">Apply</button><button @onclick="CancelEditPreview">Cancel</button></div>
             </div>
@@ -361,6 +365,7 @@
         foreach (var definition in LanguageServerCatalog.Discover(workspace).Definitions)
         {
             var manager = new LanguageServerManager(definition, workspace);
+            manager.SetApplyWorkspaceEditHandler(PreviewServerWorkspaceEditAsync);
             manager.StatusChanged += status => LanguageServerStatusChanged(definition.Kind, status);
             var coordinator = new LanguageDocumentCoordinator(manager);
             var publisher = new LspDiagnosticPublisher(definition.Kind.ToString(), _languageProvider.Diagnostics,
@@ -387,6 +392,26 @@
         await Task.WhenAll(_languageServers.Select(server => server.Manager.StartAsync()));
         await SyncLanguageDocumentsAsync();
         await Task.WhenAll(_languageServers.Select(server => AnalyzeOpenDocumentsAsync(server.Kind)));
+    }
+
+    private async Task<bool> PreviewServerWorkspaceEditAsync(System.Text.Json.JsonElement edit,
+        CancellationToken cancellationToken)
+    {
+        WorkspaceEdit? converted;
+        try { converted = await _languageProvider.WorkspaceEditAsync("Language server edit", edit, cancellationToken); }
+        catch (InvalidDataException exception)
+        {
+            await InvokeAsync(() => { _status = exception.Message; StateHasChanged(); });
+            return false;
+        }
+        if (converted is null) return false;
+        await InvokeAsync(() =>
+        {
+            _pendingWorkspaceEdit = converted;
+            _editPreview = _workspaceEdits.Preview(converted);
+            StateHasChanged();
+        });
+        return false;
     }
 
     private async Task ReplayAndAnalyzeAsync(LanguageServerKind kind, LanguageDocumentCoordinator coordinator)

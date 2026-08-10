@@ -50,6 +50,50 @@ public sealed class LanguageServerTests
     }
 
     [TestMethod]
+    public void CompletionSnippetsExpandPlaceholdersAndPlaceTheCaret()
+    {
+        var expanded = LspLanguageProvider.ExpandSnippet("Method(${1:value}, ${2|true,false|})$0");
+
+        Assert.AreEqual("Method(value, true)", expanded.Text);
+        Assert.AreEqual(expanded.Text.Length, expanded.Caret);
+    }
+
+    [TestMethod]
+    public async Task LspWorkspaceEditPreservesResourceOperationsAndOrderedRenameText()
+    {
+        var root = Directory.CreateTempSubdirectory("novasharp-edit-");
+        var oldPath = Path.Combine(root.FullName, "old.cs");
+        var newPath = Path.Combine(root.FullName, "new.cs");
+        await File.WriteAllTextAsync(oldPath, "class Old { }");
+        var oldUri = LspConverters.FileUri(oldPath).AbsoluteUri;
+        var newUri = LspConverters.FileUri(newPath).AbsoluteUri;
+        var protocolEdit = JsonSerializer.SerializeToElement(new
+        {
+            documentChanges = new object[]
+            {
+                new { kind = "rename", oldUri, newUri },
+                new
+                {
+                    textDocument = new { uri = newUri, version = (long?)null },
+                    edits = new[] { new { range = new { start = new { line = 0, character = 6 },
+                        end = new { line = 0, character = 9 } }, newText = "New" } }
+                }
+            }
+        });
+        var provider = new LspLanguageProvider(_ => null, _ => null);
+
+        var edit = await provider.WorkspaceEditAsync("rename", protocolEdit, default);
+
+        Assert.IsNotNull(edit);
+        Assert.AreEqual("rename", edit.Resources!.Single().Kind);
+        Assert.AreEqual("class New { }", edit.Documents.Single().NewText);
+        await new WorkspaceEditTransaction().ApplyAsync(edit, []);
+        Assert.IsFalse(File.Exists(oldPath));
+        Assert.AreEqual("class New { }", await File.ReadAllTextAsync(newPath));
+        root.Delete(true);
+    }
+
+    [TestMethod]
     public async Task CoordinatorSharesViewsAndOrdersLifecycle()
     {
         var path = Path.Combine(Path.GetTempPath(), $"novasharp-{Guid.NewGuid():N}.cs");
@@ -185,8 +229,14 @@ public sealed class LanguageServerTests
         var html = new LanguageServerManager(htmlDefinition, root);
         razor.SetRazorHtmlBridge(new(() => html.IsReady, html.NotifyAsync,
             (method, parameters, token) => html.RequestAsync<JsonElement>(method, parameters, token)));
+        var launch = System.Diagnostics.Stopwatch.StartNew();
         await html.StartAsync();
+        Assert.IsTrue(launch.Elapsed < TimeSpan.FromSeconds(5), $"HTML initialization took {launch.Elapsed}.");
+        launch.Restart();
         await razor.StartAsync();
+        Assert.IsTrue(launch.Elapsed < TimeSpan.FromSeconds(5), $"Razor initialization took {launch.Elapsed}.");
+        Assert.IsTrue(razor.WorkingSet + html.WorkingSet < 1536L * 1024 * 1024,
+            $"Language servers use {(razor.WorkingSet + html.WorkingSet) / 1024 / 1024:N0} MiB.");
         using var document = new EditorDocumentState();
         await document.OpenAsync(path);
         await using var coordinator = new LanguageDocumentCoordinator(razor);
@@ -202,6 +252,10 @@ public sealed class LanguageServerTests
 
         Assert.IsNotNull(hover, $"Razor: {razor.Status.Detail}; HTML: {html.Status.Detail}");
         Assert.IsTrue(hover.Sections.Any(section => section.Contains("div", StringComparison.OrdinalIgnoreCase)));
+        var completions = (await provider.GetCompletionsAsync(
+            new(path, null, document.Version, 1), true, default)).Value;
+        Assert.IsNotNull(completions);
+        Assert.IsTrue(completions.Items.Any(item => item.DisplayText.Contains("div", StringComparison.OrdinalIgnoreCase)));
         await razor.DisposeAsync();
         await html.DisposeAsync();
         Directory.Delete(root, true);
@@ -273,6 +327,19 @@ public sealed class LanguageServerTests
             document.Content.Length), default)).Value ?? [];
         Assert.IsTrue(semantic.Any(span => span.Classification != "text"),
             $"Semantic registrations: {string.Join(" | ", manager.Registrations("textDocument/semanticTokens").Select(item => item.RegisterOptions?.GetRawText()))}");
+        document.Content = "class Restarted { int Broken = ; }";
+        await coordinator.SynchronizeAsync(path);
+        await manager.RestartAsync();
+        await coordinator.ReplayAsync();
+        diagnostics = [];
+        for (var attempt = 0; attempt < 20 && !diagnostics.Any(item => item.Severity == LanguageDiagnosticSeverity.Error); attempt++)
+        {
+            await Task.Delay(250);
+            diagnostics = (await provider.GetDiagnosticsAsync(new(path, null, document.Version,
+                document.Content.Length), default)).Value ?? [];
+        }
+        Assert.IsTrue(diagnostics.Any(item => item.Severity == LanguageDiagnosticSeverity.Error),
+            "Dirty in-memory text was not reanalyzed after the Roslyn restart.");
         await coordinator.DisposeAsync();
         await manager.DisposeAsync();
         Directory.Delete(root, true);

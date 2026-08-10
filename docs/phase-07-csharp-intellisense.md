@@ -4,6 +4,8 @@
 
 Complete. Local verification and the Linux, Windows, macOS Intel, and macOS Apple Silicon packaging matrix pass.
 
+The feature authority was replaced in Phase 15.2: release builds now obtain C# intelligence from the pinned Roslyn language server. Exact-version semantic tokens enrich the stable lexical presentation baseline without translating stale spans.
+
 ## Goal
 
 Provide responsive, project-aware C# editing assistance from Roslyn through NovaSharp's Blazor editor.
@@ -52,7 +54,7 @@ On the 200-document Phase 7 fixture, cold explicit completion must finish within
 ## Implementation
 
 - Provider-neutral, capability-based contracts carry an opaque document path, explicit project context, editor version, position/range, and cancellation without exposing Roslyn types to editor components.
-- `CSharpLanguageProvider` supplies Roslyn completion with lazy descriptions and commit metadata, signature help, plain-text hover including project/assembly provenance, formatting, and semantic classifications.
+- `LspLanguageProvider` supplies completion, lazy resolve details, signature help, hover, formatting, and exact-version semantic tokens through negotiated Roslyn capabilities.
 - One latest-request coordinator per capability cancels superseded work and rejects responses whose sequence or source version is stale. Language requests await pending dirty-buffer synchronization before resolving their Roslyn document.
 - The editor owns popup navigation and acceptance keys while overlays are open. Explicit completion/signature and formatting start immediately; semantic work is debounced. Hover and descriptions render as Blazor text, so markup is escaped rather than interpreted.
 - Cached line presentations retain unchanged rows when semantic results are merged. Automatic indentation, delimiter pairing, line-comment toggling, and document/selection formatting are editor commands.

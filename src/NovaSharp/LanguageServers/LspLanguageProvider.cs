@@ -82,7 +82,10 @@ internal sealed class LspLanguageProvider : ILanguageProvider, IExtendedLanguage
         var server = Ready(request.DocumentId);
         if (server is null) return Missing<CompletionEntry>(request);
         var item = Supports(server, "completionProvider", "resolveProvider")
+            || server.Registrations("textDocument/completion").Any(registration => registration.RegisterOptions is { } options
+                && options.TryGetProperty("resolveProvider", out var resolve) && resolve.ValueKind == JsonValueKind.True)
             ? await server.RequestAsync<JsonElement>("completionItem/resolve", cached.Item, cancellationToken) : cached.Item;
+        lock (_completions) _completions[itemId] = cached with { Item = item.Clone() };
         return new(request.Version, CompletionEntry(itemId, item, String(item, "label") ?? string.Empty, cached.Replacement));
     }
 
@@ -92,9 +95,35 @@ internal sealed class LspLanguageProvider : ILanguageProvider, IExtendedLanguage
         CachedCompletion cached;
         lock (_completions) if (!_completions.TryGetValue(itemId, out cached!) || cached.Version != request.Version)
             return Task.FromResult(Missing<CompletionEdit>(request));
+        if (_snapshot(request.DocumentId) is not { } snapshot || snapshot.Version != request.Version)
+            return Task.FromResult(Missing<CompletionEdit>(request));
         var edit = cached.Item.TryGetProperty("textEdit", out var textEdit) ? textEdit : default;
         var text = String(edit, "newText") ?? String(cached.Item, "insertText") ?? String(cached.Item, "label") ?? string.Empty;
-        return Task.FromResult(new LanguageResponse<CompletionEdit>(request.Version, new(cached.Replacement, text, null)));
+        var (expanded, relativeCaret) = Int(cached.Item, "insertTextFormat") == 2 ? ExpandSnippet(text) : (text, (int?)null);
+        var command = CompletionCommand(cached.Item);
+        var replacement = cached.Replacement;
+        var caret = relativeCaret is null ? null : replacement.Start + relativeCaret;
+        if (cached.Item.TryGetProperty("additionalTextEdits", out var additional)
+            && additional.ValueKind == JsonValueKind.Array && additional.GetArrayLength() > 0)
+        {
+            var edits = additional.EnumerateArray().Select(item => (Range: LspConverters.ToRange(snapshot.Text,
+                    ParseRange(item.GetProperty("range"))), Text: String(item, "newText") ?? string.Empty))
+                .Append((Range: replacement, Text: expanded)).OrderByDescending(item => item.Range.Start).ToArray();
+            for (var index = 1; index < edits.Length; index++)
+                if (edits[index].Range.Start + edits[index].Range.Length > edits[index - 1].Range.Start)
+                    return Task.FromResult(Missing<CompletionEdit>(request));
+            var finalText = snapshot.Text;
+            foreach (var item in edits)
+            {
+                finalText = finalText.Remove(item.Range.Start, item.Range.Length).Insert(item.Range.Start, item.Text);
+                if (caret is { } position && item.Range.Start < replacement.Start)
+                    caret = position + item.Text.Length - item.Range.Length;
+            }
+            return Task.FromResult(new LanguageResponse<CompletionEdit>(request.Version,
+                new(new(0, snapshot.Text.Length), finalText, caret, command)));
+        }
+        return Task.FromResult(new LanguageResponse<CompletionEdit>(request.Version,
+            new(replacement, expanded, caret, command)));
     }
 
     public async Task<LanguageResponse<SignatureResult>> GetSignatureHelpAsync(LanguageRequest request,
@@ -136,13 +165,20 @@ internal sealed class LspLanguageProvider : ILanguageProvider, IExtendedLanguage
             && semanticProvider.TryGetProperty("legend", out var semanticLegend)
             && semanticLegend.TryGetProperty("tokenTypes", out var tokenTypes)
             ? tokenTypes.EnumerateArray().Select(item => item.GetString() ?? "text").ToArray() : [];
+        var modifiers = semanticProvider.ValueKind == JsonValueKind.Object
+            && semanticProvider.TryGetProperty("legend", out semanticLegend)
+            && semanticLegend.TryGetProperty("tokenModifiers", out var tokenModifiers)
+            ? tokenModifiers.EnumerateArray().Select(item => item.GetString() ?? string.Empty).ToArray() : [];
         var numbers = data.EnumerateArray().Select(item => item.GetInt32()).ToArray();
         var spans = new List<SemanticSpan>(); var line = 0; var character = 0;
         for (var i = 0; i + 4 < numbers.Length; i += 5)
         {
             line += numbers[i]; character = numbers[i] == 0 ? character + numbers[i + 1] : numbers[i + 1];
             var start = LspConverters.ToOffset(snapshot.Value.Text, new(line, character));
-            spans.Add(new(start, numbers[i + 2], numbers[i + 3] < legend.Length ? legend[numbers[i + 3]] : "text"));
+            var classification = numbers[i + 3] < legend.Length ? legend[numbers[i + 3]] : "text";
+            for (var modifier = 0; modifier < modifiers.Length; modifier++)
+                if ((numbers[i + 4] & 1 << modifier) != 0) classification += $" {modifiers[modifier]}";
+            spans.Add(new(start, numbers[i + 2], classification));
         }
         return new(request.Version, spans);
     }
@@ -277,10 +313,35 @@ internal sealed class LspLanguageProvider : ILanguageProvider, IExtendedLanguage
         var actions = new List<CodeActionEntry>();
         if (value.ValueKind == JsonValueKind.Array)
             foreach (var item in value.EnumerateArray())
-                if (item.TryGetProperty("edit", out var edit) && await WorkspaceEditAsync(String(item, "title") ?? "Code action", edit, cancellationToken) is { } converted)
-                    actions.Add(new(String(item, "title") ?? "Code action", String(item, "kind") ?? "", converted,
-                        item.TryGetProperty("isPreferred", out var preferred) && preferred.ValueKind == JsonValueKind.True));
+            {
+                if (item.TryGetProperty("disabled", out _)) continue;
+                var resolved = item;
+                if (!resolved.TryGetProperty("edit", out _) && SupportsCodeActionResolve(server))
+                    resolved = await server.RequestAsync<JsonElement>("codeAction/resolve", item, cancellationToken);
+                if (resolved.TryGetProperty("edit", out var edit)
+                    && await WorkspaceEditAsync(String(resolved, "title") ?? "Code action", edit, cancellationToken) is { } converted)
+                    actions.Add(new(String(resolved, "title") ?? "Code action", String(resolved, "kind") ?? "", converted,
+                        resolved.TryGetProperty("isPreferred", out var preferred) && preferred.ValueKind == JsonValueKind.True,
+                        ActionCommand(resolved)));
+                else if (ActionCommand(resolved) is { } command && AdvertisesCommand(server, command.Name))
+                    actions.Add(new(String(resolved, "title") ?? "Code action", String(resolved, "kind") ?? "", null,
+                        false, command));
+            }
         return actions;
+    }
+
+    public async Task<bool> ExecuteCommandAsync(string documentPath, LanguageCommandDescriptor command,
+        CancellationToken cancellationToken)
+    {
+        var server = Ready(documentPath);
+        if (server is null || !AdvertisesCommand(server, command.Name)) return false;
+        await server.RequestAsync<JsonElement>("workspace/executeCommand", new
+        {
+            command = command.Name,
+            arguments = command.Arguments is { } arguments && arguments.ValueKind == JsonValueKind.Array
+                ? arguments : JsonSerializer.SerializeToElement(Array.Empty<object>())
+        }, cancellationToken);
+        return true;
     }
 
     private async Task<JsonElement?> PositionRequest(LanguageRequest request, string method, CancellationToken cancellationToken,
@@ -314,9 +375,12 @@ internal sealed class LspLanguageProvider : ILanguageProvider, IExtendedLanguage
         return results;
     }
 
-    private async Task<WorkspaceEdit?> WorkspaceEditAsync(string title, JsonElement edit, CancellationToken token)
+    internal async Task<WorkspaceEdit?> WorkspaceEditAsync(string title, JsonElement edit, CancellationToken token)
     {
         var documents = new List<WorkspaceDocumentEdit>();
+        var resources = new List<WorkspaceResourceEdit>();
+        var renamedSources = new Dictionary<string, string>(StringComparer.Ordinal);
+        var workspaceRoot = Servers().Select(server => server.WorkspaceRoot).FirstOrDefault();
         if (edit.TryGetProperty("changes", out var changes) && changes.ValueKind == JsonValueKind.Object)
             foreach (var property in changes.EnumerateObject())
                 await AddDocumentAsync(property.Name, null, property.Value);
@@ -324,15 +388,39 @@ internal sealed class LspLanguageProvider : ILanguageProvider, IExtendedLanguage
             foreach (var change in documentChanges.EnumerateArray())
                 if (change.TryGetProperty("textDocument", out var document) && change.TryGetProperty("edits", out var edits))
                     await AddDocumentAsync(String(document, "uri") ?? "", document.TryGetProperty("version", out var version)
-                        && version.TryGetInt64(out var expectedVersion) ? expectedVersion : null, edits);
-        return documents.Count == 0 ? null : new(title, documents);
+                        && version.ValueKind == JsonValueKind.Number && version.TryGetInt64(out var expectedVersion)
+                            ? expectedVersion : null, edits);
+                else if (String(change, "kind") is { } kind) AddResource(kind, change);
+        return documents.Count == 0 && resources.Count == 0 ? null : new(title, documents, resources);
 
         async Task AddDocumentAsync(string uriText, long? expectedVersion, JsonElement edits)
         {
             if (!Uri.TryCreate(uriText, UriKind.Absolute, out var uri) || !uri.IsFile) return;
             var path = Path.GetFullPath(uri.LocalPath); var snapshot = _snapshot(path);
-            var oldText = snapshot?.Text ?? (File.Exists(path) ? await File.ReadAllTextAsync(path, token) : "");
+            if (workspaceRoot is not null && !Inside(workspaceRoot, path))
+                throw new InvalidDataException("The language server requested an edit outside the workspace.");
+            var sourcePath = renamedSources.GetValueOrDefault(uriText);
+            var oldText = snapshot?.Text ?? (File.Exists(path) ? await File.ReadAllTextAsync(path, token)
+                : sourcePath is not null && Uri.TryCreate(sourcePath, UriKind.Absolute, out var source) && source.IsFile
+                    && File.Exists(source.LocalPath) ? await File.ReadAllTextAsync(source.LocalPath, token) : "");
             documents.Add(new(path, expectedVersion ?? snapshot?.Version, oldText, ApplyEdits(oldText, edits)));
+        }
+
+        void AddResource(string kind, JsonElement operation)
+        {
+            var oldUri = String(operation, kind == "rename" ? "oldUri" : "uri");
+            var newUri = kind == "rename" ? String(operation, "newUri") : null;
+            if (!FilePath(oldUri, out var path) || newUri is not null && !FilePath(newUri, out _)) return;
+            if (workspaceRoot is not null && (!Inside(workspaceRoot, path)
+                || newUri is not null && FilePath(newUri, out var destination) && !Inside(workspaceRoot, destination)))
+                throw new InvalidDataException("The language server requested a resource operation outside the workspace.");
+            var options = operation.TryGetProperty("options", out var configured) ? configured : default;
+            var overwrite = Bool(options, "overwrite");
+            var ignore = Bool(options, kind == "delete" ? "ignoreIfNotExists" : "ignoreIfExists");
+            var recursive = Bool(options, "recursive");
+            var newPath = FilePath(newUri, out var convertedNewPath) ? convertedNewPath : null;
+            resources.Add(new(kind, path, newPath, overwrite, ignore, recursive));
+            if (kind == "rename" && newUri is not null && oldUri is not null) renamedSources[newUri] = oldUri;
         }
     }
 
@@ -349,8 +437,26 @@ internal sealed class LspLanguageProvider : ILanguageProvider, IExtendedLanguage
     private static string? String(JsonElement value, string name) => value.ValueKind == JsonValueKind.Object && value.TryGetProperty(name, out var item)
         && item.ValueKind == JsonValueKind.String ? item.GetString() : null;
     private static int Int(JsonElement value, string name) => value.TryGetProperty(name, out var item) && item.TryGetInt32(out var result) ? result : 0;
+    private static bool Bool(JsonElement value, string name) => value.ValueKind == JsonValueKind.Object
+        && value.TryGetProperty(name, out var item) && item.ValueKind == JsonValueKind.True;
+    private static bool FilePath(string? value, out string path)
+    {
+        path = string.Empty;
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || !uri.IsFile) return false;
+        path = Path.GetFullPath(uri.LocalPath); return true;
+    }
+    private static bool Inside(string root, string path)
+    {
+        var relative = Path.GetRelativePath(Path.GetFullPath(root), Path.GetFullPath(path));
+        return relative != ".." && !relative.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+            && !Path.IsPathRooted(relative);
+    }
     private static bool Supports(LanguageServerManager server, string provider, string property) => server.Capabilities.TryGetProperty(provider, out var value)
         && value.ValueKind == JsonValueKind.Object && value.TryGetProperty(property, out var enabled) && enabled.ValueKind == JsonValueKind.True;
+    private static bool SupportsCodeActionResolve(LanguageServerManager server) =>
+        Supports(server, "codeActionProvider", "resolveProvider")
+        || server.Registrations("textDocument/codeAction").Any(registration => registration.RegisterOptions is { } options
+            && options.TryGetProperty("resolveProvider", out var resolve) && resolve.ValueKind == JsonValueKind.True);
     private static LanguageCapabilities Capabilities(LanguageServerManager server)
     {
         var value = server.Capabilities;
@@ -380,7 +486,72 @@ internal sealed class LspLanguageProvider : ILanguageProvider, IExtendedLanguage
         item.TryGetProperty("commitCharacters", out var chars) ? chars.EnumerateArray().SelectMany(value => value.GetString() ?? "").ToArray() : [],
         Int(item, "insertTextFormat") == 2, Markup(item.TryGetProperty("documentation", out var docs) ? docs : default).FirstOrDefault() ?? String(item, "detail"));
     private static TextRange CompletionRange(JsonElement item, string text, int position) => item.TryGetProperty("textEdit", out var edit)
-        && edit.TryGetProperty("range", out var range) ? LspConverters.ToRange(text, ParseRange(range)) : new(position, 0);
+        && (edit.TryGetProperty("range", out var range) || edit.TryGetProperty("insert", out range))
+            ? LspConverters.ToRange(text, ParseRange(range)) : new(position, 0);
+    internal static (string Text, int? Caret) ExpandSnippet(string snippet)
+    {
+        var result = new System.Text.StringBuilder(snippet.Length);
+        int? caret = null;
+        for (var index = 0; index < snippet.Length;)
+        {
+            if (snippet[index] == '\\' && index + 1 < snippet.Length && snippet[index + 1] is '$' or '}' or '\\')
+            {
+                result.Append(snippet[index + 1]); index += 2; continue;
+            }
+            if (snippet[index] != '$') { result.Append(snippet[index++]); continue; }
+            var marker = index++;
+            if (index < snippet.Length && char.IsDigit(snippet[index]))
+            {
+                var tabStop = 0;
+                while (index < snippet.Length && char.IsDigit(snippet[index])) tabStop = tabStop * 10 + snippet[index++] - '0';
+                if (tabStop == 0) caret = result.Length;
+                continue;
+            }
+            if (index >= snippet.Length || snippet[index++] != '{') { result.Append('$'); index = marker + 1; continue; }
+            var numberStart = index;
+            while (index < snippet.Length && char.IsDigit(snippet[index])) index++;
+            if (numberStart == index) { result.Append("${"); continue; }
+            var number = int.Parse(snippet[numberStart..index], System.Globalization.CultureInfo.InvariantCulture);
+            if (index < snippet.Length && snippet[index] == ':')
+            {
+                var end = snippet.IndexOf('}', ++index);
+                if (end < 0) { result.Append(snippet[marker..]); break; }
+                if (number == 0) caret = result.Length;
+                result.Append(snippet[index..end]); index = end + 1; continue;
+            }
+            if (index < snippet.Length && snippet[index] == '|')
+            {
+                var end = snippet.IndexOf("|}", ++index, StringComparison.Ordinal);
+                if (end < 0) { result.Append(snippet[marker..]); break; }
+                var choice = snippet[index..end].Split(',')[0];
+                if (number == 0) caret = result.Length;
+                result.Append(choice); index = end + 2; continue;
+            }
+            if (index < snippet.Length && snippet[index] == '}') { if (number == 0) caret = result.Length; index++; continue; }
+            result.Append(snippet[marker..index]);
+        }
+        return (result.ToString(), caret);
+    }
+    private static LanguageCommandDescriptor? CompletionCommand(JsonElement item)
+    {
+        if (!item.TryGetProperty("command", out var command) || String(command, "command") is not { } name) return null;
+        return new(name, command.TryGetProperty("arguments", out var arguments) ? arguments.Clone() : null);
+    }
+    private static LanguageCommandDescriptor? ActionCommand(JsonElement item)
+    {
+        var value = item.TryGetProperty("command", out var nested) && nested.ValueKind == JsonValueKind.Object ? nested : item;
+        if (String(value, "command") is not { } name) return null;
+        return new(name, value.TryGetProperty("arguments", out var arguments) ? arguments.Clone() : null);
+    }
+    private static bool AdvertisesCommand(LanguageServerManager server, string command)
+    {
+        if (server.Capabilities.TryGetProperty("executeCommandProvider", out var provider)
+            && provider.TryGetProperty("commands", out var commands) && commands.ValueKind == JsonValueKind.Array
+            && commands.EnumerateArray().Any(item => item.GetString() == command)) return true;
+        return server.Registrations("workspace/executeCommand").Any(registration => registration.RegisterOptions is { } options
+            && options.TryGetProperty("commands", out var registered) && registered.ValueKind == JsonValueKind.Array
+            && registered.EnumerateArray().Any(item => item.GetString() == command));
+    }
     private static IReadOnlyList<string> Markup(JsonElement value) => value.ValueKind switch
     {
         JsonValueKind.String => [CleanMarkup(value.GetString())], JsonValueKind.Array => value.EnumerateArray().SelectMany(Markup).ToArray(),

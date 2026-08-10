@@ -117,9 +117,6 @@ public sealed class ProjectSystemTests
         Assert.IsTrue(document.IsDirty);
         Assert.IsTrue(webDocument.IsDirty);
         Assert.AreEqual("<article>dirty Razor buffer</article>", webDocument.Content);
-        var webProvider = new LanguageProviderRegistry(projectSystem);
-        Assert.IsFalse((await webProvider.GetSemanticSpansAsync(
-            new(webDocument.FilePath!, null, webDocument.Version, 2), default)).IsDegraded);
         Assert.IsTrue(projectSystem.GetContexts(fixture.SharedFile).Count >= 2);
         Assert.IsTrue(projectSystem.RetainedSolutionSnapshotCount <= 3);
     }

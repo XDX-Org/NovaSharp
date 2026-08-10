@@ -39,16 +39,11 @@ Regression coverage verifies retained `unchanged` reports, stale editor-version 
 
 ## Semantic colouring decision
 
-The rendered editor currently uses the local `CSharpTokenizer` only. Roslyn semantic tokens are still requested and tested, but are deliberately not overlaid in `CodeEditor.BuildPresentationAsync` because translated/stale spans repeatedly coloured the wrong words while typing.
+The editor uses an immediate lexical presentation baseline and atomically overlays server semantic tokens only when they belong to the exact current document version. Stale semantic spans are never translated across edits. The baseline and semantic categories share the same CSS theme variables, so typing remains stable while Roslyn remains authoritative for semantic distinctions.
 
 The local tokenizer now includes Rider-style categories for namespaces, types, enum names/members, records, parameters, events, accessors, attributes, and embedded `GeneratedRegex` patterns. Theme colours are CSS variables in `wwwroot/app.css`.
 
-This is a deliberate temporary deviation from `phase-15-2-LSPs.md`, whose goal says the server is the sole source of semantic highlighting. Decide whether to:
-
-- keep stable lexical colouring and treat semantic tokens as optional enrichment; or
-- reintroduce semantic tokens only with exact document-version ownership and no stale-span translation.
-
-Do not restore the current semantic overlay without a rapid-edit UI test.
+This resolves the temporary deviation from `phase-15-2-LSPs.md`: the server is the semantic authority, while the local tokenizer is the latency-safe syntax presentation layer. Colours remain theme-controlled rather than server-controlled.
 
 ## Important implementation changes
 

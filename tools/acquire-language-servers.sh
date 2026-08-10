@@ -7,6 +7,7 @@ output=${2:-"$repo/src/NovaSharp/LanguageServers/Assets/$rid"}
 manifest="$repo/src/NovaSharp/LanguageServers/assets.json"
 work=$(mktemp -d)
 trap 'find "$work" -type f -delete; find "$work" -depth -type d -empty -delete' EXIT
+hash_file() { if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
 
 platform=$(jq -r ".roslynRazor.artifacts[\"$rid\"].platform // empty" "$manifest")
 expected=$(jq -r ".roslynRazor.artifacts[\"$rid\"].sha256 // empty" "$manifest")
@@ -14,7 +15,7 @@ expected=$(jq -r ".roslynRazor.artifacts[\"$rid\"].sha256 // empty" "$manifest")
 version=$(jq -r .roslynRazor.version "$manifest")
 vsix="$work/csharp.vsix"
 curl --compressed -fsSL "https://marketplace.visualstudio.com/_apis/public/gallery/publishers/ms-dotnettools/vsextensions/csharp/$version/vspackage?targetPlatform=$platform" -o "$vsix"
-actual=$(sha256sum "$vsix" | cut -d' ' -f1)
+actual=$(hash_file "$vsix")
 [[ "$actual" == "$expected" ]] || { echo "Roslyn/Razor hash mismatch" >&2; exit 3; }
 mkdir -p "$output/roslyn" "$output/razor" "$output/licenses"
 unzip -q "$vsix" 'extension/.roslyn/*' 'extension/.razorExtension/*' 'extension/LICENSE.txt' 'extension/ThirdPartyNotices.txt' -d "$work/vsix"
@@ -32,7 +33,7 @@ case "$rid" in
   win-x64) node_platform=win-x64; archive="node-v$node_version-$node_platform.zip" ;;
 esac
 curl -fsSL "https://nodejs.org/dist/v$node_version/$archive" -o "$work/$archive"
-node_actual=$(sha256sum "$work/$archive" | cut -d' ' -f1)
+node_actual=$(hash_file "$work/$archive")
 [[ "$node_actual" == "$node_expected" ]] || { echo "Node hash mismatch" >&2; exit 4; }
 mkdir -p "$output/node"
 mkdir -p "$work/node"

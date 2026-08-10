@@ -2,6 +2,8 @@
 
 Status: Complete
 
+Phase 15.2 replaced the editor-analysis producer with pinned language servers. Live diagnostics, navigation, symbols, rename, code actions, and workspace edits now enter the same stores and preview transactions through negotiated LSP capabilities; build diagnostics remain independent.
+
 ## Goal
 
 Turn language analysis into an IDE workflow for finding, understanding, and fixing code.

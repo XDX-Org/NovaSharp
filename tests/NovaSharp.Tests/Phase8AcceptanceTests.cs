@@ -1,3 +1,4 @@
+#if DEBUG
 namespace NovaSharp.Tests;
 
 [TestClass]
@@ -90,3 +91,4 @@ public sealed class Phase8AcceptanceTests
         public void Dispose() { try { Directory.Delete(Root, true); } catch { } }
     }
 }
+#endif

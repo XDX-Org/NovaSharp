@@ -1,3 +1,4 @@
+#if DEBUG
 using System.Diagnostics;
 
 namespace NovaSharp.Tests;
@@ -237,3 +238,4 @@ public sealed class LanguageFeaturesTests
         }
     }
 }
+#endif

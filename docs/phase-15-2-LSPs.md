@@ -6,7 +6,7 @@ Planned. This phase reopens the language-service completion claims from phases 7
 
 ## Goal
 
-Make Language Server Protocol processes the sole source of editor language intelligence for every supported programming or web language. Remove NovaSharp's handwritten Razor/HTML/CSS parser and direct in-process Roslyn feature provider. If a server is missing or unhealthy, documents remain editable with an explicit unavailable state; NovaSharp must not fabricate partial results.
+Make Language Server Protocol processes the authoritative source of editor language intelligence for every supported programming or web language. A local lexical presentation baseline may provide flicker-free syntax colouring, but semantic distinctions come only from exact-version server tokens. Remove NovaSharp's handwritten Razor/HTML/CSS feature provider and direct in-process Roslyn feature provider. If a server is missing or unhealthy, documents remain editable with an explicit unavailable state; NovaSharp must not fabricate partial language results.
 
 Build diagnostics remain a separate producer because they describe an explicit build, not live editor intelligence.
 

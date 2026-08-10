@@ -10,6 +10,7 @@ internal sealed class LspClient : IAsyncDisposable
     private readonly LspClientTarget _target;
     private readonly Dictionary<string, LspRegistration> _registrations = [];
     private readonly RazorHtmlBridge? _razorHtml;
+    private readonly Func<JsonElement, CancellationToken, Task<bool>>? _applyWorkspaceEdit;
     private bool _initialized;
 
     internal event Action<LspPublishDiagnosticsParams>? DiagnosticsPublished;
@@ -22,9 +23,11 @@ internal sealed class LspClient : IAsyncDisposable
         lock (_registrations) return _registrations.Values.Where(item => item.Method == method).ToArray();
     }
 
-    internal LspClient(Stream sendingStream, Stream receivingStream, RazorHtmlBridge? razorHtml = null)
+    internal LspClient(Stream sendingStream, Stream receivingStream, RazorHtmlBridge? razorHtml = null,
+        Func<JsonElement, CancellationToken, Task<bool>>? applyWorkspaceEdit = null)
     {
         _razorHtml = razorHtml;
+        _applyWorkspaceEdit = applyWorkspaceEdit;
         _target = new(this);
         var formatter = new SystemTextJsonFormatter();
         formatter.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
@@ -85,8 +88,78 @@ internal sealed class LspClient : IAsyncDisposable
 
         [JsonRpcMethod("textDocument/hover", UseSingleObjectParameterDeserialization = true)]
         public Task<JsonElement?> ForwardHtmlHover(JsonElement parameters, CancellationToken cancellationToken) =>
-            owner._razorHtml?.ForwardAsync("textDocument/hover", parameters, cancellationToken)
-            ?? Task.FromResult<JsonElement?>(null);
+            Forward("textDocument/hover", parameters, cancellationToken);
+
+        [JsonRpcMethod("textDocument/completion", UseSingleObjectParameterDeserialization = true)]
+        public Task<JsonElement?> ForwardHtmlCompletion(JsonElement parameters, CancellationToken cancellationToken) =>
+            Forward("textDocument/completion", parameters, cancellationToken);
+
+        [JsonRpcMethod("completionItem/resolve", UseSingleObjectParameterDeserialization = true)]
+        public Task<JsonElement?> ForwardHtmlCompletionResolve(JsonElement parameters, CancellationToken cancellationToken) =>
+            Forward("completionItem/resolve", parameters, cancellationToken);
+
+        [JsonRpcMethod("textDocument/signatureHelp", UseSingleObjectParameterDeserialization = true)]
+        public Task<JsonElement?> ForwardHtmlSignatureHelp(JsonElement parameters, CancellationToken cancellationToken) =>
+            Forward("textDocument/signatureHelp", parameters, cancellationToken);
+
+        [JsonRpcMethod("textDocument/diagnostic", UseSingleObjectParameterDeserialization = true)]
+        public Task<JsonElement?> ForwardHtmlDiagnostics(JsonElement parameters, CancellationToken cancellationToken) =>
+            Forward("textDocument/diagnostic", parameters, cancellationToken);
+
+        [JsonRpcMethod("textDocument/formatting", UseSingleObjectParameterDeserialization = true)]
+        public Task<JsonElement?> ForwardHtmlFormatting(JsonElement parameters, CancellationToken cancellationToken) =>
+            Forward("textDocument/formatting", parameters, cancellationToken);
+
+        [JsonRpcMethod("textDocument/rangeFormatting", UseSingleObjectParameterDeserialization = true)]
+        public Task<JsonElement?> ForwardHtmlRangeFormatting(JsonElement parameters, CancellationToken cancellationToken) =>
+            Forward("textDocument/rangeFormatting", parameters, cancellationToken);
+
+        [JsonRpcMethod("textDocument/onTypeFormatting", UseSingleObjectParameterDeserialization = true)]
+        public Task<JsonElement?> ForwardHtmlOnTypeFormatting(JsonElement parameters, CancellationToken cancellationToken) =>
+            Forward("textDocument/onTypeFormatting", parameters, cancellationToken);
+
+        [JsonRpcMethod("textDocument/foldingRange", UseSingleObjectParameterDeserialization = true)]
+        public Task<JsonElement?> ForwardHtmlFoldingRange(JsonElement parameters, CancellationToken cancellationToken) =>
+            Forward("textDocument/foldingRange", parameters, cancellationToken);
+
+        [JsonRpcMethod("textDocument/documentHighlight", UseSingleObjectParameterDeserialization = true)]
+        public Task<JsonElement?> ForwardHtmlDocumentHighlight(JsonElement parameters, CancellationToken cancellationToken) =>
+            Forward("textDocument/documentHighlight", parameters, cancellationToken);
+
+        [JsonRpcMethod("textDocument/documentColor", UseSingleObjectParameterDeserialization = true)]
+        public Task<JsonElement?> ForwardHtmlDocumentColor(JsonElement parameters, CancellationToken cancellationToken) =>
+            Forward("textDocument/documentColor", parameters, cancellationToken);
+
+        [JsonRpcMethod("textDocument/colorPresentation", UseSingleObjectParameterDeserialization = true)]
+        public Task<JsonElement?> ForwardHtmlColorPresentation(JsonElement parameters, CancellationToken cancellationToken) =>
+            Forward("textDocument/colorPresentation", parameters, cancellationToken);
+
+        [JsonRpcMethod("textDocument/definition", UseSingleObjectParameterDeserialization = true)]
+        public Task<JsonElement?> ForwardHtmlDefinition(JsonElement parameters, CancellationToken cancellationToken) =>
+            Forward("textDocument/definition", parameters, cancellationToken);
+
+        [JsonRpcMethod("textDocument/implementation", UseSingleObjectParameterDeserialization = true)]
+        public Task<JsonElement?> ForwardHtmlImplementation(JsonElement parameters, CancellationToken cancellationToken) =>
+            Forward("textDocument/implementation", parameters, cancellationToken);
+
+        [JsonRpcMethod("textDocument/prepareRename", UseSingleObjectParameterDeserialization = true)]
+        public Task<JsonElement?> ForwardHtmlPrepareRename(JsonElement parameters, CancellationToken cancellationToken) =>
+            Forward("textDocument/prepareRename", parameters, cancellationToken);
+
+        [JsonRpcMethod("textDocument/rename", UseSingleObjectParameterDeserialization = true)]
+        public Task<JsonElement?> ForwardHtmlRename(JsonElement parameters, CancellationToken cancellationToken) =>
+            Forward("textDocument/rename", parameters, cancellationToken);
+
+        [JsonRpcMethod("textDocument/codeAction", UseSingleObjectParameterDeserialization = true)]
+        public Task<JsonElement?> ForwardHtmlCodeAction(JsonElement parameters, CancellationToken cancellationToken) =>
+            Forward("textDocument/codeAction", parameters, cancellationToken);
+
+        [JsonRpcMethod("codeAction/resolve", UseSingleObjectParameterDeserialization = true)]
+        public Task<JsonElement?> ForwardHtmlCodeActionResolve(JsonElement parameters, CancellationToken cancellationToken) =>
+            Forward("codeAction/resolve", parameters, cancellationToken);
+
+        private Task<JsonElement?> Forward(string method, JsonElement parameters, CancellationToken cancellationToken) =>
+            owner._razorHtml?.ForwardAsync(method, parameters, cancellationToken) ?? Task.FromResult<JsonElement?>(null);
 
         [JsonRpcMethod("window/logMessage", UseSingleObjectParameterDeserialization = true)]
         public void LogMessage(LspLogMessageParams parameters) => owner.MessageLogged?.Invoke(parameters);
@@ -120,6 +193,16 @@ internal sealed class LspClient : IAsyncDisposable
                 && section.GetString() is { } name && (name.EndsWith(".dotnet_compiler_diagnostics_scope", StringComparison.Ordinal)
                     || name.EndsWith(".dotnet_analyzer_diagnostics_scope", StringComparison.Ordinal))
                     ? (object?)"OpenFiles" : null).ToArray();
+        }
+
+        [JsonRpcMethod("workspace/applyEdit", UseSingleObjectParameterDeserialization = true)]
+        public async Task<object> ApplyWorkspaceEdit(JsonElement parameters, CancellationToken cancellationToken)
+        {
+            if (!parameters.TryGetProperty("edit", out var edit) || owner._applyWorkspaceEdit is null)
+                return new { applied = false, failureReason = "Workspace edits are unavailable." };
+            var applied = await owner._applyWorkspaceEdit(edit.Clone(), cancellationToken);
+            return applied ? new { applied = true, failureReason = (string?)null }
+                : new { applied = false, failureReason = (string?)"The edit requires user confirmation." };
         }
 
         [JsonRpcMethod("window/workDoneProgress/create", UseSingleObjectParameterDeserialization = true)]

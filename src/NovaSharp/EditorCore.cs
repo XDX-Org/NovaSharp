@@ -279,31 +279,6 @@ internal static partial class CSharpTokenizer
         return lines;
     }
 
-    internal static IReadOnlyList<SemanticSpan> TranslateSemanticSpans(string oldText, string newText,
-        IReadOnlyList<SemanticSpan> spans)
-    {
-        if (oldText == newText || spans.Count == 0) return spans;
-        var prefix = 0;
-        while (prefix < oldText.Length && prefix < newText.Length && oldText[prefix] == newText[prefix]) prefix++;
-        var suffix = 0;
-        while (suffix < oldText.Length - prefix && suffix < newText.Length - prefix
-            && oldText[^(suffix + 1)] == newText[^(suffix + 1)]) suffix++;
-        var oldEnd = oldText.Length - suffix;
-        var delta = newText.Length - oldText.Length;
-        var translated = new List<SemanticSpan>(spans.Count);
-        foreach (var span in spans)
-        {
-            var spanEnd = span.Start + span.Length;
-            if (oldEnd == prefix && span.Start < prefix && spanEnd >= prefix)
-                translated.Add(span with { Length = span.Length + delta });
-            else if (spanEnd <= prefix) translated.Add(span);
-            else if (span.Start >= oldEnd) translated.Add(span with { Start = span.Start + delta });
-            else if (prefix >= span.Start && oldEnd <= spanEnd && span.Length + delta > 0)
-                translated.Add(span with { Length = span.Length + delta });
-        }
-        return translated;
-    }
-
     private static ClassifiedSpan[] NonOverlapping(IEnumerable<ClassifiedSpan> spans)
     {
         var result = new List<ClassifiedSpan>();

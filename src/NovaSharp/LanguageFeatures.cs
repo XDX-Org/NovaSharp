@@ -1,3 +1,4 @@
+#if DEBUG
 using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Classification;
@@ -7,6 +8,7 @@ using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.Formatting;
 using Microsoft.CodeAnalysis.QuickInfo;
 using Microsoft.CodeAnalysis.Text;
+#endif
 
 namespace NovaSharp;
 
@@ -16,7 +18,9 @@ public sealed record LanguageResponse<T>(long SourceVersion, T? Value, bool IsDe
 public sealed record CompletionEntry(string Id, string DisplayText, string FilterText, string SortText,
     string Kind, TextRange Replacement, IReadOnlyList<char> CommitCharacters, bool IsSnippet, string? Detail = null);
 public sealed record CompletionResult(IReadOnlyList<CompletionEntry> Items);
-public sealed record CompletionEdit(TextRange Replacement, string NewText, int? NewPosition);
+public sealed record LanguageCommandDescriptor(string Name, System.Text.Json.JsonElement? Arguments = null);
+public sealed record CompletionEdit(TextRange Replacement, string NewText, int? NewPosition,
+    LanguageCommandDescriptor? Command = null);
 public sealed record SignatureResult(IReadOnlyList<string> Signatures, int ActiveSignature, int ActiveParameter);
 public sealed record HoverResult(TextRange Range, IReadOnlyList<string> Sections);
 public sealed record SemanticSpan(int Start, int Length, string Classification);
@@ -68,6 +72,8 @@ internal interface IExtendedLanguageProvider
     Task<IReadOnlyList<SymbolEntry>> FindWorkspaceSymbolsAsync(string query, CancellationToken cancellationToken);
     Task<WorkspaceEdit?> RenameAsync(LanguageRequest request, string newName, CancellationToken cancellationToken);
     Task<IReadOnlyList<CodeActionEntry>> GetCodeActionsAsync(LanguageRequest request, CancellationToken cancellationToken);
+    Task<bool> ExecuteCommandAsync(string documentPath, LanguageCommandDescriptor command,
+        CancellationToken cancellationToken) => Task.FromResult(false);
 }
 
 #if DEBUG

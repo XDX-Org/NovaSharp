@@ -1,5 +1,7 @@
 # Phase 15: Razor, HTML, and CSS
 
+Phase 15.2 supersedes the in-process implementation described below. Release builds use the version-matched Razor cohost plus pinned HTML/CSS language servers; Razor HTML requests are delegated through checksum-owned virtual documents. ADR 0006 is superseded.
+
 ## Goal
 
 Make Razor/Blazor, HTML, and CSS projects first-class editing targets rather than merely loadable projects.

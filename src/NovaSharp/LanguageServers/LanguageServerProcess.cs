@@ -26,6 +26,7 @@ internal sealed class LanguageServerProcess : IAsyncDisposable
     internal bool HasExited => _process.HasExited;
     internal int? ExitCode => _process.HasExited ? _process.ExitCode : null;
     internal Task Exited => _process.WaitForExitAsync();
+    internal long WorkingSet { get { _process.Refresh(); return _process.WorkingSet64; } }
     internal string Stderr { get { lock (_stderr) return _stderr.ToString(); } }
 
     internal static LanguageServerProcess Start(LanguageServerLaunchOptions options)

@@ -58,22 +58,6 @@ public sealed class EditorCoreTests
     }
 
     [TestMethod]
-    public void SemanticClassificationsRemainStableAcrossTyping()
-    {
-        const string before = "class C { int value; C other; }";
-        var value = before.IndexOf("value", StringComparison.Ordinal);
-        var type = before.LastIndexOf('C');
-        var spans = CSharpTokenizer.TranslateSemanticSpans(before, before.Insert(value + 5, "2"),
-        [
-            new(value, 5, "field"),
-            new(type, 1, "class")
-        ]);
-
-        Assert.AreEqual(new SemanticSpan(value, 6, "field"), spans[0]);
-        Assert.AreEqual(new SemanticSpan(type + 1, 1, "class"), spans[1]);
-    }
-
-    [TestMethod]
     public void LocalColouringDoesNotRequireLanguageServices()
     {
         var spans = CSharpTokenizer.Tokenize("private int _field; service.Value = service.Run(value);").Single().Spans;

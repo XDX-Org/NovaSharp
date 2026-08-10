@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted for the preview workbench.
+Superseded by [Phase 15.2](../phase-15-2-LSPs.md).
+
+The in-process providers described below remain only in Debug comparison/test builds. Release builds use pinned Roslyn/Razor, HTML, and CSS language servers and contain no route that enables this design.
 
 ## Decision
 

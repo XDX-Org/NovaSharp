@@ -1,7 +1,7 @@
 namespace NovaSharp;
 
 internal sealed record WorkspaceEditPreview(string Title, IReadOnlyList<WorkspaceDocumentEdit> Documents,
-    int ChangedFileCount, int ChangedCharacterCount);
+    int ChangedFileCount, int ChangedCharacterCount, IReadOnlyList<WorkspaceResourceEdit>? Resources = null);
 
 internal sealed class WorkspaceEditTransaction
 {
@@ -9,10 +9,47 @@ internal sealed class WorkspaceEditTransaction
         ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
 
     internal WorkspaceEditPreview Preview(WorkspaceEdit edit) => new(edit.Title, edit.Documents,
-        edit.Documents.Count, edit.Documents.Sum(item => CharacterChanges(item.ExpectedText, item.NewText)));
+        edit.Documents.Count + (edit.Resources?.Count ?? 0),
+        edit.Documents.Sum(item => CharacterChanges(item.ExpectedText, item.NewText)), edit.Resources);
 
     internal async Task ApplyAsync(WorkspaceEdit edit, IEnumerable<EditorDocumentState> openDocuments,
         CancellationToken cancellationToken = default)
+    {
+        var openList = openDocuments.ToArray();
+        foreach (var deletion in (edit.Resources ?? []).Where(item => item.Kind == "delete"))
+            if (openList.Any(document => document.FilePath is { } path && Paths.Equals(Path.GetFullPath(path), Path.GetFullPath(deletion.Path))))
+                throw new InvalidOperationException("Close an open document before deleting it.");
+        var resourceRollbacks = new Stack<Action>();
+        var resourceBackups = new List<string>();
+        var relocated = new List<(EditorDocumentState Document, string OldPath, string NewPath)>();
+        try
+        {
+            foreach (var operation in edit.Resources ?? [])
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                ApplyResource(operation, resourceRollbacks, resourceBackups);
+                if (operation.Kind == "rename" && operation.NewPath is { } destination)
+                    foreach (var document in openList.Where(document => document.FilePath is { } current
+                                 && Paths.Equals(Path.GetFullPath(current), Path.GetFullPath(operation.Path))))
+                    {
+                        document.Relocate(operation.Path, destination);
+                        relocated.Add((document, operation.Path, destination));
+                    }
+            }
+            await ApplyTextAsync(edit, openList, cancellationToken);
+        }
+        catch
+        {
+            foreach (var item in relocated.AsEnumerable().Reverse()) item.Document.Relocate(item.NewPath, item.OldPath);
+            while (resourceRollbacks.TryPop(out var rollback)) rollback();
+            throw;
+        }
+        foreach (var backup in resourceBackups)
+            if (File.Exists(backup)) File.Delete(backup); else if (Directory.Exists(backup)) Directory.Delete(backup, true);
+    }
+
+    private async Task ApplyTextAsync(WorkspaceEdit edit, IEnumerable<EditorDocumentState> openDocuments,
+        CancellationToken cancellationToken)
     {
         var open = openDocuments.Where(item => item.FilePath is not null)
             .ToDictionary(item => Path.GetFullPath(item.FilePath!), Paths);
@@ -73,6 +110,57 @@ internal sealed class WorkspaceEditTransaction
                 if (item.Backup is not null && File.Exists(item.Backup)) File.Delete(item.Backup);
             }
         }
+    }
+
+    private static void ApplyResource(WorkspaceResourceEdit operation, Stack<Action> rollbacks, List<string> backups)
+    {
+        var path = Path.GetFullPath(operation.Path);
+        switch (operation.Kind)
+        {
+            case "create":
+                if (File.Exists(path))
+                {
+                    if (operation.IgnoreIfExists) return;
+                    if (!operation.Overwrite) throw new IOException($"{Path.GetFileName(path)} already exists.");
+                    var backup = Backup(path); File.Move(path, backup); backups.Add(backup);
+                    rollbacks.Push(() => { if (File.Exists(path)) File.Delete(path); File.Move(backup, path); });
+                }
+                else rollbacks.Push(() => { if (File.Exists(path)) File.Delete(path); });
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                File.WriteAllText(path, string.Empty);
+                break;
+            case "rename" when operation.NewPath is { } destination:
+                var target = Path.GetFullPath(destination);
+                if (!File.Exists(path) && !Directory.Exists(path)) throw new FileNotFoundException("Rename source is missing.", path);
+                string? replaced = null;
+                if (File.Exists(target) || Directory.Exists(target))
+                {
+                    if (operation.IgnoreIfExists) return;
+                    if (!operation.Overwrite) throw new IOException($"{Path.GetFileName(target)} already exists.");
+                    replaced = Backup(target); Move(target, replaced); backups.Add(replaced);
+                }
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!); Move(path, target);
+                rollbacks.Push(() => { Move(target, path); if (replaced is not null) Move(replaced, target); });
+                break;
+            case "delete":
+                if (!File.Exists(path) && !Directory.Exists(path))
+                {
+                    if (operation.IgnoreIfExists) return;
+                    throw new FileNotFoundException("Delete target is missing.", path);
+                }
+                if (Directory.Exists(path) && !operation.Recursive && Directory.EnumerateFileSystemEntries(path).Any())
+                    throw new IOException("A non-recursive delete cannot remove a non-empty directory.");
+                var deleted = Backup(path); Move(path, deleted); backups.Add(deleted);
+                rollbacks.Push(() => Move(deleted, path));
+                break;
+            default: throw new InvalidDataException($"Unsupported workspace resource operation '{operation.Kind}'.");
+        }
+    }
+
+    private static string Backup(string path) => path + $".{Guid.NewGuid():N}.novasharp-backup";
+    private static void Move(string source, string target)
+    {
+        if (Directory.Exists(source)) Directory.Move(source, target); else File.Move(source, target);
     }
 
     private static int CharacterChanges(string before, string after)

@@ -1,3 +1,4 @@
+#if DEBUG
 namespace NovaSharp.Tests;
 
 [TestClass]
@@ -233,3 +234,4 @@ public sealed class WebLanguageFeaturesTests
         }
     }
 }
+#endif

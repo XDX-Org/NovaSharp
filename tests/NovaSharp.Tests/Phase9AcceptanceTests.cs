@@ -44,6 +44,29 @@ public sealed class Phase9AcceptanceTests
     }
 
     [TestMethod]
+    public async Task WorkspaceResourceOperationsCreateRenameAndDeleteAtomically()
+    {
+        using var fixture = new Fixture();
+        var created = fixture.Path("created.txt");
+        var renamed = fixture.Path("renamed.txt");
+        var removed = fixture.Path("removed.txt");
+        await File.WriteAllTextAsync(removed, "remove");
+        var edit = new WorkspaceEdit("resources", [],
+        [
+            new("create", created),
+            new("rename", created, renamed),
+            new("delete", removed)
+        ]);
+
+        await new WorkspaceEditTransaction().ApplyAsync(edit, []);
+
+        Assert.IsFalse(File.Exists(created));
+        Assert.IsTrue(File.Exists(renamed));
+        Assert.IsFalse(File.Exists(removed));
+        Assert.IsFalse(Directory.EnumerateFileSystemEntries(fixture.Root, "*.novasharp-backup").Any());
+    }
+
+    [TestMethod]
     [Timeout(30000)]
     public async Task FiveThousandFileFixtureMeetsSearchBudgets()
     {

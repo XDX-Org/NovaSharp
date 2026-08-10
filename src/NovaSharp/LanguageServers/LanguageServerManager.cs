@@ -4,11 +4,24 @@ namespace NovaSharp.LanguageServers;
 
 internal sealed class LanguageServerManager : ILspDocumentSink, IAsyncDisposable
 {
+    private static readonly string[] SemanticTokenTypes =
+    [
+        "namespace", "type", "class", "enum", "interface", "struct", "typeParameter", "parameter", "variable",
+        "property", "enumMember", "event", "function", "method", "macro", "keyword", "modifier", "comment",
+        "string", "number", "regexp", "operator", "decorator", "recordClass", "recordStruct", "delegate", "field"
+    ];
+    private static readonly string[] SemanticTokenModifiers = ["declaration", "definition", "readonly", "static",
+        "deprecated", "abstract", "async", "modification", "documentation", "defaultLibrary", "ReassignedVariable"];
     private readonly LanguageServerDefinition _definition;
     private readonly string _workspace;
     private readonly SemaphoreSlim _lifecycle = new(1, 1);
     private readonly Queue<DateTime> _crashes = new();
     private RazorHtmlBridge? _razorHtml;
+    private Func<JsonElement, CancellationToken, Task<bool>>? _applyWorkspaceEdit;
+    private readonly object _watchedGate = new();
+    private readonly Dictionary<string, int> _watchedChanges = [];
+    private FileSystemWatcher? _watcher;
+    private Timer? _watchedTimer;
     private LanguageServerProcess? _process;
     private LspClient? _client;
     private string? _lastCrash;
@@ -29,7 +42,9 @@ internal sealed class LanguageServerManager : ILspDocumentSink, IAsyncDisposable
     internal event Action? CapabilitiesChanged;
     internal LanguageServerStatus Status { get; private set; }
     internal string? LastCrash => _lastCrash;
+    internal long WorkingSet => _process?.WorkingSet ?? 0;
     internal LanguageServerKind Kind => _definition.Kind;
+    internal string WorkspaceRoot => _workspace;
     internal JsonElement Capabilities { get; private set; }
     public bool IsReady => Status.State == LanguageServerState.Ready && _client is not null;
     internal bool IsMethodRegistered(string method) => _client?.IsRegistered(method) == true;
@@ -46,7 +61,7 @@ internal sealed class LanguageServerManager : ILspDocumentSink, IAsyncDisposable
             try
             {
                 _process = LanguageServerProcess.Start(_definition.Launch);
-                _client = new(_process.Output, _process.Input, _razorHtml);
+                _client = new(_process.Output, _process.Input, _razorHtml, _applyWorkspaceEdit);
                 _client.DiagnosticsPublished += OnDiagnostics;
                 _client.DiagnosticRefreshRequested += OnDiagnosticRefresh;
                 _client.CapabilitiesChanged += () => CapabilitiesChanged?.Invoke();
@@ -54,11 +69,54 @@ internal sealed class LanguageServerManager : ILspDocumentSink, IAsyncDisposable
                 initializeTimeout.CancelAfter(TimeSpan.FromSeconds(5));
                 var capabilities = new
                 {
-                    workspace = new { workspaceFolders = true, configuration = true, applyEdit = true },
+                    general = new { positionEncodings = new[] { "utf-16" } },
+                    workspace = new
+                    {
+                        workspaceFolders = true, configuration = true, applyEdit = true,
+                        workspaceEdit = new
+                        {
+                            documentChanges = true,
+                            resourceOperations = new[] { "create", "rename", "delete" },
+                            failureHandling = "transactional",
+                            normalizesLineEndings = false,
+                            changeAnnotationSupport = new { groupsOnLabel = true }
+                        },
+                        didChangeWatchedFiles = new { dynamicRegistration = true, relativePatternSupport = true }
+                    },
                     textDocument = new { synchronization = new { dynamicRegistration = true, willSave = false, didSave = true },
                         publishDiagnostics = new { relatedInformation = true, tagSupport = new { valueSet = new[] { 1, 2 } } },
-                        diagnostic = new { dynamicRegistration = true, relatedDocumentSupport = true } },
-                    window = new { workDoneProgress = true }
+                        diagnostic = new { dynamicRegistration = true, relatedDocumentSupport = true },
+                        completion = new
+                        {
+                            dynamicRegistration = true,
+                            completionItem = new
+                            {
+                                snippetSupport = true, commitCharactersSupport = true, deprecatedSupport = true,
+                                preselectSupport = true, insertReplaceSupport = true,
+                                documentationFormat = new[] { "markdown", "plaintext" },
+                                resolveSupport = new { properties = new[] { "documentation", "detail", "additionalTextEdits", "command" } }
+                            },
+                            contextSupport = true
+                        },
+                        hover = new { dynamicRegistration = true, contentFormat = new[] { "markdown", "plaintext" } },
+                        signatureHelp = new { dynamicRegistration = true },
+                        semanticTokens = new
+                        {
+                            dynamicRegistration = true,
+                            requests = new { range = true, full = new { delta = false } },
+                            tokenTypes = SemanticTokenTypes, tokenModifiers = SemanticTokenModifiers,
+                            formats = new[] { "relative" }, overlappingTokenSupport = false, multilineTokenSupport = false
+                        },
+                        formatting = new { dynamicRegistration = true }, rangeFormatting = new { dynamicRegistration = true },
+                        definition = new { dynamicRegistration = true, linkSupport = true },
+                        typeDefinition = new { dynamicRegistration = true, linkSupport = true },
+                        implementation = new { dynamicRegistration = true, linkSupport = true },
+                        references = new { dynamicRegistration = true }, documentSymbol = new { dynamicRegistration = true },
+                        rename = new { dynamicRegistration = true, prepareSupport = true },
+                        codeAction = new { dynamicRegistration = true, dataSupport = true,
+                            resolveSupport = new { properties = new[] { "edit", "command" } } }
+                    },
+                    window = new { workDoneProgress = true, showDocument = new { support = true } }
                 };
                 SetStatus(LanguageServerState.LoadingWorkspace);
                 var root = LspConverters.FileUri(_workspace);
@@ -68,6 +126,7 @@ internal sealed class LanguageServerManager : ILspDocumentSink, IAsyncDisposable
                 if (_definition.Kind == LanguageServerKind.RoslynRazor)
                     await OpenRoslynWorkspaceAsync(initializeTimeout.Token);
                 SetStatus(LanguageServerState.Ready, result.ServerInfo?.Name, result.ServerInfo?.Version);
+                StartWatching();
                 Ready?.Invoke();
                 _ = ObserveExitAsync(_process);
             }
@@ -89,12 +148,17 @@ internal sealed class LanguageServerManager : ILspDocumentSink, IAsyncDisposable
     }
 
     internal void SetRazorHtmlBridge(RazorHtmlBridge bridge) => _razorHtml = bridge;
+    internal void SetApplyWorkspaceEditHandler(Func<JsonElement, CancellationToken, Task<bool>> handler) =>
+        _applyWorkspaceEdit = handler;
 
     internal async Task<T?> RequestAsync<T>(string method, object parameters, CancellationToken cancellationToken = default)
     {
         var client = _client;
         if (!IsReady || client is null) return default;
-        return await client.RequestAsync<T>(method, parameters, cancellationToken);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(method is "textDocument/completion" or "textDocument/hover" or "textDocument/signatureHelp"
+            ? TimeSpan.FromSeconds(5) : TimeSpan.FromSeconds(30));
+        return await client.RequestAsync<T>(method, parameters, timeout.Token);
     }
 
     internal async Task RestartAsync(CancellationToken cancellationToken = default)
@@ -145,6 +209,9 @@ internal sealed class LanguageServerManager : ILspDocumentSink, IAsyncDisposable
 
     private async Task CleanupAsync()
     {
+        _watcher?.Dispose(); _watcher = null;
+        _watchedTimer?.Dispose(); _watchedTimer = null;
+        lock (_watchedGate) _watchedChanges.Clear();
         var client = _client;
         var process = _process;
         _client = null;
@@ -156,6 +223,55 @@ internal sealed class LanguageServerManager : ILspDocumentSink, IAsyncDisposable
         if (client is not null) await client.DisposeAsync();
         if (process is not null) await process.DisposeAsync();
     }
+
+    private void StartWatching()
+    {
+        if (!Directory.Exists(_workspace) || _watcher is not null) return;
+        _watchedTimer = new(_ => _ = FlushWatchedChangesAsync(), null, Timeout.Infinite, Timeout.Infinite);
+        _watcher = new(_workspace)
+        {
+            IncludeSubdirectories = true,
+            NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.CreationTime
+        };
+        _watcher.Created += (_, args) => QueueWatchedChange(args.FullPath, 1);
+        _watcher.Changed += (_, args) => QueueWatchedChange(args.FullPath, 2);
+        _watcher.Deleted += (_, args) => QueueWatchedChange(args.FullPath, 3);
+        _watcher.Renamed += (_, args) => { QueueWatchedChange(args.OldFullPath, 3); QueueWatchedChange(args.FullPath, 1); };
+        _watcher.EnableRaisingEvents = true;
+    }
+
+    private void QueueWatchedChange(string path, int type)
+    {
+        if (Ignored(path) || !WatchedExtension(path)) return;
+        lock (_watchedGate)
+        {
+            _watchedChanges[Path.GetFullPath(path)] = type;
+            _watchedTimer?.Change(100, Timeout.Infinite);
+        }
+    }
+
+    private async Task FlushWatchedChangesAsync()
+    {
+        KeyValuePair<string, int>[] changes;
+        lock (_watchedGate) { changes = _watchedChanges.ToArray(); _watchedChanges.Clear(); }
+        var client = _client;
+        if (changes.Length == 0 || client is null || !IsReady
+            || _definition.Kind != LanguageServerKind.RoslynRazor && !client.IsRegistered("workspace/didChangeWatchedFiles")) return;
+        try
+        {
+            await client.NotifyAsync("workspace/didChangeWatchedFiles", new
+            {
+                changes = changes.Select(item => new { uri = LspConverters.FileUri(item.Key).AbsoluteUri, type = item.Value }).ToArray()
+            });
+        }
+        catch (Exception exception) when (exception is IOException or ObjectDisposedException
+            or StreamJsonRpc.ConnectionLostException) { }
+    }
+
+    private static bool WatchedExtension(string path) => Path.GetExtension(path).ToLowerInvariant() is
+        ".cs" or ".razor" or ".cshtml" or ".html" or ".htm" or ".css" or ".csproj" or ".props" or ".targets" or ".sln" or ".slnx";
+    private static bool Ignored(string path) => path.Split(Path.DirectorySeparatorChar)
+        .Any(segment => segment is ".git" or "bin" or "obj" or ".vs");
 
     private void SetStatus(LanguageServerState state, string? name = null, string? version = null, string? detail = null)
     {
@@ -171,12 +287,20 @@ internal sealed class LanguageServerManager : ILspDocumentSink, IAsyncDisposable
         _ => exception.GetType().Name
     };
 
-    private static string CrashDetail(LanguageServerProcess process)
+    private string CrashDetail(LanguageServerProcess process)
     {
         var stderr = process.Stderr.Replace('\r', ' ').Replace('\n', ' ').Trim();
+        stderr = stderr.Replace(_workspace, "<workspace>", StringComparisonForPaths());
+        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (!string.IsNullOrEmpty(profile)) stderr = stderr.Replace(profile, "<user>", StringComparisonForPaths());
+        stderr = System.Text.RegularExpressions.Regex.Replace(stderr,
+            @"(?i)(password|passwd|token|secret|api[-_]?key)\s*[:=]\s*\S+", "$1=<redacted>");
         if (stderr.Length > 4000) stderr = stderr[^4000..];
         return string.IsNullOrWhiteSpace(stderr) ? $"Exit code {process.ExitCode}." : $"Exit code {process.ExitCode}: {stderr}";
     }
+
+    private static StringComparison StringComparisonForPaths() => OperatingSystem.IsWindows()
+        ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
     public async ValueTask DisposeAsync()
     {

@@ -1,9 +1,11 @@
+#if DEBUG
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.FindSymbols;
 using Microsoft.CodeAnalysis.Rename;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Formatting;
+#endif
 
 namespace NovaSharp;
 
@@ -14,8 +16,12 @@ public sealed record SymbolEntry(string Name, string Kind, string DocumentPath, 
     int Line, int Column, string ProjectName, string? Container);
 public sealed record WorkspaceDocumentEdit(string DocumentPath, long? ExpectedVersion, string ExpectedText,
     string NewText, DiskStamp? ExpectedDiskStamp = null, IReadOnlyList<TextRange>? ExpectedRanges = null);
-public sealed record WorkspaceEdit(string Title, IReadOnlyList<WorkspaceDocumentEdit> Documents);
-public sealed record CodeActionEntry(string Title, string Kind, WorkspaceEdit Edit, bool IsPreferred = false);
+public sealed record WorkspaceResourceEdit(string Kind, string Path, string? NewPath = null,
+    bool Overwrite = false, bool IgnoreIfExists = false, bool Recursive = false);
+public sealed record WorkspaceEdit(string Title, IReadOnlyList<WorkspaceDocumentEdit> Documents,
+    IReadOnlyList<WorkspaceResourceEdit>? Resources = null);
+public sealed record CodeActionEntry(string Title, string Kind, WorkspaceEdit? Edit = null, bool IsPreferred = false,
+    LanguageCommandDescriptor? Command = null);
 
 #if DEBUG
 internal sealed partial class CSharpLanguageProvider
