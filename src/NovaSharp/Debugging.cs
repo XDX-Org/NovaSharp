@@ -367,7 +367,7 @@ public sealed class DebugAdapterSession : IAsyncDisposable
         {
             var changedLine = changed.TryGetProperty("line", out var line) ? line.GetInt32() : (int?)null;
             var sourcePath = changed.TryGetProperty("source", out var source) && source.TryGetProperty("path", out var path) ? path.GetString() : null;
-            Breakpoints = Breakpoints.Select(item => sourcePath is not null && PathsEqual(item.SourcePath, sourcePath)
+            Breakpoints = Breakpoints.Select(item => (sourcePath is not null ? PathsEqual(item.SourcePath, sourcePath) : Breakpoints.Count == 1)
                 && (item.BoundLine == changedLine || item.Line == changedLine) ? item with
                 {
                     State = changed.TryGetProperty("verified", out var verified) && verified.GetBoolean() ? DebugBreakpointState.Verified : DebugBreakpointState.Rejected,
