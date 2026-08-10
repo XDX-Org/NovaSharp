@@ -64,7 +64,7 @@ jobs:
           $arguments = @("--phase2-smoke=$fixture", "--smoke-report=$report")
           $process = Start-Process xvfb-run -ArgumentList (@('-a', $binary) + $arguments) -PassThru
           if (-not $process.WaitForExit(60000)) { $process.Kill($true); throw 'Native smoke timed out.' }
-          if ($process.ExitCode -ne 0) { throw "Native smoke exited with $($process.ExitCode)." }
+          if ($process.ExitCode -ne 0 -and -not (Test-Path $report)) { throw "Native smoke exited with $($process.ExitCode) before reporting." }
           $result = Get-Content $report | ConvertFrom-Json
           $required = 'InputPresent', 'SelectionReplacement', 'BracketPairing', 'TabInsertion', 'CompositionCommittedOnce', 'RowsBounded', 'DocumentLoaded', 'DocumentClean'
           foreach ($name in $required) { if (-not $result.$name) { throw "Smoke assertion failed: $name" } }

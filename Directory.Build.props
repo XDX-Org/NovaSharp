@@ -1,6 +1,6 @@
 <Project>
-  <PropertyGroup>
-    <!-- PhotinoXDX preview.6 exposes a Windows-only WebView2 WPF reference to all target platforms. -->
+  <PropertyGroup Condition="'$(OS)' != 'Windows_NT'">
+    <!-- WebView2's unused WPF assembly conflicts with the cross-platform WindowsBase facade. -->
     <NoWarn>$(NoWarn);MSB3277</NoWarn>
   </PropertyGroup>
 </Project>
