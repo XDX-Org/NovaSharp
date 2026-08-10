@@ -10,6 +10,8 @@ internal sealed class LspLanguageProvider : ILanguageProvider, IExtendedLanguage
     private readonly Func<string, EditorSnapshot?> _snapshot;
     private readonly Func<string, CancellationToken, Task> _synchronize;
     private readonly Dictionary<string, CachedCompletion> _completions = [];
+    private readonly Dictionary<(object Server, string Uri, string Identifier),
+        (string? ResultId, IReadOnlyList<LspDiagnostic> Items)> _diagnosticReports = [];
     private long _nextCompletion;
 
     internal LspLanguageProvider(Func<string, LanguageServerManager?> server,
@@ -148,6 +150,9 @@ internal sealed class LspLanguageProvider : ILanguageProvider, IExtendedLanguage
         var server = Ready(request.DocumentId);
         if (server is null) return Missing<IReadOnlyList<LanguageDiagnostic>>(request);
         await _synchronize(request.DocumentId, cancellationToken);
+        if (_snapshot(request.DocumentId) is not { } requestedSnapshot
+            || requestedSnapshot.Version != request.Version)
+            return Missing<IReadOnlyList<LanguageDiagnostic>>(request);
         if (SupportsDiagnostics(server) || server.Kind == LanguageServerKind.RoslynRazor)
         {
             var uri = LspConverters.FileUri(request.DocumentId).AbsoluteUri;
@@ -161,17 +166,38 @@ internal sealed class LspLanguageProvider : ILanguageProvider, IExtendedLanguage
             {
                 var parameters = new Dictionary<string, object?> { ["textDocument"] = new { uri } };
                 if (identifier is not null) parameters["identifier"] = identifier;
+                var key = (server, uri, identifier ?? string.Empty);
+                lock (_diagnosticReports)
+                    if (_diagnosticReports.TryGetValue(key, out var previous) && previous.ResultId is not null)
+                        parameters["previousResultId"] = previous.ResultId;
                 var result = await server.RequestAsync<JsonElement>("textDocument/diagnostic", parameters, cancellationToken);
-                if (result.ValueKind == JsonValueKind.Object && result.TryGetProperty("items", out var items)
-                    && items.ValueKind == JsonValueKind.Array)
-                    diagnostics.AddRange(items.EnumerateArray().Select(item => item.Deserialize<LspDiagnostic>(ProtocolJson)!)
-                        .Where(item => item is not null));
+                diagnostics.AddRange(ApplyDiagnosticReport(key, result));
             }
+            if (_snapshot(request.DocumentId)?.Version != request.Version)
+                return Missing<IReadOnlyList<LanguageDiagnostic>>(request);
             new LspDiagnosticPublisher(server.Kind.ToString(), Diagnostics, _snapshot)
                 .Publish(new(uri, diagnostics.DistinctBy(item => (item.Code?.GetRawText(), item.Message,
-                    item.Range.Start.Line, item.Range.Start.Character)).ToArray()));
+                    item.Range.Start.Line, item.Range.Start.Character)).ToArray()), request.Version);
         }
         return new(request.Version, Diagnostics.Entries.Where(item => PathEquals(item.DocumentPath, request.DocumentId)).ToArray());
+    }
+
+    internal IReadOnlyList<LspDiagnostic> ApplyDiagnosticReport(
+        (object Server, string Uri, string Identifier) key, JsonElement result)
+    {
+        lock (_diagnosticReports)
+        {
+            if (result.ValueKind != JsonValueKind.Object) return [];
+            var kind = result.TryGetProperty("kind", out var reportKind) ? reportKind.GetString() : "full";
+            if (kind == "unchanged")
+                return _diagnosticReports.TryGetValue(key, out var retained) ? retained.Items : [];
+            if (!result.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array) return [];
+            var diagnostics = items.EnumerateArray().Select(item => item.Deserialize<LspDiagnostic>(ProtocolJson)!)
+                .Where(item => item is not null).ToArray();
+            var resultId = result.TryGetProperty("resultId", out var id) ? id.GetString() : null;
+            _diagnosticReports[key] = (resultId, diagnostics);
+            return diagnostics;
+        }
     }
 
     public async Task<LanguageResponse<FormatResult>> FormatAsync(LanguageRequest request, CancellationToken cancellationToken)

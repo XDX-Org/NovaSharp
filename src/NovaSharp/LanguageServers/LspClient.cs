@@ -12,6 +12,7 @@ internal sealed class LspClient : IAsyncDisposable
     private bool _initialized;
 
     internal event Action<LspPublishDiagnosticsParams>? DiagnosticsPublished;
+    internal event Action? DiagnosticRefreshRequested;
     internal event Action<LspLogMessageParams>? MessageLogged;
     internal event Action? CapabilitiesChanged;
     internal bool IsRegistered(string method) { lock (_registrations) return _registrations.Values.Any(item => item.Method == method); }
@@ -68,6 +69,13 @@ internal sealed class LspClient : IAsyncDisposable
     {
         [JsonRpcMethod("textDocument/publishDiagnostics", UseSingleObjectParameterDeserialization = true)]
         public void PublishDiagnostics(LspPublishDiagnosticsParams parameters) => owner.DiagnosticsPublished?.Invoke(parameters);
+
+        [JsonRpcMethod("workspace/diagnostic/refresh")]
+        public object RefreshDiagnostics()
+        {
+            owner.DiagnosticRefreshRequested?.Invoke();
+            return new { };
+        }
 
         [JsonRpcMethod("window/logMessage", UseSingleObjectParameterDeserialization = true)]
         public void LogMessage(LspLogMessageParams parameters) => owner.MessageLogged?.Invoke(parameters);

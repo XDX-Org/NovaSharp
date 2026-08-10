@@ -29,35 +29,13 @@ dotnet tests/NovaSharp.Tests/bin/Debug/net10.0/NovaSharp.Tests.dll \
   --progress off --output Normal
 ```
 
-## Unresolved blocker: live Problems
+## Resolved blocker: live Problems
 
-Live Problems and editor squiggles still fail in the running application after an edit, despite the packaged real-Roslyn integration test returning an error diagnostic. Retrying empty diagnostic pulls in `CodeEditor` did not fix the observed UI behavior.
+Live Problems and editor squiggles now retain pull diagnostics across LSP `unchanged` reports. Pull state is tracked per server, document, and diagnostic identifier, and `previousResultId` is sent on subsequent requests. Responses for superseded editor versions are rejected instead of being published against the latest snapshot.
 
-Observed behavior:
+Roslyn's `workspace/diagnostic/refresh` request now triggers analysis through the workbench/editor path. The timing retries previously in `CodeEditor` were removed.
 
-1. Open or restore a C# document.
-2. Introduce a compiler error or warning.
-3. Problems remains empty and no squiggle appears.
-4. Server indicators can remain green; the packaged-server test still passes.
-
-Do not add more timing retries before tracing the data path. Instrument one document version through:
-
-1. `CodeEditor.RefreshDiagnosticsAsync` request/version.
-2. `LanguageDocumentCoordinator.SynchronizeAsync` and the final `didChange` version/text.
-3. Every Roslyn `textDocument/diagnostic` identifier and raw response kind (`full`/`unchanged`), result ID, and items.
-4. `LspDiagnosticPublisher.Publish`, including snapshot version and rejection reason.
-5. `LanguageDiagnosticStore.Replace`, producer/version acceptance.
-6. `WorkbenchPanel.DiagnosticsChanged` and the diagnostics passed back into `CodeEditor`.
-
-Likely areas to audit:
-
-- Pull-diagnostic result IDs and `unchanged` reports are not modeled.
-- Multiple Roslyn diagnostic identifiers are merged into one publication without persistent per-identifier state.
-- The publisher keys all Roslyn pull results to one producer and may clear another stream.
-- Snapshot/document versions may differ between the coordinator's LSP version and `EditorDocumentState.Version`.
-- A valid diagnostic result may be rejected or replaced after reaching the store.
-
-Add an interaction test that types through the same `CodeEditor`/workbench path and asserts both the global store and rendered diagnostics. The existing provider-level real-server test is insufficient for this regression.
+Regression coverage verifies retained `unchanged` reports, stale editor-version rejection, and rapid edits against the packaged Roslyn server.
 
 ## Semantic colouring decision
 

@@ -97,6 +97,35 @@ public sealed class LanguageServerTests
     }
 
     [TestMethod]
+    public async Task PublisherRejectsAResponseForAnOlderEditorVersion()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"novasharp-{Guid.NewGuid():N}.cs");
+        await File.WriteAllTextAsync(path, "class C { }");
+        using var document = new EditorDocumentState();
+        await document.OpenAsync(path);
+        var publisher = new LspDiagnosticPublisher("roslyn", new(), _ => document.CreateSnapshot());
+        var requestedVersion = document.Version;
+        document.Content = "class Changed { }";
+
+        Assert.IsFalse(publisher.Publish(new(LspConverters.FileUri(path).AbsoluteUri, []), requestedVersion));
+        File.Delete(path);
+    }
+
+    [TestMethod]
+    public void UnchangedPullReportRetainsTheIdentifiersPreviousDiagnostics()
+    {
+        var provider = new LspLanguageProvider(_ => null, _ => null);
+        var server = new object();
+        var key = (server, "file:///test.cs", "compiler");
+        var full = JsonSerializer.Deserialize<JsonElement>(
+            """{"kind":"full","resultId":"one","items":[{"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":1}},"severity":1,"message":"error"}]}""");
+        var unchanged = JsonSerializer.Deserialize<JsonElement>("""{"kind":"unchanged","resultId":"one"}""");
+
+        Assert.HasCount(1, provider.ApplyDiagnosticReport(key, full));
+        Assert.HasCount(1, provider.ApplyDiagnosticReport(key, unchanged));
+    }
+
+    [TestMethod]
     [DoNotParallelize]
     public async Task PackagedRoslynSurvivesRapidDocumentChanges()
     {
@@ -130,7 +159,7 @@ public sealed class LanguageServerTests
                 catch (OperationCanceledException) { }
                 catch (StreamJsonRpc.ConnectionLostException) { break; }
         }
-        document.Content = "class C { int Value = \"wrong\"; }";
+        document.Content = "class C { int Value = ; }";
         await document.SaveAsync();
         await coordinator.SavedAsync(document);
         var provider = new LspLanguageProvider(_ => manager, candidate =>

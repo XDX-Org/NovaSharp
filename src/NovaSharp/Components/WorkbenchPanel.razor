@@ -367,6 +367,8 @@
                 path => OpenDocuments.FirstOrDefault(document => document.FilePath is not null
                     && PathsEqual(document.FilePath, path))?.CreateSnapshot());
             manager.DiagnosticsPublished += published => publisher.Publish(published);
+            manager.DiagnosticRefreshRequested += () =>
+                _ = InvokeAsync(() => { _languageAnalysisRevision++; StateHasChanged(); });
             manager.Ready += () => _ = ReplayAndAnalyzeAsync(definition.Kind, coordinator);
             manager.CapabilitiesChanged += LanguageServerCapabilitiesChanged;
             _languageServers.Add((definition.Kind, manager));

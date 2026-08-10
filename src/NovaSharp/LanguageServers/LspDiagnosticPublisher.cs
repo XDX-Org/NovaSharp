@@ -14,11 +14,12 @@ internal sealed class LspDiagnosticPublisher
         _snapshot = snapshot;
     }
 
-    internal bool Publish(LspPublishDiagnosticsParams published)
+    internal bool Publish(LspPublishDiagnosticsParams published, long? expectedVersion = null)
     {
         if (!Uri.TryCreate(published.Uri, UriKind.Absolute, out var uri) || !uri.IsFile) return false;
         var path = Path.GetFullPath(uri.LocalPath);
-        if (_snapshot(path) is not { } snapshot) return false;
+        if (_snapshot(path) is not { } snapshot || expectedVersion is { } version && snapshot.Version != version)
+            return false;
         var diagnostics = new List<LanguageDiagnostic>();
         foreach (var item in published.Diagnostics)
         {

@@ -23,6 +23,7 @@ internal sealed class LanguageServerManager : ILspDocumentSink, IAsyncDisposable
 
     internal event Action<LanguageServerStatus>? StatusChanged;
     internal event Action<LspPublishDiagnosticsParams>? DiagnosticsPublished;
+    internal event Action? DiagnosticRefreshRequested;
     internal event Action? Ready;
     internal event Action? CapabilitiesChanged;
     internal LanguageServerStatus Status { get; private set; }
@@ -46,6 +47,7 @@ internal sealed class LanguageServerManager : ILspDocumentSink, IAsyncDisposable
                 _process = LanguageServerProcess.Start(_definition.Launch);
                 _client = new(_process.Output, _process.Input);
                 _client.DiagnosticsPublished += OnDiagnostics;
+                _client.DiagnosticRefreshRequested += OnDiagnosticRefresh;
                 _client.CapabilitiesChanged += () => CapabilitiesChanged?.Invoke();
                 using var initializeTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 initializeTimeout.CancelAfter(TimeSpan.FromSeconds(5));
@@ -114,6 +116,7 @@ internal sealed class LanguageServerManager : ILspDocumentSink, IAsyncDisposable
     }
 
     private void OnDiagnostics(LspPublishDiagnosticsParams parameters) => DiagnosticsPublished?.Invoke(parameters);
+    private void OnDiagnosticRefresh() => DiagnosticRefreshRequested?.Invoke();
 
     private async Task OpenRoslynWorkspaceAsync(CancellationToken cancellationToken)
     {

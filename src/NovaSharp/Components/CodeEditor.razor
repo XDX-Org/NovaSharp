@@ -161,7 +161,6 @@
     private string _semanticValue = string.Empty;
     private string? _languageReadyKey;
     private int _semanticRevision, _renderedSemanticRevision, _presentationGeneration;
-    private int _diagnosticEmptyRetries;
     private long _observedLanguageAnalysisRevision = -1;
     private int _selectedCompletion;
     private bool _outlineOpen;
@@ -266,7 +265,6 @@
     {
         _semanticRefreshCancellation?.Cancel();
         _diagnosticRefreshCancellation?.Cancel();
-        _diagnosticEmptyRetries = 0;
         await ValueChanged.InvokeAsync(value);
         ViewState.SetSelection(caret, caret, value.Length);
         if (ProjectLoading || Document.FilePath is null) return;
@@ -550,17 +548,7 @@
         {
             _diagnostics = diagnostics;
             await InvokeAsync(StateHasChanged);
-            if (diagnostics.Count > 0) _diagnosticEmptyRetries = 0;
-            else if (_diagnosticEmptyRetries++ < 3)
-                _ = RetryDiagnosticsAsync(version, cancellationToken);
         }
-    }
-
-    private async Task RetryDiagnosticsAsync(long version, CancellationToken cancellationToken)
-    {
-        try { await Task.Delay(300, cancellationToken); }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return; }
-        if (Document.Version == version) await InvokeAsync(RefreshDiagnosticsAsync);
     }
     private IReadOnlyList<LanguageDiagnostic> DiagnosticsFor(EditorLine line) => _diagnostics
         .Where(item => item.StartLine <= line.Number - 1 && (item.EndLine < 0 ? item.StartLine : item.EndLine) >= line.Number - 1)
