@@ -176,6 +176,44 @@ public sealed class EditorCoreTests
     }
 
     [TestMethod]
+    public void CommaSeparatedAttributeNamesAllUseTypeColour()
+    {
+        const string text = "[Parameter, EditorRequired] public string Value { get; set; }";
+        var attributes = CSharpTokenizer.Tokenize(text).Single().Spans
+            .Where(span => span.Kind == TokenKind.Type && span.Start < text.IndexOf(']'))
+            .Select(span => text.Substring(span.Start, span.Length)).ToArray();
+
+        CollectionAssert.AreEqual(new[] { "Parameter", "EditorRequired" }, attributes);
+    }
+
+    [TestMethod]
+    public void RazorMarkupUsesDedicatedTagAttributeAndTransitionColours()
+    {
+        const string text = "<div class=\"code-editor @(WordWrap ? \\\"word-wrap\\\" : null)\" data-language=\"@LanguageInfo.LanguageId\" @ref=\"_root\">";
+        var spans = CSharpTokenizer.Tokenize(text).Single().Spans;
+
+        AssertSpan("div", TokenKind.HtmlTag);
+        AssertSpan("class", TokenKind.HtmlAttribute);
+        AssertSpan("data-language", TokenKind.HtmlAttribute);
+        AssertSpan("ref", TokenKind.HtmlAttribute);
+        Assert.IsTrue(spans.Any(span => span.Kind == TokenKind.RazorTransition
+            && text.Substring(span.Start, span.Length) == "@("));
+
+        void AssertSpan(string value, TokenKind kind) => Assert.IsTrue(spans.Any(span => span.Kind == kind
+            && text.Substring(span.Start, span.Length) == value), $"Missing {kind} span for {value}.");
+    }
+
+    [TestMethod]
+    public void RazorCodeDirectiveUsesKeywordColour()
+    {
+        const string text = "@code { private int _value; }";
+        var span = CSharpTokenizer.Tokenize(text).Single().Spans.Single(item => item.Start == 1);
+
+        Assert.AreEqual(TokenKind.Keyword, span.Kind);
+        Assert.AreEqual("code", text.Substring(span.Start, span.Length));
+    }
+
+    [TestMethod]
     public async Task Utf16AndCanonicalPathArePreserved()
     {
         var directory = Directory.CreateTempSubdirectory("novasharp-");

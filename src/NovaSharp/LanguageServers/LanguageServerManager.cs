@@ -8,6 +8,7 @@ internal sealed class LanguageServerManager : ILspDocumentSink, IAsyncDisposable
     private readonly string _workspace;
     private readonly SemaphoreSlim _lifecycle = new(1, 1);
     private readonly Queue<DateTime> _crashes = new();
+    private RazorHtmlBridge? _razorHtml;
     private LanguageServerProcess? _process;
     private LspClient? _client;
     private string? _lastCrash;
@@ -45,7 +46,7 @@ internal sealed class LanguageServerManager : ILspDocumentSink, IAsyncDisposable
             try
             {
                 _process = LanguageServerProcess.Start(_definition.Launch);
-                _client = new(_process.Output, _process.Input);
+                _client = new(_process.Output, _process.Input, _razorHtml);
                 _client.DiagnosticsPublished += OnDiagnostics;
                 _client.DiagnosticRefreshRequested += OnDiagnosticRefresh;
                 _client.CapabilitiesChanged += () => CapabilitiesChanged?.Invoke();
@@ -79,8 +80,15 @@ internal sealed class LanguageServerManager : ILspDocumentSink, IAsyncDisposable
         finally { _lifecycle.Release(); }
     }
 
-    public Task NotifyAsync(string method, object parameters, CancellationToken cancellationToken = default) =>
-        _client is null ? Task.CompletedTask : _client.NotifyAsync(method, parameters, cancellationToken);
+    public async Task NotifyAsync(string method, object parameters, CancellationToken cancellationToken = default)
+    {
+        if (_client is not null) await _client.NotifyAsync(method, parameters, cancellationToken);
+        if (_definition.Kind == LanguageServerKind.RoslynRazor && method == "textDocument/didClose"
+            && parameters is LspDidCloseTextDocumentParams closed && _razorHtml is not null)
+            await _razorHtml.CloseAsync(closed.TextDocument.Uri, cancellationToken);
+    }
+
+    internal void SetRazorHtmlBridge(RazorHtmlBridge bridge) => _razorHtml = bridge;
 
     internal async Task<T?> RequestAsync<T>(string method, object parameters, CancellationToken cancellationToken = default)
     {

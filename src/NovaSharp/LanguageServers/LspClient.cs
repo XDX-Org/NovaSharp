@@ -9,6 +9,7 @@ internal sealed class LspClient : IAsyncDisposable
     private readonly JsonRpc _rpc;
     private readonly LspClientTarget _target;
     private readonly Dictionary<string, LspRegistration> _registrations = [];
+    private readonly RazorHtmlBridge? _razorHtml;
     private bool _initialized;
 
     internal event Action<LspPublishDiagnosticsParams>? DiagnosticsPublished;
@@ -21,8 +22,9 @@ internal sealed class LspClient : IAsyncDisposable
         lock (_registrations) return _registrations.Values.Where(item => item.Method == method).ToArray();
     }
 
-    internal LspClient(Stream sendingStream, Stream receivingStream)
+    internal LspClient(Stream sendingStream, Stream receivingStream, RazorHtmlBridge? razorHtml = null)
     {
+        _razorHtml = razorHtml;
         _target = new(this);
         var formatter = new SystemTextJsonFormatter();
         formatter.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
@@ -76,6 +78,15 @@ internal sealed class LspClient : IAsyncDisposable
             owner.DiagnosticRefreshRequested?.Invoke();
             return new { };
         }
+
+        [JsonRpcMethod("razor/updateHtml", UseSingleObjectParameterDeserialization = true)]
+        public Task<object> UpdateHtml(JsonElement parameters, CancellationToken cancellationToken) =>
+            owner._razorHtml?.UpdateAsync(parameters, cancellationToken) ?? Task.FromResult<object>(new { });
+
+        [JsonRpcMethod("textDocument/hover", UseSingleObjectParameterDeserialization = true)]
+        public Task<JsonElement?> ForwardHtmlHover(JsonElement parameters, CancellationToken cancellationToken) =>
+            owner._razorHtml?.ForwardAsync("textDocument/hover", parameters, cancellationToken)
+            ?? Task.FromResult<JsonElement?>(null);
 
         [JsonRpcMethod("window/logMessage", UseSingleObjectParameterDeserialization = true)]
         public void LogMessage(LspLogMessageParams parameters) => owner.MessageLogged?.Invoke(parameters);

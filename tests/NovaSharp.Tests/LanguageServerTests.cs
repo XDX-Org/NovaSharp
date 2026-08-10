@@ -34,6 +34,22 @@ public sealed class LanguageServerTests
     }
 
     [TestMethod]
+    public void HoverMarkupStripsEmbeddedDataImages()
+    {
+        var contents = JsonSerializer.SerializeToElement(new
+        {
+            kind = "markdown",
+            value = "Element details\n\n![Baseline icon](data:image/svg+xml;base64,PHN2Zz4=) Widely available"
+        });
+
+        var hover = LspLanguageProvider.HoverSections(contents).Single();
+        Assert.DoesNotContain("data:image", hover);
+        Assert.DoesNotContain("Baseline icon", hover);
+        StringAssert.Contains(hover, "Element details");
+        StringAssert.Contains(hover, "Widely available");
+    }
+
+    [TestMethod]
     public async Task CoordinatorSharesViewsAndOrdersLifecycle()
     {
         var path = Path.Combine(Path.GetTempPath(), $"novasharp-{Guid.NewGuid():N}.cs");
@@ -123,6 +139,72 @@ public sealed class LanguageServerTests
 
         Assert.HasCount(1, provider.ApplyDiagnosticReport(key, full));
         Assert.HasCount(1, provider.ApplyDiagnosticReport(key, unchanged));
+    }
+
+    [TestMethod]
+    public async Task RazorHtmlBridgeSynchronizesProjectionBeforeForwardingHover()
+    {
+        var notifications = new List<string>();
+        object? forwarded = null;
+        var bridge = new RazorHtmlBridge(() => true,
+            (method, _, _) => { notifications.Add(method); return Task.CompletedTask; },
+            (method, parameters, _) =>
+            {
+                forwarded = parameters;
+                return Task.FromResult(JsonSerializer.SerializeToElement(new
+                    { contents = new { kind = "markdown", value = "div element" } }));
+            });
+        var update = JsonSerializer.Deserialize<JsonElement>(
+            """{"textDocument":{"uri":"file:///Index.razor"},"checksum":"one","text":"<div></div>"}""");
+        var hover = JsonSerializer.Deserialize<JsonElement>(
+            """{"textDocument":{"uri":"file:///Index.razor"},"checksum":"one","request":{"textDocument":{"uri":"file:///Index.razor"},"position":{"line":0,"character":2}}}""");
+
+        await bridge.UpdateAsync(update, default);
+        var result = await bridge.ForwardAsync("textDocument/hover", hover, default);
+
+        CollectionAssert.AreEqual(new[] { "textDocument/didOpen" }, notifications);
+        Assert.IsNotNull(forwarded);
+        Assert.AreEqual("div element", result?.GetProperty("contents").GetProperty("value").GetString());
+    }
+
+    [TestMethod]
+    [DoNotParallelize]
+    public async Task PackagedRazorDelegatesHtmlHover()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"novasharp-razor-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        var project = Path.Combine(root, "Fixture.csproj");
+        var path = Path.Combine(root, "Index.razor");
+        await File.WriteAllTextAsync(project, "<Project Sdk=\"Microsoft.NET.Sdk.Razor\"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup><ItemGroup><FrameworkReference Include=\"Microsoft.AspNetCore.App\" /></ItemGroup></Project>");
+        await File.WriteAllTextAsync(path, "<div>Content</div>");
+        var catalog = LanguageServerCatalog.Discover(root);
+        var razorDefinition = catalog.Definitions.Single(item => item.Kind == LanguageServerKind.RoslynRazor);
+        var htmlDefinition = catalog.Definitions.Single(item => item.Kind == LanguageServerKind.Html);
+        if (razorDefinition.Launch is null || htmlDefinition.Launch is null) { Directory.Delete(root, true); return; }
+        var razor = new LanguageServerManager(razorDefinition, root);
+        var html = new LanguageServerManager(htmlDefinition, root);
+        razor.SetRazorHtmlBridge(new(() => html.IsReady, html.NotifyAsync,
+            (method, parameters, token) => html.RequestAsync<JsonElement>(method, parameters, token)));
+        await html.StartAsync();
+        await razor.StartAsync();
+        using var document = new EditorDocumentState();
+        await document.OpenAsync(path);
+        await using var coordinator = new LanguageDocumentCoordinator(razor);
+        await coordinator.OpenAsync(document);
+        var provider = new LspLanguageProvider(_ => razor, _ => document.CreateSnapshot(),
+            synchronize: (_, token) => coordinator.SynchronizeAsync(path, token));
+        HoverResult? hover = null;
+        for (var attempt = 0; attempt < 20 && hover is null; attempt++)
+        {
+            await Task.Delay(250);
+            hover = (await provider.GetHoverAsync(new(path, null, document.Version, 2), default)).Value;
+        }
+
+        Assert.IsNotNull(hover, $"Razor: {razor.Status.Detail}; HTML: {html.Status.Detail}");
+        Assert.IsTrue(hover.Sections.Any(section => section.Contains("div", StringComparison.OrdinalIgnoreCase)));
+        await razor.DisposeAsync();
+        await html.DisposeAsync();
+        Directory.Delete(root, true);
     }
 
     [TestMethod]

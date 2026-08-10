@@ -17,7 +17,7 @@ public readonly record struct EditorLine(int Number, string Text, IReadOnlyList<
 public readonly record struct ClassifiedSpan(int Start, int Length, TokenKind Kind);
 
 public enum TokenKind { Text, Keyword, String, Comment, Number, Type, EnumType, Parameter, Method, Property, Field, Event, Namespace,
-    RegexEscape, RegexGroup, RegexCharacterClass, RegexQuantifier }
+    HtmlTag, HtmlAttribute, RazorTransition, RegexEscape, RegexGroup, RegexCharacterClass, RegexQuantifier }
 
 internal static partial class CSharpTokenizer
 {
@@ -50,6 +50,8 @@ internal static partial class CSharpTokenizer
             var line = lines[lineIndex];
             var spans = new List<ClassifiedSpan>();
             var namespaceContext = false;
+            var inAttributeList = false;
+            var attributeArgumentDepth = 0;
             for (var i = 0; i < line.Length;)
             {
                 if (inBlockComment)
@@ -113,6 +115,8 @@ internal static partial class CSharpTokenizer
                         spans.Add(new(start, i - start, TokenKind.Type));
                         awaitingDeclarationType = false;
                     }
+                    else if (inAttributeList && attributeArgumentDepth == 0)
+                        spans.Add(new(start, i - start, TokenKind.Type));
                     else if (inEnum) spans.Add(new(start, i - start, TokenKind.Field));
                     else if (awaitingEventType)
                     {
@@ -137,6 +141,10 @@ internal static partial class CSharpTokenizer
                 }
                 else
                 {
+                    if (line[i] == '[' && PreviousNonWhitespace(line, i) is null or ']') inAttributeList = true;
+                    else if (inAttributeList && line[i] == '(') attributeArgumentDepth++;
+                    else if (inAttributeList && line[i] == ')' && attributeArgumentDepth > 0) attributeArgumentDepth--;
+                    else if (inAttributeList && line[i] == ']' && attributeArgumentDepth == 0) inAttributeList = false;
                     if (line[i] is ';' or '=') namespaceContext = false;
                     if (line[i] == '{')
                     {
@@ -147,10 +155,52 @@ internal static partial class CSharpTokenizer
                     i++;
                 }
             }
+            AddRazorMarkupSpans(line, spans);
             result.Add(new(lineIndex + 1, line, spans));
         }
         return result;
     }
+
+    private static void AddRazorMarkupSpans(string line, List<ClassifiedSpan> spans)
+    {
+        var markup = new List<ClassifiedSpan>();
+        foreach (Match directive in RazorBlockDirectiveRegex().Matches(line))
+            markup.Add(new(directive.Groups["name"].Index, directive.Groups["name"].Length, TokenKind.Keyword));
+        foreach (Match tag in HtmlTagRegex().Matches(line))
+        {
+            var name = tag.Groups["name"];
+            markup.Add(new(name.Index, name.Length, TokenKind.HtmlTag));
+            foreach (Match attribute in HtmlAttributeRegex().Matches(tag.Value))
+            {
+                var localStart = tag.Index + attribute.Groups["name"].Index;
+                var length = attribute.Groups["name"].Length;
+                if (line[localStart] == '@')
+                {
+                    markup.Add(new(localStart, 1, TokenKind.RazorTransition));
+                    localStart++;
+                    length--;
+                }
+                if (length > 0) markup.Add(new(localStart, length, TokenKind.HtmlAttribute));
+            }
+        }
+        for (var start = line.IndexOf("@(", StringComparison.Ordinal); start >= 0;
+             start = line.IndexOf("@(", start + 2, StringComparison.Ordinal))
+        {
+            markup.Add(new(start, 2, TokenKind.RazorTransition));
+            var end = line.IndexOf(')', start + 2);
+            if (end >= 0) markup.Add(new(end, 1, TokenKind.RazorTransition));
+        }
+        if (markup.Count > 0) spans.InsertRange(0, markup.OrderBy(span => span.Start));
+    }
+
+    [GeneratedRegex("</?(?<name>[A-Za-z][\\w-]*)(?:\\s[^<>]*)?/?>")]
+    private static partial Regex HtmlTagRegex();
+
+    [GeneratedRegex("(?:^|\\s)(?<name>@?[A-Za-z_:][\\w:.-]*)(?=\\s*=)")]
+    private static partial Regex HtmlAttributeRegex();
+
+    [GeneratedRegex("@(?<name>code)\\b")]
+    private static partial Regex RazorBlockDirectiveRegex();
 
     private static void AddRegexSpans(List<ClassifiedSpan> spans, string text, int start, int end)
     {

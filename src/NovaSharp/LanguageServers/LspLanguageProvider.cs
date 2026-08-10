@@ -1,10 +1,13 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace NovaSharp.LanguageServers;
 
 internal sealed class LspLanguageProvider : ILanguageProvider, IExtendedLanguageProvider
 {
     private static readonly JsonSerializerOptions ProtocolJson = new(JsonSerializerDefaults.Web);
+    private static readonly Regex EmbeddedDataImage = new(@"!\[[^\]]*\]\(data:[^)]+\)",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     private sealed record CachedCompletion(long Version, JsonElement Item, TextRange Replacement);
     private readonly Func<string, LanguageServerManager?> _server;
     private readonly Func<string, EditorSnapshot?> _snapshot;
@@ -380,9 +383,10 @@ internal sealed class LspLanguageProvider : ILanguageProvider, IExtendedLanguage
         && edit.TryGetProperty("range", out var range) ? LspConverters.ToRange(text, ParseRange(range)) : new(position, 0);
     private static IReadOnlyList<string> Markup(JsonElement value) => value.ValueKind switch
     {
-        JsonValueKind.String => [value.GetString() ?? ""], JsonValueKind.Array => value.EnumerateArray().SelectMany(Markup).ToArray(),
-        JsonValueKind.Object when value.TryGetProperty("value", out var item) => [item.GetString() ?? ""], _ => []
+        JsonValueKind.String => [CleanMarkup(value.GetString())], JsonValueKind.Array => value.EnumerateArray().SelectMany(Markup).ToArray(),
+        JsonValueKind.Object when value.TryGetProperty("value", out var item) => [CleanMarkup(item.GetString())], _ => []
     };
+    private static string CleanMarkup(string? value) => EmbeddedDataImage.Replace(value ?? string.Empty, string.Empty).Trim();
     internal static IReadOnlyList<string> HoverSections(JsonElement contents) => Markup(contents)
         .Where(section => !string.IsNullOrWhiteSpace(section)).ToArray();
     private static object ToRange(string text, TextRange range) => new { start = LspConverters.ToPosition(text, range.Start), end = LspConverters.ToPosition(text, range.Start + range.Length) };

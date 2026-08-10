@@ -375,6 +375,15 @@
             _languageCoordinators.Add(manager, coordinator);
             _languageServerStatuses[definition.Kind] = manager.Status;
         }
+        var razor = ServerManager(LanguageServerKind.RoslynRazor);
+        var html = ServerManager(LanguageServerKind.Html);
+        if (razor is not null && html is not null)
+        {
+            var bridge = new RazorHtmlBridge(() => html.IsReady, html.NotifyAsync,
+                (method, parameters, token) => html.RequestAsync<System.Text.Json.JsonElement>(method, parameters, token));
+            razor.SetRazorHtmlBridge(bridge);
+            html.Ready += () => _ = bridge.ReplayAsync();
+        }
         await Task.WhenAll(_languageServers.Select(server => server.Manager.StartAsync()));
         await SyncLanguageDocumentsAsync();
         await Task.WhenAll(_languageServers.Select(server => AnalyzeOpenDocumentsAsync(server.Kind)));

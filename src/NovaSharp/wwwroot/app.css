@@ -20,6 +20,9 @@
     --syntax-member: #2aacb8;
     --syntax-event: #c77dbb;
     --syntax-namespace: #b589ff;
+    --syntax-html-tag: #8f75c9;
+    --syntax-html-attribute: #39cc8f;
+    --syntax-razor-transition: #ed94c0;
     --syntax-regex-escape: #ed94c0;
     --syntax-regex-group: #2aacb8;
     --syntax-regex-class: #c77dbb;
@@ -333,6 +336,9 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
 .token-property, .token-field { color: var(--syntax-member); }
 .token-event { color: var(--syntax-event); }
 .token-namespace { color: var(--syntax-namespace); }
+.token-htmltag { color: var(--syntax-html-tag); }
+.token-htmlattribute { color: var(--syntax-html-attribute); }
+.token-razortransition { color: var(--syntax-razor-transition); }
 .token-regexescape { color: var(--syntax-regex-escape); }
 .token-regexgroup { color: var(--syntax-regex-group); }
 .token-regexcharacterclass { color: var(--syntax-regex-class); }
