@@ -1,4 +1,5 @@
 using System.Text;
+using System.Diagnostics;
 
 namespace NovaSharp.Tests;
 
@@ -79,5 +80,41 @@ public sealed class DebuggingTests
         try { Assert.AreEqual(executable, DebugAdapterCatalog.Resolve(root)); }
         finally { Directory.Delete(root, true); }
         Assert.Throws<FileNotFoundException>(() => DebugAdapterCatalog.Resolve(root));
+    }
+
+    [TestMethod, Timeout(30000)]
+    public async Task PinnedAdapterLaunchesManagedFixture()
+    {
+        var rid = OperatingSystem.IsWindows() ? "win-x64" : OperatingSystem.IsMacOS()
+            ? (System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture == System.Runtime.InteropServices.Architecture.Arm64 ? "osx-arm64" : "osx-x64")
+            : "linux-x64";
+        var executable = OperatingSystem.IsWindows() ? "netcoredbg.exe" : "netcoredbg";
+        var adapter = new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory }.SelectMany(start =>
+        {
+            var paths = new List<string>();
+            for (var directory = new DirectoryInfo(start); directory is not null; directory = directory.Parent)
+                paths.Add(Path.Combine(directory.FullName, "src", "NovaSharp", "DebugAdapters", "Assets", rid, "netcoredbg", executable));
+            return paths;
+        }).FirstOrDefault(File.Exists) ?? "";
+        Assert.IsTrue(File.Exists(adapter), $"Acquire the pinned debug adapter for {rid} before testing.");
+        var root = Path.Combine(Path.GetTempPath(), "novasharp-debug-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(root, "Fixture.csproj"), "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings></PropertyGroup></Project>");
+            var source = Path.Combine(root, "Program.cs");
+            await File.WriteAllTextAsync(source, "var value = 41;\nConsole.WriteLine(value + 1);\n");
+            using var build = Process.Start(new ProcessStartInfo("dotnet") { WorkingDirectory = root, UseShellExecute = false,
+                RedirectStandardOutput = true, RedirectStandardError = true, ArgumentList = { "build", "--nologo", "--configuration", "Debug" } })!;
+            await build.WaitForExitAsync();
+            Assert.AreEqual(0, build.ExitCode, await build.StandardError.ReadToEndAsync());
+            var program = Path.Combine(root, "bin", "Debug", "net10.0", "Fixture.dll");
+            await using var session = await DebugAdapterSession.LaunchAsync(new(program, root, [], Breakpoints: [new(source, 2)]), adapter);
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+            while (session.Coordinator.State == DebugSessionState.Running && DateTime.UtcNow < deadline) await Task.Delay(20);
+            Assert.AreEqual(DebugBreakpointState.Verified, session.Breakpoints.Single().State, session.Breakpoints.Single().Message);
+            Assert.AreEqual(DebugSessionState.Paused, session.Coordinator.State);
+        }
+        finally { Directory.Delete(root, true); }
     }
 }
