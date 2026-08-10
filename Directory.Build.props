@@ -1,5 +1,5 @@
 <Project>
-  <PropertyGroup Condition="'$(OS)' != 'Windows_NT'">
+  <PropertyGroup>
     <!-- WebView2's unused WPF assembly conflicts with the cross-platform WindowsBase facade. -->
     <NoWarn>$(NoWarn);MSB3277</NoWarn>
   </PropertyGroup>
