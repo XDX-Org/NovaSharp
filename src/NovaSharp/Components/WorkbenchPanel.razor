@@ -4,7 +4,7 @@
 @implements IDisposable
 @inject IJSRuntime JS
 
-<main @ref="_workbench" class="workbench" @onkeydown="HandleKeyAsync">
+<main @ref="_workbench" class="@WorkbenchClass" @onkeydown="HandleKeyAsync">
     <header class="toolbar">
         <div class="navigation-controls" aria-label="Navigation history">
             <button title="Back (Alt+Left)" aria-label="Back" disabled="@(!CanNavigateBack)" @onclick="NavigateBackAsync">←</button>
@@ -49,6 +49,7 @@
                     <button role="menuitem" @onclick="ToggleTerminalAsync">Terminal <kbd>Ctrl+`</kbd></button>
                     <button role="menuitem" @onclick="ToggleWrapAsync">Word wrap <span>@(_wordWrap ? "On" : "Off")</span></button>
                     <button role="menuitem" @onclick="OpenWorkspaceSymbols">Workspace symbols <kbd>Ctrl+T</kbd></button>
+                    <button role="menuitem" @onclick="OpenSettings">Settings</button>
                 </div>
                 }
             </div>
@@ -190,6 +191,19 @@
             </form>
         </div>
     }
+    @if (_settingsOpen)
+    {
+        <div class="modal-backdrop" @onclick="CloseSettings">
+            <form class="modal-dialog build-configurator" role="dialog" aria-modal="true" aria-labelledby="settings-title" @onclick:stopPropagation @onsubmit="SaveSettingsAsync">
+                <h2 id="settings-title">Settings</h2>
+                <label>Theme<select @bind="_settingsTheme"><option>Rider Dark</option><option>Light</option></select></label>
+                <label>Zoom (%)<input type="number" min="50" max="200" step="10" @bind="_settingsZoom" /></label>
+                <label><input type="checkbox" @bind="_settingsReducedMotion" /> Reduced motion</label>
+                <label><input type="checkbox" @bind="_settingsHighContrast" /> High contrast</label>
+                <div class="modal-actions"><button type="submit">Save</button><button type="button" @onclick="CloseSettings">Cancel</button></div>
+            </form>
+        </div>
+    }
     @if (_renamePosition is not null)
     {
         <div class="modal-backdrop" @onclick="CancelRename">
@@ -288,6 +302,9 @@
     private string? _targetFramework, _launchProfile, _runWorkingDirectory;
     private IReadOnlyList<string> _runArguments = [];
     private bool _buildConfiguratorOpen;
+    private bool _settingsOpen, _settingsReducedMotion, _settingsHighContrast;
+    private string _settingsTheme = "Rider Dark";
+    private int _settingsZoom = 100;
     private string _configuredProject = "", _configuredConfiguration = "Debug", _configuredFramework = "", _configuredProfile = "", _configuredArguments = "", _configuredWorkingDirectory = "";
     private IReadOnlyList<string> _availableConfigurations = ["Debug", "Release"], _availableFrameworks = [];
     private IReadOnlyList<LaunchProfile> _availableProfiles = [];
@@ -320,6 +337,7 @@
         .Where(path => path is not null).Cast<string>().Distinct().Order().ToArray() ?? [];
     private string? StartupProject => _startupProject is not null && StartupProjects.Contains(_startupProject)
         ? _startupProject : StartupProjects.FirstOrDefault();
+    private string WorkbenchClass => $"workbench {(Program.Configuration.Current.Theme == "Light" ? "theme-light" : "theme-dark")}{(Program.Configuration.Current.HighContrast ? " high-contrast" : "")}{(Program.Configuration.Current.ReducedMotion ? " reduced-motion" : "")}";
 
     public WorkbenchPanel()
     {
@@ -742,6 +760,25 @@
         _buildConfiguratorOpen = false;
     }
     private void CloseBuildConfigurator() => _buildConfiguratorOpen = false;
+    private void OpenSettings()
+    {
+        _openMenu = null;
+        var settings = Program.Configuration.Current;
+        _settingsTheme = settings.Theme;
+        _settingsZoom = settings.Zoom;
+        _settingsReducedMotion = settings.ReducedMotion;
+        _settingsHighContrast = settings.HighContrast;
+        _settingsOpen = true;
+    }
+    private async Task SaveSettingsAsync()
+    {
+        if (_settingsZoom is < 50 or > 200) { _status = "Zoom must be between 50% and 200%."; return; }
+        await Program.Configuration.SaveUserAsync(Program.Configuration.Current with { Theme = _settingsTheme, Zoom = _settingsZoom,
+            ReducedMotion = _settingsReducedMotion, HighContrast = _settingsHighContrast });
+        Program.App.MainWindow.SetZoom(_settingsZoom);
+        _settingsOpen = false;
+    }
+    private void CloseSettings() => _settingsOpen = false;
     private void StopBuild() => _buildRun.Stop();
     private async Task StartDebugAsync()
     {

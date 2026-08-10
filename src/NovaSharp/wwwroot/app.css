@@ -244,6 +244,10 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
 .debug-panel { max-height: 180px; overflow: auto; padding: 8px 12px; border-top: 1px solid #343a46; background: #1d2027; }
 .debug-panel header { display: flex; align-items: center; gap: 7px; }
 .debug-panel header span { margin-right: auto; color: #9ca6b5; }
+.theme-light { filter: invert(.88) hue-rotate(180deg); }
+.theme-light img, .theme-light svg { filter: invert(1) hue-rotate(180deg); }
+.high-contrast { --syntax-default: #fff; --syntax-keyword: #ff66ff; --syntax-string: #ffff66; --syntax-comment: #66ff66; }
+.reduced-motion *, .reduced-motion *::before, .reduced-motion *::after { scroll-behavior: auto !important; transition-duration: 0s !important; animation-duration: 0s !important; }
 .edit-preview { width: min(620px, 100%); }
 .edit-preview ul { max-height: 260px; overflow: auto; padding-left: 22px; color: #b8c0cc; font: var(--text-small)/1.5 var(--font-code); }
 .symbol-results { max-height: 340px; overflow: auto; margin-bottom: 14px; }

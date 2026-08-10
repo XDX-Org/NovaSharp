@@ -55,7 +55,8 @@ internal static class Program
             .SetWidth(1200)
             .SetHeight(800)
             .SetMinWidth(640)
-            .SetMinHeight(480);
+            .SetMinHeight(480)
+            .SetZoom(Configuration.Current.Zoom);
         App.MainWindow.RegisterWindowClosingHandler(ConfirmClose);
 
         App.Run();
