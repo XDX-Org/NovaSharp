@@ -68,8 +68,7 @@ jobs:
           $result = Get-Content $report | ConvertFrom-Json
           $required = 'InputPresent', 'SelectionReplacement', 'BracketPairing', 'TabInsertion', 'CompositionCommittedOnce', 'RowsBounded', 'DocumentLoaded', 'DocumentClean'
           foreach ($name in $required) { if (-not $result.$name) { throw "Smoke assertion failed: $name" } }
-      - name: Run packaged Linux Phase 3 native-host smoke
-        if: runner.os == 'Linux'
+      - name: Run packaged Phase 3 native-host smoke
         shell: pwsh
         env:
           GTK_A11Y: none
@@ -83,9 +82,10 @@ jobs:
           New-Item -ItemType Directory -Path $workspace | Out-Null
           'class Active;' | Set-Content -Encoding utf8 (Join-Path $workspace 'active.cs')
           1..500 | ForEach-Object { New-Item -ItemType File -Path (Join-Path $workspace "fixture-$_.cs") | Out-Null }
-          $binary = 'artifacts/app/NovaSharp'
+          $binary = if ($IsWindows) { 'artifacts/app/NovaSharp.exe' } else { 'artifacts/app/NovaSharp' }
           $arguments = @("--phase3-smoke=$workspace", "--smoke-report=$report")
-          $process = Start-Process xvfb-run -ArgumentList (@('-a', $binary) + $arguments) -PassThru
+          $process = if ($IsLinux) { Start-Process xvfb-run -ArgumentList (@('-a', $binary) + $arguments) -PassThru }
+            else { Start-Process $binary -ArgumentList $arguments -PassThru }
           if (-not $process.WaitForExit(60000)) { $process.Kill($true); throw 'Phase 3 native smoke timed out.' }
           if ($process.ExitCode -ne 0 -and -not (Test-Path $report)) { throw "Phase 3 native smoke exited with $($process.ExitCode) before reporting." }
           $result = Get-Content $report | ConvertFrom-Json
@@ -163,8 +163,7 @@ jobs:
           $required = 'SolutionTreePresent', 'LoadCompleted', 'SemanticDocumentsMapped', 'LinkedContextsPresent', 'EvaluatedTargetContexts', 'ProjectFileEditable', 'ContextMenuPresent', 'DragSourcePresent'
           foreach ($name in $required) { if (-not $result.$name) { throw "Phase 6 smoke assertion failed: $name" } }
           if ($result.ProjectNodes -lt 3) { throw 'Phase 6 project tree did not render expected nodes.' }
-      - name: Run packaged Linux Phase 7 native-host smoke
-        if: runner.os == 'Linux'
+      - name: Run packaged Phase 7 native-host smoke
         shell: pwsh
         env:
           GTK_A11Y: none
@@ -180,16 +179,16 @@ jobs:
           'using System; class C { void M() { Console.WriteLine(); } }' | Set-Content -Encoding utf8 (Join-Path $workspace 'Program.cs')
           '<Solution><Project Path="Fixture.csproj" /></Solution>' | Set-Content -Encoding utf8 (Join-Path $workspace 'Fixture.slnx')
           dotnet restore (Join-Path $workspace 'Fixture.csproj')
-          $binary = 'artifacts/app/NovaSharp'
+          $binary = if ($IsWindows) { 'artifacts/app/NovaSharp.exe' } else { 'artifacts/app/NovaSharp' }
           $arguments = @("--phase7-smoke=$(Join-Path $workspace 'Fixture.slnx')", "--smoke-report=$report")
-          $process = Start-Process xvfb-run -ArgumentList (@('-a', $binary) + $arguments) -PassThru
+          $process = if ($IsLinux) { Start-Process xvfb-run -ArgumentList (@('-a', $binary) + $arguments) -PassThru }
+            else { Start-Process $binary -ArgumentList $arguments -PassThru }
           if (-not $process.WaitForExit(60000)) { $process.Kill($true); throw 'Phase 7 native smoke timed out.' }
           if ($process.ExitCode -ne 0 -and -not (Test-Path $report)) { throw "Phase 7 native smoke exited with $($process.ExitCode) before reporting." }
           $result = Get-Content $report | ConvertFrom-Json
           $required = 'CompletionVisible', 'CompletionKeyboardOwned', 'SignatureVisible', 'HoverVisible', 'SemanticTokensPresent', 'AutoIndent', 'CommentToggle', 'FormattingApplied', 'LoadingStateCleared'
           foreach ($name in $required) { if (-not $result.$name) { throw "Phase 7 smoke assertion failed: $name ($($result.Error))" } }
-      - name: Run packaged Linux Phase 8 native-host smoke
-        if: runner.os == 'Linux'
+      - name: Run packaged Phase 8 native-host smoke
         shell: pwsh
         env:
           GTK_A11Y: none
@@ -205,9 +204,10 @@ jobs:
           'class C { C value; }' | Set-Content -Encoding utf8 (Join-Path $workspace 'Program.cs')
           '<Solution><Project Path="Fixture.csproj" /></Solution>' | Set-Content -Encoding utf8 (Join-Path $workspace 'Fixture.slnx')
           dotnet restore (Join-Path $workspace 'Fixture.csproj')
-          $binary = 'artifacts/app/NovaSharp'
+          $binary = if ($IsWindows) { 'artifacts/app/NovaSharp.exe' } else { 'artifacts/app/NovaSharp' }
           $arguments = @("--phase8-smoke=$(Join-Path $workspace 'Fixture.slnx')", "--smoke-report=$report")
-          $process = Start-Process xvfb-run -ArgumentList (@('-a', $binary) + $arguments) -PassThru
+          $process = if ($IsLinux) { Start-Process xvfb-run -ArgumentList (@('-a', $binary) + $arguments) -PassThru }
+            else { Start-Process $binary -ArgumentList $arguments -PassThru }
           if (-not $process.WaitForExit(60000)) { $process.Kill($true); throw 'Phase 8 native smoke timed out.' }
           if ($process.ExitCode -ne 0 -and -not (Test-Path $report)) { throw "Phase 8 native smoke exited with $($process.ExitCode) before reporting." }
           $result = Get-Content $report | ConvertFrom-Json
@@ -262,8 +262,7 @@ jobs:
           $result = Get-Content $report | ConvertFrom-Json
           $required = 'TerminalPresent', 'InputRoundTrip', 'ResizeValid', 'ProcessExited'
           foreach ($name in $required) { if (-not $result.$name) { throw "Phase 11 smoke assertion failed: $name ($($result.Error))" } }
-      - name: Run packaged Linux Phase 15 web-language smoke
-        if: runner.os == 'Linux'
+      - name: Run packaged Phase 15 web-language smoke
         shell: pwsh
         env:
           GTK_A11Y: none
@@ -279,9 +278,10 @@ jobs:
           '<MyCard />' | Set-Content -Encoding utf8 (Join-Path $workspace 'Index.razor')
           '<article>@Title</article>@code { [Parameter] public string Title { get; set; } = ""; }' | Set-Content -Encoding utf8 (Join-Path $workspace 'MyCard.razor')
           dotnet restore (Join-Path $workspace 'Fixture.csproj')
-          $binary = 'artifacts/app/NovaSharp'
+          $binary = if ($IsWindows) { 'artifacts/app/NovaSharp.exe' } else { 'artifacts/app/NovaSharp' }
           $arguments = @("--phase15-smoke=$(Join-Path $workspace 'Fixture.csproj')", "--smoke-report=$report")
-          $process = Start-Process xvfb-run -ArgumentList (@('-a', $binary) + $arguments) -PassThru
+          $process = if ($IsLinux) { Start-Process xvfb-run -ArgumentList (@('-a', $binary) + $arguments) -PassThru }
+            else { Start-Process $binary -ArgumentList $arguments -PassThru }
           if (-not $process.WaitForExit(90000)) { $process.Kill($true); throw 'Phase 15 native smoke timed out.' }
           if ($process.ExitCode -ne 0 -and -not (Test-Path $report)) { throw "Phase 15 native smoke exited with $($process.ExitCode) before reporting." }
           $result = Get-Content $report | ConvertFrom-Json
