@@ -302,6 +302,13 @@ public sealed class LanguageServerTests
             var formatted = (await provider.FormatAsync(new(path, null, document.Version, 0), default)).Value;
             Assert.IsNotNull(formatted);
             Assert.Contains(fixture.Kind == LanguageServerKind.Html ? "div" : "color", formatted.Text);
+            if (fixture.Kind == LanguageServerKind.Html && info.Capabilities.HasFlag(LanguageCapabilities.Rename))
+            {
+                var rename = await provider.RenameAsync(new(path, null, document.Version, 2), "section", default);
+                Assert.IsNotNull(rename);
+                Assert.Contains("<section", rename.Documents.Single().NewText);
+                Assert.Contains("</section>", rename.Documents.Single().NewText);
+            }
         }
         root.Delete(true);
     }

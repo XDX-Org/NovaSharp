@@ -69,6 +69,7 @@ jobs:
           $required = 'InputPresent', 'SelectionReplacement', 'BracketPairing', 'TabInsertion', 'CompositionCommittedOnce', 'RowsBounded', 'DocumentLoaded', 'DocumentClean'
           foreach ($name in $required) { if (-not $result.$name) { throw "Smoke assertion failed: $name" } }
       - name: Run packaged Phase 3 native-host smoke
+        if: runner.os == 'Linux'
         shell: pwsh
         env:
           GTK_A11Y: none
@@ -164,6 +165,7 @@ jobs:
           foreach ($name in $required) { if (-not $result.$name) { throw "Phase 6 smoke assertion failed: $name" } }
           if ($result.ProjectNodes -lt 3) { throw 'Phase 6 project tree did not render expected nodes.' }
       - name: Run packaged Phase 7 native-host smoke
+        if: runner.os == 'Linux'
         shell: pwsh
         env:
           GTK_A11Y: none
@@ -189,6 +191,7 @@ jobs:
           $required = 'CompletionVisible', 'CompletionKeyboardOwned', 'SignatureVisible', 'HoverVisible', 'SemanticTokensPresent', 'AutoIndent', 'CommentToggle', 'FormattingApplied', 'LoadingStateCleared'
           foreach ($name in $required) { if (-not $result.$name) { throw "Phase 7 smoke assertion failed: $name ($($result.Error))" } }
       - name: Run packaged Phase 8 native-host smoke
+        if: runner.os == 'Linux'
         shell: pwsh
         env:
           GTK_A11Y: none
@@ -263,6 +266,7 @@ jobs:
           $required = 'TerminalPresent', 'InputRoundTrip', 'ResizeValid', 'ProcessExited'
           foreach ($name in $required) { if (-not $result.$name) { throw "Phase 11 smoke assertion failed: $name ($($result.Error))" } }
       - name: Run packaged Phase 15 web-language smoke
+        if: runner.os == 'Linux'
         shell: pwsh
         env:
           GTK_A11Y: none

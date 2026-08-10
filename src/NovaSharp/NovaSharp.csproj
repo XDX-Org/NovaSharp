@@ -33,5 +33,7 @@
           CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Condition="'$(RuntimeIdentifier)' != ''" />
     <None Include="../../THIRD-PARTY-NOTICES-LANGUAGESERVERS.md" Link="THIRD-PARTY-NOTICES-LANGUAGESERVERS.md"
           CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="../../LANGUAGE-SERVERS.spdx.json" Link="LANGUAGE-SERVERS.spdx.json"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
