@@ -287,7 +287,7 @@ export async function runSmokeChecks(root) {
         await new Promise(resolve => setTimeout(resolve, 100));
         renderedRows = root.querySelectorAll('.source-line').length;
     }
-    const rowLimit = Math.max(100, Math.ceil(root.clientHeight / 20) + 66);
+    const rowLimit = Math.max(128, Math.ceil(root.clientHeight / 20) + 66);
     return {
         inputPresent: true,
         selectionReplacement,

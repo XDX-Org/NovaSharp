@@ -111,7 +111,8 @@ public sealed class DebuggingTests
             var program = Path.Combine(root, "bin", "Debug", "net10.0", "Fixture.dll");
             await using var session = await DebugAdapterSession.LaunchAsync(new(program, root, [], Breakpoints: [new(source, 2)]), adapter);
             var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
-            while (session.Coordinator.State == DebugSessionState.Running && DateTime.UtcNow < deadline) await Task.Delay(20);
+            while ((session.Coordinator.State == DebugSessionState.Running
+                || session.Breakpoints.Single().State != DebugBreakpointState.Verified) && DateTime.UtcNow < deadline) await Task.Delay(20);
             Assert.AreEqual(DebugBreakpointState.Verified, session.Breakpoints.Single().State, session.Breakpoints.Single().Message);
             Assert.AreEqual(DebugSessionState.Paused, session.Coordinator.State);
             var frames = await session.LoadStackAsync();
