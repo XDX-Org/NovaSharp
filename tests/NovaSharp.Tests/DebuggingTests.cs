@@ -114,6 +114,10 @@ public sealed class DebuggingTests
             while (session.Coordinator.State == DebugSessionState.Running && DateTime.UtcNow < deadline) await Task.Delay(20);
             Assert.AreEqual(DebugBreakpointState.Verified, session.Breakpoints.Single().State, session.Breakpoints.Single().Message);
             Assert.AreEqual(DebugSessionState.Paused, session.Coordinator.State);
+            var frames = await session.LoadStackAsync();
+            Assert.IsTrue(frames.Count > 0);
+            var evaluation = await session.EvaluateAsync("value", frames[0].Id);
+            Assert.AreEqual("41", evaluation!.Result);
         }
         finally { Directory.Delete(root, true); }
     }

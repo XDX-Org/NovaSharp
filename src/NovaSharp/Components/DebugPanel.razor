@@ -20,6 +20,11 @@
         {
             <ol aria-label="Call stack">@foreach (var frame in Session.Inspection.Frames) { <li>@frame.Name — @Path.GetFileName(frame.SourcePath):@frame.Line</li> }</ol>
         }
+        <form class="debug-evaluate" @onsubmit="Evaluate" aria-label="Watch expression">
+            <input aria-label="Expression" @bind="_expression" disabled="@(State != DebugSessionState.Paused)" />
+            <button type="submit" disabled="@(State != DebugSessionState.Paused)">Evaluate</button>
+            @if (_evaluation is not null) { <output>@_evaluation.Result @if (_evaluation.Type is not null) { <small>(@_evaluation.Type)</small> }</output> }
+        </form>
     </section>
 }
 
@@ -28,9 +33,16 @@
     [Parameter] public DebugAdapterSession? Session { get; set; }
     [Parameter] public EventCallback Stopped { get; set; }
     private DebugSessionState State => Session?.Coordinator.State ?? DebugSessionState.Idle;
+    private string _expression = "";
+    private DebugEvaluation? _evaluation;
     private Task Continue() => Session?.CurrentThreadId is { } thread ? Session.ContinueAsync(thread) : Task.CompletedTask;
     private Task Pause() => Session?.PauseAsync(Session.CurrentThreadId ?? 0) ?? Task.CompletedTask;
     private Task Step(string command) => Session?.CurrentThreadId is { } thread ? Session.StepAsync(command, thread) : Task.CompletedTask;
     private Task Stop() => Stopped.InvokeAsync();
     private async Task RefreshStack() { if (Session is not null) await Session.LoadStackAsync(); }
+    private async Task Evaluate()
+    {
+        if (Session is null) return;
+        _evaluation = await Session.EvaluateAsync(_expression, Session.Inspection.Frames.FirstOrDefault()?.Id);
+    }
 }

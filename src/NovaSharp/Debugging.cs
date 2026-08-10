@@ -185,16 +185,18 @@ public sealed class DebugAdapterSession : IAsyncDisposable
 {
     private readonly Process _process;
     private readonly DebugProtocolClient _protocol;
+    private readonly bool _ownsTarget;
     private readonly TaskCompletionSource _initialized = new(TaskCreationOptions.RunContinuationsAsynchronously);
     internal DebugSessionCoordinator Coordinator { get; } = new();
     internal DebugInspectionStore Inspection { get; } = new();
     internal IReadOnlyList<DebugBreakpoint> Breakpoints { get; private set; } = [];
     internal int? CurrentThreadId { get; private set; }
 
-    private DebugAdapterSession(Process process, DebugProtocolClient protocol)
+    private DebugAdapterSession(Process process, DebugProtocolClient protocol, bool ownsTarget = true)
     {
         _process = process;
         _protocol = protocol;
+        _ownsTarget = ownsTarget;
         protocol.EventReceived += OnEvent;
     }
 
@@ -227,6 +229,39 @@ public sealed class DebugAdapterSession : IAsyncDisposable
                 await session.SetBreakpointsAsync(configuration.Breakpoints, cancellationToken);
             await protocol.RequestAsync("configurationDone", null, TimeSpan.FromSeconds(5), cancellationToken);
             await launched;
+            if (session.Coordinator.State == DebugSessionState.Configuring) session.Coordinator.Transition(DebugSessionState.Running);
+            return session;
+        }
+        catch
+        {
+            session.Coordinator.Transition(DebugSessionState.Failed);
+            await session.DisposeAsync();
+            throw;
+        }
+    }
+
+    internal static async Task<DebugAdapterSession> AttachAsync(int processId, string? adapterPath = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (processId <= 0) throw new ArgumentOutOfRangeException(nameof(processId));
+        adapterPath ??= DebugAdapterCatalog.Resolve();
+        var start = new ProcessStartInfo(adapterPath) { RedirectStandardInput = true, RedirectStandardOutput = true,
+            RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
+        start.ArgumentList.Add("--interpreter=vscode");
+        var process = Process.Start(start) ?? throw new InvalidOperationException("Debug adapter did not start.");
+        var protocol = new DebugProtocolClient(process.StandardOutput.BaseStream, process.StandardInput.BaseStream);
+        var session = new DebugAdapterSession(process, protocol, ownsTarget: false);
+        session.Coordinator.Transition(DebugSessionState.Starting);
+        try
+        {
+            await protocol.RequestAsync("initialize", new { clientID = "novasharp", adapterID = "coreclr",
+                pathFormat = "path", linesStartAt1 = true, columnsStartAt1 = true }, TimeSpan.FromSeconds(5), cancellationToken);
+            session.Coordinator.Transition(DebugSessionState.Configuring);
+            var attached = protocol.RequestAsync("attach", new { name = "NovaSharp attach", type = "coreclr",
+                request = "attach", processId }, TimeSpan.FromSeconds(10), cancellationToken);
+            await session._initialized.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
+            await protocol.RequestAsync("configurationDone", null, TimeSpan.FromSeconds(5), cancellationToken);
+            await attached;
             if (session.Coordinator.State == DebugSessionState.Configuring) session.Coordinator.Transition(DebugSessionState.Running);
             return session;
         }
@@ -296,6 +331,28 @@ public sealed class DebugAdapterSession : IAsyncDisposable
         return variables;
     }
 
+    internal async Task<IReadOnlyList<DebugScope>> LoadScopesAsync(int frameId, CancellationToken cancellationToken = default)
+    {
+        if (Coordinator.State != DebugSessionState.Paused) return [];
+        var body = await _protocol.RequestAsync("scopes", new { frameId }, TimeSpan.FromSeconds(5), cancellationToken);
+        return body.TryGetProperty("scopes", out var values) ? values.EnumerateArray().Take(64).Select(value => new DebugScope(
+            value.GetProperty("name").GetString() ?? "Scope", value.GetProperty("variablesReference").GetInt32(),
+            value.TryGetProperty("expensive", out var expensive) && expensive.GetBoolean(),
+            value.TryGetProperty("namedVariables", out var named) ? named.GetInt32() : null,
+            value.TryGetProperty("indexedVariables", out var indexed) ? indexed.GetInt32() : null)).ToArray() : [];
+    }
+
+    internal async Task<DebugEvaluation?> EvaluateAsync(string expression, int? frameId, CancellationToken cancellationToken = default)
+    {
+        if (Coordinator.State != DebugSessionState.Paused || string.IsNullOrWhiteSpace(expression)) return null;
+        var arguments = new Dictionary<string, object?> { ["expression"] = expression, ["context"] = "watch" };
+        if (frameId is not null) arguments["frameId"] = frameId;
+        var body = await _protocol.RequestAsync("evaluate", arguments, TimeSpan.FromSeconds(5), cancellationToken);
+        return new(body.TryGetProperty("result", out var result) ? result.GetString() ?? "" : "",
+            body.TryGetProperty("type", out var type) ? type.GetString() : null,
+            body.TryGetProperty("variablesReference", out var reference) ? reference.GetInt32() : 0);
+    }
+
     private async Task ControlAsync(string command, object arguments, CancellationToken cancellationToken)
     {
         await _protocol.RequestAsync(command, arguments, TimeSpan.FromSeconds(5), cancellationToken);
@@ -340,7 +397,7 @@ public sealed class DebugAdapterSession : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _protocol.EventReceived -= OnEvent;
-        try { await _protocol.RequestAsync("disconnect", new { terminateDebuggee = true }, TimeSpan.FromSeconds(3)); } catch { }
+        try { await _protocol.RequestAsync("disconnect", new { terminateDebuggee = _ownsTarget }, TimeSpan.FromSeconds(3)); } catch { }
         await _protocol.DisposeAsync();
         if (!_process.HasExited) _process.Kill(entireProcessTree: true);
         await _process.WaitForExitAsync();
@@ -349,7 +406,9 @@ public sealed class DebugAdapterSession : IAsyncDisposable
 }
 
 internal sealed record DebugStackFrame(int Id, string Name, string? SourcePath, int Line, int Column);
+internal sealed record DebugScope(string Name, int VariablesReference, bool Expensive, int? NamedVariables, int? IndexedVariables);
 internal sealed record DebugVariable(string Name, string Value, string? Type, int VariablesReference, int? NamedVariables, int? IndexedVariables);
+internal sealed record DebugEvaluation(string Result, string? Type, int VariablesReference);
 
 internal sealed class DebugInspectionStore(int maxFrames = 256, int maxVariables = 10_000)
 {

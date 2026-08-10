@@ -244,6 +244,8 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
 .debug-panel { max-height: 180px; overflow: auto; padding: 8px 12px; border-top: 1px solid #343a46; background: #1d2027; }
 .debug-panel header { display: flex; align-items: center; gap: 7px; }
 .debug-panel header span { margin-right: auto; color: #9ca6b5; }
+.debug-evaluate { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
+.debug-evaluate input { min-width: 220px; }
 .theme-light { filter: invert(.88) hue-rotate(180deg); }
 .theme-light img, .theme-light svg { filter: invert(1) hue-rotate(180deg); }
 .high-contrast { --syntax-default: #fff; --syntax-keyword: #ff66ff; --syntax-string: #ffff66; --syntax-comment: #66ff66; }
