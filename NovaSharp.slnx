@@ -1,4 +1,6 @@
 <Solution>
   <Project Path="src/NovaSharp/NovaSharp.csproj" />
+  <Project Path="src/NovaSharp.ExtensionSdk/NovaSharp.ExtensionSdk.csproj" />
+  <Project Path="samples/HelloExtension/NovaSharp.HelloExtension.csproj" />
   <Project Path="tests/NovaSharp.Tests/NovaSharp.Tests.csproj" />
 </Solution>
