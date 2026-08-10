@@ -1,0 +1,12 @@
+{
+  "manifestVersion": 1,
+  "id": "novasharp.hello",
+  "name": "NovaSharp Hello",
+  "version": "1.0.0",
+  "apiVersion": "1.0",
+  "entryPoint": "NovaSharp.HelloExtension.dll",
+  "permissions": ["WorkspaceRead"],
+  "activationEvents": ["onCommand:novasharp.hello"],
+  "commands": [{"id": "novasharp.hello", "title": "Hello from extension"}],
+  "settings": [{"id": "novasharp.hello.greeting", "type": "string", "default": "Hello"}]
+}
