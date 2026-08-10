@@ -12,18 +12,21 @@ Source control UI, remote development, collaboration, notebooks, AI completion, 
 |---|---|---|
 | 1. Single-file editor shell | Complete | Phase 2 verification subsumes its build, test, package, and native-launch gates |
 | 2. Editor and file lifecycle | Complete | Four-platform verification passed; see `phase-02-decisions.md` |
-| 3. Workspace explorer | In progress | Automated gates pass in run 30742324717; Windows/macOS interactive native checks pending |
+| 3. Workspace explorer | Complete | Four-platform build/test/package evidence and Linux native interaction gates pass across runs 31394546585 and 31310379518 |
 | 4. Documents and movable tabs | Complete | Four-platform build/test/package and Linux interaction gates pass in run 30750653723 |
 | 5. Editor groups and split views | Complete | Four-platform build/test/package and Linux Phase 2–5 interaction gates pass in run 30760456811 |
 | 6. Solution model and Roslyn | Complete | Four-platform build/test/package and Linux Phase 2–6 interaction gates pass in run 30764773602 |
 | 7. C# IntelliSense | Complete | Phase 7 handoff records 65 tests and four-platform verification run 31266586068 |
 | 8. Diagnostics and code navigation | Complete | 68 tests, four-platform build/test/package, and Linux Phase 2–8 native gates pass in run 31268021847 |
-| 9. Workspace search and replace | In progress | Implementation and 79 local tests pass; four-platform and packaged Linux smoke evidence pending |
-| 10. Build, run, and output | In progress | Implementation and 87 local tests pass; four-platform and packaged Linux smoke evidence pending |
-| 11. Integrated terminal | In progress | Implementation and 89 local tests pass; four-platform and packaged Linux interaction evidence pending |
+| 9. Workspace search and replace | Complete | Four-platform build/test/package and packaged Linux Phase 9 gates pass in run 31310379518 |
+| 10. Build, run, and output | Complete | Four-platform build/test/package and packaged Linux build/run gates pass in run 31310379518 |
+| 11. Integrated terminal | Complete | Four-platform build/test/package and packaged Linux terminal gates pass in run 31310379518 |
 | 15. Razor, HTML, and CSS | Complete | 99 tests, four-platform build/test/package, and Linux Phase 2–15 interaction gates pass in run 31310379518 |
-| 15.2. Real language servers | Planned | Replace all editor language intelligence with pinned, packaged LSP servers; see `phase-15-2-LSPs.md` |
-| 12–14, 16–18 | Planned | Completion criteria not yet met |
+| 15.2. Real language servers | In progress | Release implementation and 118 local tests pass; final four-platform run and packaged gate evidence pending |
+| 12–14 | In progress | Bounded DAP transport/session/inspection and durable recovery foundations pass focused tests; adapter packaging and workbench UX remain |
+| 16 | In progress | Versioned manifest, compatibility, permission/trust boundary, and sample manifest pass focused tests; isolated host remains |
+| 17 | In progress | Project/framework/configuration/profile discovery and exact effective-command resolution pass focused tests; configurator UI remains |
+| 18 | In progress | Preview identity, local qualification script, SPDX language-server inventory, privacy/support/limitations/release notes exist; signing, installers, update/rollback, provenance, and clean-image gates remain |
 
 Status values are `planned`, `in progress`, `blocked`, and `complete`. Update this table only from test or release evidence; documentation or partial UI alone does not complete a phase.
 

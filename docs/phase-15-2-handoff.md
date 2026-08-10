@@ -1,12 +1,12 @@
 # Phase 15.2 handoff
 
-Date: 2026-08-09  
+Date: 2026-08-10  
 Branch: `phase15-2`  
 Base implementation: `d38db1a Implement Phase 15.2 language servers`
 
 ## Current state
 
-The real Roslyn, HTML, and CSS language servers are packaged and start successfully. The latest working tree contains uncommitted follow-up fixes and UI/theme work made after `d38db1a`.
+The real Roslyn/Razor, HTML, and CSS language servers are pinned, packaged, and are the only Release language-intelligence route. The working tree is committed and pushed.
 
 Verified locally:
 
@@ -17,16 +17,17 @@ Verified locally:
 - Dynamic diagnostic and semantic-token registrations are retained.
 - Roslyn's dynamically registered semantic-token legend is decoded.
 - Hover ranges use the server's camel-case JSON fields and empty hovers are suppressed.
-- All 24 `EditorCoreTests` and `LanguageServerTests` pass.
-- The solution builds successfully.
+- Release builds contain no `Microsoft.CodeAnalysis.*Features` dependency.
+- Razor delegates HTML features through its synchronized virtual document.
+- Completion preserves snippets, insert/replace ranges, additional edits, resolve data, and negotiated commands.
+- Code actions preserve resolve/commands and transactional workspace resource operations require preview confirmation.
+- Watched files, request timeouts, restart replay, redacted failures, notices, hashes, and SPDX inventory are covered.
+- The local release qualification passes 118 tests with a warning-free build.
 
 Current verification command:
 
 ```sh
-dotnet build NovaSharp.slnx --no-restore
-dotnet tests/NovaSharp.Tests/bin/Debug/net10.0/NovaSharp.Tests.dll \
-  --filter 'ClassName=NovaSharp.Tests.LanguageServerTests|ClassName=NovaSharp.Tests.EditorCoreTests' \
-  --progress off --output Normal
+tools/qualify-release.sh
 ```
 
 ## Resolved blocker: live Problems
@@ -56,16 +57,6 @@ This resolves the temporary deviation from `phase-15-2-LSPs.md`: the server is t
 - `CodeEditor`: cancellable language refreshes, local stable colouring, diagnostic retry attempt.
 - `EditorCore`/`app.css`: local Rider-style tokenizer and theme palette.
 
-## Working tree
+## Remaining release evidence
 
-The working tree is intentionally uncommitted. Review all changes before committing. `src/NovaSharp/BuildRun.cs` contains only an extra blank line and can be cleaned up if it is not intentional.
-
-Use:
-
-```sh
-git status --short
-git diff --check
-git diff --stat
-```
-
-Do not discard the working tree: it contains the crash, synchronization, workspace-open, restored-document, hover, diagnostic, and theme fixes described above.
+Do not mark Phase 15.2 complete until the final four-platform workflow is green. Native UI interaction remains automated under Linux/Xvfb; Windows and macOS run the same Release build, tests, real-server integration, and package checks without an interactive desktop session.
