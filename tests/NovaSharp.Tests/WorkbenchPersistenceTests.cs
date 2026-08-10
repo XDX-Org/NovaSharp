@@ -31,6 +31,19 @@ public sealed class WorkbenchPersistenceTests
         Assert.IsTrue(WorkbenchPersistence.RequiresSafeMode(new(1, null, [], 0.3, 0.3, null, 3)));
     }
 
+    [TestMethod]
+    public async Task InterruptedRestoresEnterSafeModeUntilReset()
+    {
+        using var fixture = new PersistenceFixture();
+        var guard = new StartupRestoreGuard(Path.Combine(fixture.Root, "restore.json"));
+        Assert.IsTrue(await guard.BeginAsync());
+        Assert.IsTrue(await guard.BeginAsync());
+        Assert.IsTrue(await guard.BeginAsync());
+        Assert.IsFalse(await guard.BeginAsync());
+        await guard.ResetAsync();
+        Assert.IsTrue(await guard.BeginAsync());
+    }
+
     private sealed class PersistenceFixture : IDisposable
     {
         internal string Root { get; } = Path.Combine(Path.GetTempPath(), "novasharp-state-" + Guid.NewGuid().ToString("N"));

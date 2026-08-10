@@ -287,6 +287,7 @@
     private EditorLayoutPersistence _persistence = null!;
     private WorkbenchPersistence _recovery = null!;
     private BuildConfigurationStore _buildConfigurationStore = null!;
+    private StartupRestoreGuard _restoreGuard = null!;
     private CancellationTokenSource? _recoverySave;
     private WorkspaceExplorer? _explorer;
     private SearchPanel? _searchPanel;
@@ -356,11 +357,11 @@
     {
         _wordWrap = Program.Configuration.Current.WordWrap;
         _suggestions = Program.Configuration.Current.AutoCompletion;
-        _persistence = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "NovaSharp", "workbench-session.json"));
         var applicationData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NovaSharp");
+        _persistence = new(Path.Combine(applicationData, "workbench-session.json"));
         _recovery = new(Path.Combine(applicationData, "workbench-state.json"), Path.Combine(applicationData, "recovery"));
         _buildConfigurationStore = new(Path.Combine(applicationData, "build-configurations"));
+        _restoreGuard = new(Path.Combine(applicationData, "restore-attempts.json"));
         _workspace.Changed += WorkspaceChanged;
         _projectSystem.Changed += ProjectSystemChanged;
         _languageProvider.Diagnostics.Changed += DiagnosticsChanged;
@@ -381,15 +382,20 @@
         else if (Program.SmokeFile is not null) await OpenTabAsync(Program.SmokeFile);
         else
         {
-            var state = await _persistence.LoadAsync();
-            await _workspace.RestoreAsync(state);
-            _explorerOpen = state.ExplorerOpen;
-            _searchOpen = state.SearchOpen;
-            _problemsOpen = state.ProblemsOpen;
-            _outputOpen = state.OutputOpen;
-            _terminalOpen = state.TerminalOpen;
-            if (state.SolutionPath is { } solutionPath && File.Exists(solutionPath))
-                await _projectSystem.OpenAsync(solutionPath);
+            if (await _restoreGuard.BeginAsync())
+            {
+                var state = await _persistence.LoadAsync();
+                await _workspace.RestoreAsync(state);
+                _explorerOpen = state.ExplorerOpen;
+                _searchOpen = state.SearchOpen;
+                _problemsOpen = state.ProblemsOpen;
+                _outputOpen = state.OutputOpen;
+                _terminalOpen = state.TerminalOpen;
+                if (state.SolutionPath is { } solutionPath && File.Exists(solutionPath))
+                    await _projectSystem.OpenAsync(solutionPath);
+                await _restoreGuard.CompleteAsync();
+            }
+            else _status = "Safe mode: workbench layout restoration was disabled after repeated startup failures.";
         }
         if (Program.Phase6Solution is not null) await _projectSystem.OpenAsync(Program.Phase6Solution);
         if (Program.Phase7Solution is not null) await _projectSystem.OpenAsync(Program.Phase7Solution);

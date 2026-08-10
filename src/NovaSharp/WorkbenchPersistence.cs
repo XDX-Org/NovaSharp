@@ -75,3 +75,30 @@ internal sealed class WorkbenchPersistence(string statePath, string recoveryDire
             || item.SelectionStart < 0 || item.SelectionEnd < item.SelectionStart)) throw new InvalidDataException("Invalid document state.");
     }
 }
+
+internal sealed class StartupRestoreGuard(string path)
+{
+    internal async Task<bool> BeginAsync(CancellationToken cancellationToken = default)
+    {
+        var failures = await ReadAsync(cancellationToken);
+        if (failures >= 3) return false;
+        await AtomicFile.WriteAsync(path, JsonSerializer.SerializeToUtf8Bytes(failures + 1), cancellationToken);
+        return true;
+    }
+
+    internal Task CompleteAsync(CancellationToken cancellationToken = default) =>
+        AtomicFile.WriteAsync(path, JsonSerializer.SerializeToUtf8Bytes(0), cancellationToken);
+
+    internal async Task ResetAsync(CancellationToken cancellationToken = default) => await CompleteAsync(cancellationToken);
+
+    private async Task<int> ReadAsync(CancellationToken cancellationToken)
+    {
+        if (!File.Exists(path)) return 0;
+        try
+        {
+            var value = JsonSerializer.Deserialize<int>(await File.ReadAllBytesAsync(path, cancellationToken));
+            return Math.Clamp(value, 0, 3);
+        }
+        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException) { return 3; }
+    }
+}
