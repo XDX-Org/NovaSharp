@@ -354,6 +354,7 @@
     private long _languageAnalysisRevision;
     private bool _startLanguageServersAfterRestore;
     private bool _languageStartupComplete;
+    private Task? _languageStartupTask;
     private bool _quickAccessOpen, _quickAccessCommands, _quickAccessBusy;
     private bool _projectReloading, _outputOpen, _terminalOpen, _debugOpen;
     private bool _showFind, _wordWrap, _externalChange, _explorerOpen = true, _problemsOpen, _suggestions = true;
@@ -609,12 +610,12 @@
     {
         if (!firstRender) return;
         _self = DotNetObjectReference.Create(this);
-        await RecoverWorkspaceSolutionAsync();
         if (_startLanguageServersAfterRestore)
         {
             _startLanguageServersAfterRestore = false;
-            _ = CompleteDeferredLanguageStartupAsync();
+            _languageStartupTask = CompleteDeferredLanguageStartupAsync();
         }
+        await RecoverWorkspaceSolutionAsync();
         await JS.InvokeVoidAsync("novaSharp.initEditorDragCleanup", _workbench, _self);
         await JS.InvokeVoidAsync("novaSharp.initPointerTabDrag", _workbench, _self);
         await JS.InvokeVoidAsync("novaSharp.initExplorerFileDrag", _workbench, _self);
@@ -703,6 +704,7 @@
             _startupProject = saved.StartupProject is { } savedProject
                 ? StartupProjects.FirstOrDefault(candidate => PathsEqual(candidate, savedProject)) : null;
         }
+        if (_languageStartupTask is not null) await _languageStartupTask;
         if (_languageStartupComplete) await ReplaceLanguageServersAsync();
         if (StartupProject is { } project)
         {
