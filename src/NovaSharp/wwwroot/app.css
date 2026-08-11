@@ -381,6 +381,8 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
 .completion-popup button.selected { background: #3b4d68; }
 .completion-popup small, .signature-popup small { color: #929cab; }
 .language-detail { max-width: 500px; padding: 7px; border-top: 1px solid #454b57; white-space: pre-wrap; }
+.language-detail pre, .hover-popup pre { margin: 5px 0 0; padding: 6px 8px; overflow: auto; border-radius: 3px; background: #191c21; white-space: pre; }
+.language-detail pre:first-child, .hover-popup pre:first-child { margin-top: 0; }
 .signature-popup { padding: 7px 9px; white-space: pre-wrap; }
 .hover-popup { width: max-content; min-width: min(320px, calc(100% - 16px)); max-width: calc(100% - 16px); max-height: min(420px, calc(100% - 16px)); padding: 0; overflow: auto; overscroll-behavior: contain; pointer-events: auto; white-space: pre-wrap; font-size: 12px; line-height: 1.4; }
 .hover-diagnostic { display: grid; max-width: 560px; grid-template-columns: auto minmax(180px, 1fr); gap: 9px; padding: 7px 10px; border-left: 3px solid #75a7e8; background: #252d39; }

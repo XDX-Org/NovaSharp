@@ -62,7 +62,7 @@
             }
             @if (SelectedCompletion?.Detail is { } detail)
             {
-                <div class="language-detail">@detail</div>
+                <div class="language-detail"><MarkdownView Content="detail" /></div>
             }
         </div>
     }
@@ -94,7 +94,7 @@
                 }
                 else
                 {
-                    <div class="@(IsFirstSemanticSection(index) ? "hover-signature" : section.StartsWith("Project:", StringComparison.Ordinal) ? "hover-context" : "hover-description")">@section</div>
+                    <div class="@(IsFirstSemanticSection(index) ? "hover-signature" : section.StartsWith("Project:", StringComparison.Ordinal) ? "hover-context" : "hover-description")"><MarkdownView Content="section" /></div>
                 }
             }
         </div>

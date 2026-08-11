@@ -1,0 +1,38 @@
+@foreach (var block in Blocks(Content))
+{
+    @if (block.Code)
+    {
+        <pre><code class="@(block.Language is null ? null : $"language-{block.Language}")">@block.Text</code></pre>
+    }
+    else
+    {
+        <div>@block.Text</div>
+    }
+}
+
+@code {
+    [Parameter] public string Content { get; set; } = string.Empty;
+
+    private static IEnumerable<(bool Code, string? Language, string Text)> Blocks(string markdown)
+    {
+        var lines = markdown.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        var prose = new List<string>();
+        for (var index = 0; index < lines.Length;)
+        {
+            if (!lines[index].TrimStart().StartsWith("```", StringComparison.Ordinal))
+            {
+                prose.Add(lines[index++]);
+                continue;
+            }
+            if (prose.Count > 0) { yield return (false, null, string.Join('\n', prose).Trim()); prose.Clear(); }
+            var fence = lines[index++].TrimStart();
+            var language = fence[3..].Trim() is { Length: > 0 } value ? value : null;
+            var code = new List<string>();
+            while (index < lines.Length && !lines[index].TrimStart().StartsWith("```", StringComparison.Ordinal))
+                code.Add(lines[index++]);
+            if (index < lines.Length) index++;
+            yield return (true, language, string.Join('\n', code));
+        }
+        if (prose.Count > 0) yield return (false, null, string.Join('\n', prose).Trim());
+    }
+}
