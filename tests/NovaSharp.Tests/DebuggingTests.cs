@@ -137,7 +137,7 @@ public sealed class DebuggingTests
         {
             await File.WriteAllTextAsync(Path.Combine(root, "Fixture.csproj"), "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net9.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings></PropertyGroup></Project>");
             var source = Path.Combine(root, "Program.cs");
-            await File.WriteAllTextAsync(source, "using System.Threading;\ninternal static class Program\n{\n    static void Main()\n    {\n        var value = 41;\n        for (var index = 0; index < 200; index++)\n        {\n            value++;\n            Thread.Sleep(10);\n        }\n        Console.WriteLine(value);\n    }\n}\n");
+            await File.WriteAllTextAsync(source, "using System.Threading;\ninternal static class Program\n{\n    static async Task Main()\n    {\n        using var ready = new ManualResetEventSlim();\n        var worker = new Thread(() => { ready.Set(); Thread.Sleep(30_000); });\n        worker.Start();\n        ready.Wait();\n        await Task.Yield();\n        var value = 41;\n        for (var index = 0; index < 200; index++)\n        {\n            value++;\n            Thread.Sleep(10);\n        }\n        try\n        {\n            throw new InvalidOperationException(\"fixture\");\n        }\n        catch (InvalidOperationException) { }\n        worker.Join();\n        Console.WriteLine(value);\n    }\n}\n");
             using var build = Process.Start(new ProcessStartInfo("dotnet") { WorkingDirectory = root, UseShellExecute = false,
                 RedirectStandardOutput = true, RedirectStandardError = true, ArgumentList = { "build", "--nologo", "--configuration", "Debug" } })!;
             await build.WaitForExitAsync();
@@ -145,7 +145,7 @@ public sealed class DebuggingTests
             var program = Path.Combine(root, "bin", "Debug", "net9.0", "Fixture.dll");
             var launchStarted = Stopwatch.GetTimestamp();
             await using var session = await DebugAdapterSession.LaunchAsync(new(program, root, [], StopAtEntry: true,
-                Breakpoints: [new(source, 9)]), adapter);
+                Breakpoints: [new(source, 14)]), adapter);
             Assert.IsTrue(Stopwatch.GetElapsedTime(launchStarted) < TimeSpan.FromSeconds(15), "Debug launch exceeded 15 seconds.");
             var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
             while (session.Coordinator.State == DebugSessionState.Running && DateTime.UtcNow < deadline) await Task.Delay(20);
@@ -160,8 +160,7 @@ public sealed class DebuggingTests
             }
             Assert.AreEqual(DebugBreakpointState.Verified, session.Breakpoints.Single().State, session.Breakpoints.Single().Message);
             var frames = await session.LoadStackAsync();
-            Assert.IsTrue((await session.LoadThreadsAsync()).Count > 0);
-            if (frames[0].Line != 9)
+            if (frames[0].Line != 14)
             {
                 var epoch = session.Coordinator.PauseEpoch;
                 deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
@@ -170,12 +169,21 @@ public sealed class DebuggingTests
                 frames = await session.LoadStackAsync();
             }
             Assert.IsTrue(frames.Count > 0);
-            Assert.AreEqual(9, frames[0].Line);
+            Assert.AreEqual(14, frames[0].Line);
+            Assert.IsTrue((await session.LoadThreadsAsync()).Count >= 2);
             var evaluationStarted = Stopwatch.GetTimestamp();
             var evaluation = await session.EvaluateAsync("value > 40", frames[0].Id);
             Assert.IsTrue(Stopwatch.GetElapsedTime(evaluationStarted) < TimeSpan.FromSeconds(5), "Evaluation exceeded five seconds.");
             Assert.AreEqual("true", evaluation!.Result, ignoreCase: true);
             Assert.IsTrue((await session.LoadScopesAsync(frames[0].Id)).Count > 0);
+            await session.SetExceptionBreakpointsAsync([new("all", true)]);
+            await session.ClearBreakpointsAsync(source);
+            var exceptionEpoch = session.Coordinator.PauseEpoch;
+            await session.ContinueAsync(session.CurrentThreadId!.Value);
+            deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+            while (session.Coordinator.PauseEpoch == exceptionEpoch && DateTime.UtcNow < deadline) await Task.Delay(20);
+            Assert.AreEqual(DebugSessionState.Paused, session.Coordinator.State);
+            StringAssert.Contains(session.StopReason ?? "", "exception");
         }
         finally { Directory.Delete(root, true); }
     }

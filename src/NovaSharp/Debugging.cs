@@ -381,6 +381,14 @@ public sealed class DebugAdapterSession : IAsyncDisposable
                 Message = bound[index].TryGetProperty("message", out var message) ? message.GetString() : null }).ToArray();
     }
 
+    internal async Task ClearBreakpointsAsync(string sourcePath, CancellationToken cancellationToken = default)
+    {
+        sourcePath = Path.GetFullPath(sourcePath);
+        await _protocol.RequestAsync("setBreakpoints", new { source = new { path = _sourceMapper.ToAdapter(sourcePath) },
+            breakpoints = Array.Empty<object>() }, TimeSpan.FromSeconds(5), cancellationToken);
+        Breakpoints = Breakpoints.Where(item => !PathsEqual(item.SourcePath, sourcePath)).ToArray();
+    }
+
     internal async Task<IReadOnlyList<DebugStackFrame>> LoadStackAsync(CancellationToken cancellationToken = default)
     {
         if (Coordinator.State != DebugSessionState.Paused || CurrentThreadId is not { } threadId) return [];
