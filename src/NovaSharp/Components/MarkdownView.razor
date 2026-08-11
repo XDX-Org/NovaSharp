@@ -34,7 +34,7 @@
     private static IEnumerable<(string Kind, string? Language, string Text, int Indent)> Blocks(string markdown)
     {
         for (var count = 0; count < 2; count++) markdown = System.Net.WebUtility.HtmlDecode(markdown);
-        markdown = System.Text.RegularExpressions.Regex.Replace(markdown, @"\\([\\`*_{}\[\]()#+\-.!])", "$1");
+        markdown = System.Text.RegularExpressions.Regex.Replace(markdown, @"\\([^\p{L}\p{N}\s])", "$1");
         var lines = markdown.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
         for (var index = 0; index < lines.Length;)
         {
