@@ -29,6 +29,18 @@ public sealed class EditorCoreTests
     }
 
     [TestMethod]
+    public async Task SemanticPresentationIsReusableOnlyForItsDocumentVersion()
+    {
+        var document = await DocumentAsync("class C { }");
+        document.AcceptSemanticPresentation(document.Content!, [new(6, 1, "class name")]);
+
+        Assert.AreEqual(document.Version, document.SemanticPresentation!.Value.Version);
+        document.Content += " ";
+        Assert.AreNotEqual(document.Version, document.SemanticPresentation!.Value.Version);
+        document.Dispose();
+    }
+
+    [TestMethod]
     public void SelectionTracksRevertedCompletionEdit()
     {
         const string completed = "class C { Task Run() { var result = Task.CompletedTask; return result; } }";

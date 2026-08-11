@@ -163,6 +163,7 @@
     private string _semanticValue = string.Empty;
     private string? _languageReadyKey;
     private int _semanticRevision, _renderedSemanticRevision, _presentationGeneration;
+    private long _semanticDocumentVersion = -1;
     private long _observedLanguageAnalysisRevision = -1;
     private int _selectedCompletion;
     private bool _outlineOpen;
@@ -228,6 +229,15 @@
 
     protected override void OnParametersSet()
     {
+        if (!_semanticReady && Document.SemanticPresentation is { } cached
+            && cached.Version == Document.Version && cached.Text == Value)
+        {
+            _semanticSpans = cached.Spans;
+            _semanticValue = cached.Text;
+            _semanticDocumentVersion = cached.Version;
+            _semanticReady = true;
+            _semanticRevision++;
+        }
         if (_renderedValue is not null && Value != _renderedValue && Value != _locallyEditedValue)
         {
             ViewState.ApplyTextChange(_renderedValue, Value);
@@ -530,6 +540,7 @@
     private async Task RefreshSemanticAsync()
     {
         if (ProjectLoading || Document.FilePath is null || !SemanticHighlighting || !Has(LanguageCapabilities.SemanticTokens)) return;
+        if (_semanticReady && _semanticDocumentVersion == Document.Version && _semanticValue == Value) return;
         _semanticRefreshCancellation?.Cancel();
         _semanticRefreshCancellation?.Dispose();
         _semanticRefreshCancellation = new();
@@ -545,7 +556,9 @@
         {
             _semanticSpans = spans;
             _semanticValue = value;
+            _semanticDocumentVersion = version;
             _semanticReady = true;
+            Document.AcceptSemanticPresentation(value, spans);
             _semanticRevision++;
             await InvokeAsync(QueuePresentation);
         }

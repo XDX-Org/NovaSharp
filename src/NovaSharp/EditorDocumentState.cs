@@ -77,6 +77,8 @@ public sealed class EditorViewState
         ? position : position >= oldEnd ? position + newEnd - oldEnd : newEnd;
 }
 
+internal readonly record struct SemanticPresentation(long Version, string Text, IReadOnlyList<SemanticSpan> Spans);
+
 public sealed class EditorDocumentState : IDisposable
 {
     private string? _content;
@@ -97,12 +99,15 @@ public sealed class EditorDocumentState : IDisposable
     internal DocumentEncoding Encoding { get; private set; } = DocumentEncoding.Utf8;
     internal LineEnding LineEnding { get; private set; } = LineEnding.Lf;
     internal long Version { get; private set; }
+    internal SemanticPresentation? SemanticPresentation { get; private set; }
     internal bool IsDirty => Version != _savedVersion;
     internal bool IsReadOnly => FilePath is not null && File.Exists(FilePath) && new FileInfo(FilePath).IsReadOnly;
     internal bool CanUndo => _undo.Count > 0;
     internal bool CanRedo => _redo.Count > 0;
     internal bool IsDeletedOnDisk => FilePath is not null && !File.Exists(FilePath);
     internal EditorSnapshot CreateSnapshot() => new(FilePath ?? string.Empty, _content ?? string.Empty, Version, IsDirty);
+    internal void AcceptSemanticPresentation(string text, IReadOnlyList<SemanticSpan> spans) =>
+        SemanticPresentation = new(Version, text, spans);
 
     internal string? Content
     {
