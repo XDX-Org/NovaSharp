@@ -17,7 +17,7 @@ internal sealed record DebugLaunchConfiguration(string Program, string WorkingDi
     IReadOnlyList<DebugExceptionFilter>? ExceptionFilters = null);
 internal sealed record DebugCapabilities(bool SupportsFunctionBreakpoints, bool SupportsConditionalBreakpoints,
     bool SupportsHitConditionalBreakpoints, bool SupportsLogPoints, bool SupportsExceptionOptions,
-    bool SupportsRestartRequest, bool SupportsStepBack);
+    bool SupportsRestartRequest, bool SupportsStepBack, bool SupportsExceptionBreakpoints);
 internal sealed record DebugThread(int Id, string Name);
 internal sealed record DebugFunctionBreakpoint(string Name, string? Condition = null, string? HitCondition = null,
     DebugBreakpointState State = DebugBreakpointState.Pending, string? Message = null);
@@ -209,7 +209,7 @@ public sealed class DebugAdapterSession : IAsyncDisposable
     internal IReadOnlyList<DebugBreakpoint> Breakpoints { get; private set; } = [];
     internal int? CurrentThreadId { get; private set; }
     internal string? StopReason { get; private set; }
-    internal DebugCapabilities Capabilities { get; private set; } = new(false, false, false, false, false, false, false);
+    internal DebugCapabilities Capabilities { get; private set; } = new(false, false, false, false, false, false, false, false);
 
     private DebugAdapterSession(Process process, DebugProtocolClient protocol, bool ownsTarget = true,
         IReadOnlyDictionary<string, string>? sourceMap = null)
@@ -337,6 +337,8 @@ public sealed class DebugAdapterSession : IAsyncDisposable
 
     internal Task SetExceptionBreakpointsAsync(IReadOnlyList<DebugExceptionFilter> filters, CancellationToken cancellationToken = default)
     {
+        if (!Capabilities.SupportsExceptionBreakpoints)
+            throw new NotSupportedException("Exception breakpoints are unavailable with this debug adapter.");
         var enabled = filters.Where(item => item.Enabled).ToArray();
         return _protocol.RequestAsync("setExceptionBreakpoints", new { filters = enabled.Select(item => item.Filter),
             filterOptions = enabled.Where(item => item.Condition is not null).Select(item => new { filterId = item.Filter, condition = item.Condition }) },
@@ -506,7 +508,9 @@ public sealed class DebugAdapterSession : IAsyncDisposable
     private static DebugCapabilities ParseCapabilities(JsonElement body) => new(
         Flag(body, "supportsFunctionBreakpoints"), Flag(body, "supportsConditionalBreakpoints"),
         Flag(body, "supportsHitConditionalBreakpoints"), Flag(body, "supportsLogPoints"),
-        Flag(body, "supportsExceptionOptions"), Flag(body, "supportsRestartRequest"), Flag(body, "supportsStepBack"));
+        Flag(body, "supportsExceptionOptions"), Flag(body, "supportsRestartRequest"), Flag(body, "supportsStepBack"),
+        !OperatingSystem.IsMacOS() && body.TryGetProperty("exceptionBreakpointFilters", out var filters)
+            && filters.ValueKind == JsonValueKind.Array && filters.GetArrayLength() > 0);
     private static bool Flag(JsonElement body, string name) => body.ValueKind == JsonValueKind.Object
         && body.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.True;
 

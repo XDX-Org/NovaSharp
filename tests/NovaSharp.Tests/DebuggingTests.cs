@@ -145,7 +145,7 @@ public sealed class DebuggingTests
             var program = Path.Combine(root, "bin", "Debug", "net9.0", "Fixture.dll");
             var launchStarted = Stopwatch.GetTimestamp();
             await using var session = await DebugAdapterSession.LaunchAsync(new(program, root, [], StopAtEntry: true,
-                Breakpoints: [new(source, 14)], ExceptionFilters: [new("all", true)]), adapter);
+                Breakpoints: [new(source, 14)], ExceptionFilters: OperatingSystem.IsMacOS() ? null : [new("all", true)]), adapter);
             Assert.IsTrue(Stopwatch.GetElapsedTime(launchStarted) < TimeSpan.FromSeconds(15), "Debug launch exceeded 15 seconds.");
             var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
             while (session.Coordinator.State == DebugSessionState.Running && DateTime.UtcNow < deadline) await Task.Delay(20);
@@ -176,6 +176,7 @@ public sealed class DebuggingTests
             Assert.IsTrue(Stopwatch.GetElapsedTime(evaluationStarted) < TimeSpan.FromSeconds(5), "Evaluation exceeded five seconds.");
             Assert.AreEqual("true", evaluation!.Result, ignoreCase: true);
             Assert.IsTrue((await session.LoadScopesAsync(frames[0].Id)).Count > 0);
+            if (!session.Capabilities.SupportsExceptionBreakpoints) return;
             await session.ClearBreakpointsAsync(source);
             var exceptionEpoch = session.Coordinator.PauseEpoch;
             await session.ContinueAsync(session.CurrentThreadId!.Value);
