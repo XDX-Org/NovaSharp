@@ -561,6 +561,7 @@
         await JS.InvokeVoidAsync("novaSharp.initPointerTabDrag", _workbench, _self);
         await JS.InvokeVoidAsync("novaSharp.initExplorerFileDrag", _workbench, _self);
         await JS.InvokeVoidAsync("novaSharp.initBottomPanelResize", _workbench);
+        await RecoverWorkspaceSolutionAsync();
         if (Program.Phase4Workspace is not null || Program.Phase5Workspace is not null)
             await JS.InvokeVoidAsync("novaSharp.startSmokePolling", _self,
                 Program.Phase4Workspace is not null, Program.Phase5Workspace is not null);
@@ -573,6 +574,26 @@
             await Task.Delay(100);
             await JS.InvokeVoidAsync("novaSharp.runPhase11Smoke", _workbench, _self);
         }
+    }
+
+    private async Task RecoverWorkspaceSolutionAsync()
+    {
+        if (_projectSystem.State.Path is not null || _explorer?.RootPath is not { } root
+            || Program.Phase3Workspace is not null) return;
+        var candidates = new[] { "*.slnx", "*.sln", "*.csproj" }
+            .SelectMany(pattern => Directory.EnumerateFiles(root, pattern, SearchOption.TopDirectoryOnly))
+            .Take(2).ToArray();
+        if (candidates is not [var path]) return;
+        await _projectSystem.OpenAsync(path);
+        if (_projectSystem.State.Path is null) return;
+        _persistedSolutionPath = Path.GetFullPath(path);
+        await ReplaceLanguageServersAsync();
+        if (StartupProject is { } project)
+        {
+            _startupProject = project;
+            await RestoreBuildConfigurationAsync(project);
+        }
+        await SaveLayoutAsync();
     }
 
     private async Task OpenFileAsync()
