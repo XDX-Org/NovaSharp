@@ -295,6 +295,7 @@
     private readonly List<NavigationState> _navigationHistory = [];
     private readonly EditorDocumentState _emptyDocument = new();
     private EditorLayoutPersistence _persistence = null!;
+    private WorkbenchLayoutState? _lastNonEmptyLayout;
     private WorkbenchPersistence _recovery = null!;
     private BuildConfigurationStore _buildConfigurationStore = null!;
     private StartupRestoreGuard _restoreGuard = null!;
@@ -398,6 +399,7 @@
             {
                 var state = await _persistence.LoadAsync();
                 _persistedSolutionPath = state.SolutionPath;
+                if (HasTabs(state.Root)) _lastNonEmptyLayout = state;
                 await _workspace.RestoreAsync(state);
                 _explorerOpen = state.ExplorerOpen;
                 _searchOpen = state.SearchOpen;
@@ -658,7 +660,7 @@
             if (_workspace.Layout.Groups.SelectMany(group => group.Tabs).Contains(tab))
                 _workspace.Close(_workspace.GroupContaining(tab).Id, tab, discard);
         TrackActiveDocument();
-        await SaveLayoutAsync();
+        await SaveLayoutAsync(allowEmpty: true);
     }
 
     private async Task ActiveChangedAsync() { TrackActiveDocument(); await SaveLayoutAsync(); }
@@ -1096,10 +1098,19 @@
             symbol.Name, symbol.ProjectName, NavigationKind.Definition));
     }
     private void ExplorerOpenChanged(bool open) { _explorerOpen = open; _ = SaveLayoutAsync(); }
-    private Task SaveLayoutAsync() => _persistence.SaveAsync(
-        _workspace.CaptureState() with { SolutionPath = _projectSystem.State.Path ?? _persistedSolutionPath, ExplorerOpen = _explorerOpen,
+    private Task SaveLayoutAsync(bool allowEmpty = false)
+    {
+        var state = _workspace.CaptureState() with { SolutionPath = _projectSystem.State.Path ?? _persistedSolutionPath, ExplorerOpen = _explorerOpen,
             SearchOpen = _searchOpen, ProblemsOpen = _problemsOpen, OutputOpen = _outputOpen,
-            TerminalOpen = _terminalOpen, StartupProject = StartupProject });
+            TerminalOpen = _terminalOpen, StartupProject = StartupProject };
+        if (HasTabs(state.Root)) _lastNonEmptyLayout = state;
+        else if (allowEmpty) _lastNonEmptyLayout = null;
+        else if (_lastNonEmptyLayout is { } previous)
+            state = state with { Root = previous.Root, FocusedGroupId = previous.FocusedGroupId };
+        return _persistence.SaveAsync(state);
+    }
+    private static bool HasTabs(LayoutNodeState? node) => node is not null
+        && (node.Tabs?.Length > 0 || HasTabs(node.First) || HasTabs(node.Second));
     private void WorkspaceChanged() => _ = InvokeAsync(StateHasChanged);
     private void OnExternalChange() => _ = InvokeAsync(() => { _externalChange = true; StateHasChanged(); });
     private void UntrackActiveDocument() => _document.ExternalChangeDetected -= OnExternalChange;
@@ -1326,7 +1337,7 @@
         _recoverySave?.Dispose();
         if (_debugSession is not null) _debugSession.DisposeAsync().AsTask().GetAwaiter().GetResult();
         CloseQuickAccess();
-        Task.Run(SaveLayoutAsync).GetAwaiter().GetResult();
+        Task.Run(() => SaveLayoutAsync()).GetAwaiter().GetResult();
         _workspace.Changed -= WorkspaceChanged;
         _projectSystem.Changed -= ProjectSystemChanged;
         _languageProvider.Diagnostics.Changed -= DiagnosticsChanged;
@@ -1348,7 +1359,7 @@
     private bool ConfirmClose()
     {
         var confirmed = CanClose();
-        if (confirmed) Task.Run(SaveLayoutAsync).GetAwaiter().GetResult();
+        if (confirmed) Task.Run(() => SaveLayoutAsync()).GetAwaiter().GetResult();
         return confirmed;
     }
 
