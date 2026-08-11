@@ -67,9 +67,17 @@ select:disabled { opacity: .45; cursor: default; }
     border-bottom: 0;
     background: #1c1f25;
 }
-.build-controls { display: flex; min-width: 0; align-items: center; gap: 5px; margin-right: 40px; margin-left: auto; }
-.build-controls span { color: #b9c2d0; white-space: nowrap; }
-.build-controls button { padding-inline: 8px; }
+.build-controls { display: flex; min-width: 0; align-items: center; gap: 7px; margin-right: 40px; margin-left: auto; }
+.startup-project { display: flex; min-width: 0; height: 28px; align-items: center; gap: 7px; padding: 0 9px 0 7px; border: 1px solid #3d4654; border-radius: 5px; background: #242932; box-shadow: inset 0 1px #ffffff08; }
+.startup-project-icon { display: grid; width: 17px; height: 17px; flex: 0 0 17px; place-items: center; border-radius: 4px; color: #9fe0ba; background: #294538; font-size: 8px; }
+.startup-project-name { min-width: 0; overflow: hidden; color: #e2e7ef; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.startup-project-detail { padding-left: 7px; border-left: 1px solid #46505e; color: #929dac; font-size: var(--text-small); white-space: nowrap; }
+.build-controls > button { padding-inline: 8px; }
+.build-actions { display: flex; overflow: hidden; border: 1px solid #454b57; border-radius: 5px; }
+.build-actions button { height: 27px; padding-inline: 9px; border: 0; border-right: 1px solid #454b57; border-radius: 0; }
+.build-actions button:last-child { border-right: 0; }
+.build-actions .run-action { color: #bce8cb; }
+.build-actions .stop-action:not(:disabled) { color: #ff9b9b; }
 .main-menu { position: relative; }
 .menu-bar { display: flex; align-items: center; gap: 2px; }
 .menu-dismiss { position: fixed; z-index: 49; inset: 0; }

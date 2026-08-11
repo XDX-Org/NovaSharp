@@ -92,12 +92,22 @@
         @if (StartupProjects.Count > 0)
         {
             <div class="build-controls" aria-label="Build and run settings">
-                <span title="Active build configuration">@Path.GetFileNameWithoutExtension(StartupProject) · @_buildConfiguration@(!string.IsNullOrEmpty(_targetFramework) ? $" · {_targetFramework}" : "")</span>
+                <div class="startup-project" title="Startup project">
+                    <span class="startup-project-icon" aria-hidden="true">▶</span>
+                    <span class="startup-project-name">@Path.GetFileNameWithoutExtension(StartupProject)</span>
+                    <span class="startup-project-detail">@_buildConfiguration</span>
+                    @if (!string.IsNullOrEmpty(_targetFramework))
+                    {
+                        <span class="startup-project-detail">@_targetFramework</span>
+                    }
+                </div>
                 <button title="Open Build Configurator" aria-label="Build Configurator" @onclick="OpenBuildConfigurator">Configure…</button>
-                <button title="Build startup project (Ctrl+Shift+B)" aria-label="Build startup project" @onclick="() => StartBuildAsync(BuildOperation.Build)">Build</button>
-                <button title="Run without debugging (Ctrl+F5)" aria-label="Run startup project" @onclick="() => StartBuildAsync(BuildOperation.Run)">Run</button>
-                <button title="Start debugging (F5)" aria-label="Start debugging" @onclick="StartDebugAsync">Debug</button>
-                <button title="Stop build or run" aria-label="Stop build or run" disabled="@(_buildRun.ActiveTask is null)" @onclick="StopBuild">■</button>
+                <div class="build-actions">
+                    <button title="Build startup project (Ctrl+Shift+B)" aria-label="Build startup project" @onclick="() => StartBuildAsync(BuildOperation.Build)">Build</button>
+                    <button class="run-action" title="Run without debugging (Ctrl+F5)" aria-label="Run startup project" @onclick="() => StartBuildAsync(BuildOperation.Run)">Run</button>
+                    <button title="Start debugging (F5)" aria-label="Start debugging" @onclick="StartDebugAsync">Debug</button>
+                    <button class="stop-action" title="Stop build or run" aria-label="Stop build or run" disabled="@(_buildRun.ActiveTask is null)" @onclick="StopBuild">■</button>
+                </div>
             </div>
         }
     </header>
