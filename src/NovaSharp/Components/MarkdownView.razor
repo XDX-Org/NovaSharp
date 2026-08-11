@@ -60,7 +60,15 @@
             while (index < lines.Length && !lines[index].TrimStart().StartsWith("```", StringComparison.Ordinal))
                 code.Add(lines[index++]);
             if (index < lines.Length) index++;
-            yield return ("code", language, string.Join('\n', code), 0);
+            var codeText = string.Join('\n', code).TrimEnd();
+            if (string.IsNullOrWhiteSpace(codeText)) continue;
+            var trimmedCode = codeText.Trim();
+            if (!trimmedCode.Contains('\n') && trimmedCode[0] is '-' or '*' or '+' or '○' or '◦')
+            {
+                var item = trimmedCode[1..].TrimStart();
+                if (item.Length > 0) yield return ("list", null, item, 0);
+            }
+            else yield return ("code", language, codeText, 0);
         }
     }
 }
