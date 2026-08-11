@@ -164,7 +164,6 @@
     private string _semanticValue = string.Empty;
     private string? _languageReadyKey;
     private int _semanticRevision, _renderedSemanticRevision, _presentationGeneration;
-    private long _semanticDocumentVersion = -1;
     private long _observedLanguageAnalysisRevision = -1;
     private int _selectedCompletion;
     private bool _outlineOpen;
@@ -235,7 +234,6 @@
         {
             _semanticSpans = cached.Spans;
             _semanticValue = cached.Text;
-            _semanticDocumentVersion = cached.Version;
             _semanticReady = true;
             _semanticRevision++;
         }
@@ -541,7 +539,6 @@
     private async Task RefreshSemanticAsync()
     {
         if (ProjectLoading || Document.FilePath is null || !SemanticHighlighting || !Has(LanguageCapabilities.SemanticTokens)) return;
-        if (_semanticReady && _semanticDocumentVersion == Document.Version && _semanticValue == Value) return;
         _semanticRefreshCancellation?.Cancel();
         _semanticRefreshCancellation?.Dispose();
         _semanticRefreshCancellation = new();
@@ -553,15 +550,26 @@
         var spans = await _semanticRequest.RunAsync(
             token => LanguageProvider.GetSemanticSpansAsync(Request(value.Length), token), version, cancellationToken);
         if (cancellationToken.IsCancellationRequested || Document.Version != version || Value != value) return;
+        if (!_semanticReady && spans is not null)
+        {
+            try { await Task.Delay(250, cancellationToken); }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return; }
+            spans = await _semanticRequest.RunAsync(
+                token => LanguageProvider.GetSemanticSpansAsync(Request(value.Length), token), version, cancellationToken);
+            if (cancellationToken.IsCancellationRequested || Document.Version != version || Value != value) return;
+        }
         if (spans is not null)
         {
+            var changed = _semanticValue != value || !_semanticSpans.SequenceEqual(spans);
             _semanticSpans = spans;
             _semanticValue = value;
-            _semanticDocumentVersion = version;
             _semanticReady = true;
             Document.AcceptSemanticPresentation(value, spans);
-            _semanticRevision++;
-            await InvokeAsync(QueuePresentation);
+            if (changed)
+            {
+                _semanticRevision++;
+                await InvokeAsync(QueuePresentation);
+            }
         }
         var symbols = await ExtendedProvider.GetDocumentSymbolsAsync(Request(Value.Length), cancellationToken);
         if (Document.Version == version) _symbols = symbols;
