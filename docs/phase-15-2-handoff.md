@@ -22,7 +22,7 @@ Verified locally:
 - Completion preserves snippets, insert/replace ranges, additional edits, resolve data, and negotiated commands.
 - Code actions preserve resolve/commands and transactional workspace resource operations require preview confirmation.
 - Watched files, request timeouts, restart replay, redacted failures, notices, hashes, and SPDX inventory are covered.
-- The local release qualification passes 118 tests with a warning-free build.
+- The local release qualification passes 128 tests with a warning-free build.
 
 Current verification command:
 
@@ -57,6 +57,6 @@ This resolves the temporary deviation from `phase-15-2-LSPs.md`: the server is t
 - `CodeEditor`: cancellable language refreshes, local stable colouring, diagnostic retry attempt.
 - `EditorCore`/`app.css`: local Rider-style tokenizer and theme palette.
 
-## Remaining release evidence
+## Release evidence
 
-Do not mark Phase 15.2 complete until the final four-platform workflow is green. Native UI interaction remains automated under Linux/Xvfb; Windows and macOS run the same Release build, tests, real-server integration, and package checks without an interactive desktop session.
+Phase 15.2 is complete. Workflow run `31484488987` passes the Release build, 128 tests, packaging, and applicable native interaction gates on Linux x64, Windows x64, macOS arm64, and macOS x64. Native UI interaction is automated under Linux/Xvfb; Windows and macOS run the same Release build, tests, real-server integration, and package checks without an interactive desktop session.

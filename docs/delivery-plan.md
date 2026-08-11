@@ -22,7 +22,7 @@ Source control UI, remote development, collaboration, notebooks, AI completion, 
 | 10. Build, run, and output | Complete | Four-platform build/test/package and packaged Linux build/run gates pass in run 31310379518 |
 | 11. Integrated terminal | Complete | Four-platform build/test/package and packaged Linux terminal gates pass in run 31310379518 |
 | 15. Razor, HTML, and CSS | Complete | 99 tests, four-platform build/test/package, and Linux Phase 2–15 interaction gates pass in run 31310379518 |
-| 15.2. Real language servers | In progress | Release implementation and 118 local tests pass; final four-platform run and packaged gate evidence pending |
+| 15.2. Real language servers | Complete | 128 tests, four-platform Release build/test/package, and packaged Linux Phase 2–15 interaction gates pass in run 31484488987 |
 | 12–14 | In progress | Bounded DAP transport/session/inspection and durable recovery foundations pass focused tests; adapter packaging and workbench UX remain |
 | 16 | In progress | Versioned manifest, compatibility, permission/trust boundary, and sample manifest pass focused tests; isolated host remains |
 | 17 | In progress | Project/framework/configuration/profile discovery and exact effective-command resolution pass focused tests; configurator UI remains |
