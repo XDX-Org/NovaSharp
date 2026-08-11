@@ -517,7 +517,8 @@
         }
         await Task.WhenAll(_languageServers.Select(server => server.Manager.StartAsync()));
         await SyncLanguageDocumentsAsync();
-        await Task.WhenAll(_languageServers.Select(server => AnalyzeOpenDocumentsAsync(server.Kind)));
+        _languageStartupComplete = true;
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task<bool> PreviewServerWorkspaceEditAsync(System.Text.Json.JsonElement edit,
