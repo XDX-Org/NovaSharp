@@ -60,7 +60,7 @@
                     <span>@item.DisplayText</span><small>@item.Kind</small>
                 </button>
             }
-            @if (_completion.Items[_selectedCompletion].Detail is { } detail)
+            @if (SelectedCompletion?.Detail is { } detail)
             {
                 <div class="language-detail">@detail</div>
             }
@@ -295,8 +295,8 @@
             case "hover-close": _hover = null; break;
             case "completion-next": MoveCompletion(1); break;
             case "completion-previous": MoveCompletion(-1); break;
-            case "completion-accept" when _completion is { Items.Count: > 0 }:
-                await CommitCompletionAsync(_completion.Items[_selectedCompletion]); break;
+            case "completion-accept" when SelectedCompletion is { } completion:
+                await CommitCompletionAsync(completion); break;
             case "escape": _completion = null; _signature = null; _hover = null; break;
             case "format" when Has(LanguageCapabilities.Formatting): await FormatAsync(); break;
             case "definition" when Has(LanguageCapabilities.Navigation): await RequestNavigationAsync(caret, "definition"); break;
@@ -370,12 +370,12 @@
 
     private async Task FocusCompletionAsync(int index)
     {
-        if (_completion is null) return;
+        if (_completion is not { } completion || index < 0 || index >= completion.Items.Count) return;
         _selectedCompletion = index;
-        var item = _completion.Items[index];
+        var item = completion.Items[index];
         var detail = await LanguageProvider.GetCompletionDetailsAsync(Request(ViewState.SelectionStart), item.Id, default);
-        if (detail.SourceVersion != Document.Version || detail.Value is null) return;
-        var items = _completion.Items.ToArray();
+        if (detail.SourceVersion != Document.Version || detail.Value is null || !ReferenceEquals(_completion, completion)) return;
+        var items = completion.Items.ToArray();
         items[index] = detail.Value;
         _completion = new(items);
     }
@@ -604,6 +604,9 @@
         _selectedCompletion = (_selectedCompletion + delta + _completion.Items.Count) % _completion.Items.Count;
         _ = FocusCompletionAsync(_selectedCompletion);
     }
+    private CompletionEntry? SelectedCompletion => _completion is { Items.Count: > 0 } completion
+        ? completion.Items[Math.Clamp(_selectedCompletion, 0, completion.Items.Count - 1)]
+        : null;
     private void CloseCompletion() { _completion = null; _selectedCompletion = 0; }
 
     [JSInvokable]
