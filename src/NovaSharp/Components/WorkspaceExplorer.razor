@@ -108,6 +108,7 @@
     [Parameter] public EventCallback<string> FileOpened { get; set; }
     [Parameter] public EventCallback<string> FilePreviewed { get; set; }
     [Parameter] public EventCallback<bool> OpenChanged { get; set; }
+    [Parameter] public EventCallback<string> WorkspaceOpened { get; set; }
     [Parameter] public RoslynProjectSystem? ProjectSystem { get; set; }
     internal string? RootPath => _workspace.RootPath;
     private readonly WorkspaceService _workspace = new(Program.Configuration.Current.ExplorerIgnoredNames);
@@ -118,6 +119,7 @@
     private ElementReference _contextMenu;
     private DotNetObjectReference<WorkspaceExplorer>? _self;
     private WorkspacePersistence _persistence = null!;
+    private WorkspacePersistence _globalPersistence = null!;
     private WorkspaceRestoreState _state = new();
     private string? _presentedSolution;
     private WorkspaceEntry? _selected, _deletePending;
@@ -138,7 +140,7 @@
     {
         if (ProjectSystem?.State.Path == _presentedSolution) return;
         _presentedSolution = ProjectSystem?.State.Path;
-        _solutionView = _presentedSolution is not null;
+        _solutionView = _state.SolutionView ?? _presentedSolution is not null;
         if (_presentedSolution is { } solutionPath)
         {
             var root = Path.GetDirectoryName(solutionPath)!;
@@ -151,10 +153,11 @@
     {
         HideContextMenu();
         var value = args.Value?.ToString();
-        if (value == "solution") { _solutionView = true; return; }
+        if (value == "solution") { _solutionView = true; await SaveStateAsync(); return; }
         if (value != "files" || ProjectSystem?.State.Path is not { } solutionPath) return;
         _solutionView = false;
         await OpenFolderCoreAsync(Path.GetDirectoryName(solutionPath)!);
+        await SaveStateAsync();
     }
 
     private async Task ShowProjectContextMenuAsync(ProjectNodeContextRequest request)
@@ -182,8 +185,18 @@
     protected override async Task OnInitializedAsync()
     {
         var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NovaSharp", "workspace-state.json");
-        _persistence = new(path);
-        _state = await _persistence.LoadAsync();
+        _globalPersistence = new(path);
+        _persistence = _globalPersistence;
+        _state = await _globalPersistence.LoadAsync();
+        if (_state.WorkspacePath is { } storedRoot && Directory.Exists(storedRoot))
+        {
+            var workspaceStatePath = WorkspaceStatePath(storedRoot);
+            if (File.Exists(workspaceStatePath))
+            {
+                _persistence = new(workspaceStatePath);
+                _state = (await _persistence.LoadAsync()) with { WorkspacePath = storedRoot };
+            }
+        }
         if (Program.Phase6Solution is not null) _state = _state with { SidebarCollapsed = false };
         await OpenChanged.InvokeAsync(!_state.SidebarCollapsed);
         _workspace.Changed += OnWorkspaceChanged;
@@ -220,15 +233,24 @@
     {
         var folders = await Program.App.MainWindow.ShowOpenFolderDialogAsync("Open workspace", _workspace.RootPath, false);
         if (folders is not [var path]) return;
-        try { await OpenFolderCoreAsync(path); }
+        try { await OpenFolderCoreAsync(path); await WorkspaceOpened.InvokeAsync(Path.GetFullPath(path)); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException) { _error = ex.Message; }
     }
 
     private async Task OpenFolderCoreAsync(string path)
     {
+        path = Path.GetFullPath(path);
+        await _globalPersistence.SaveAsync(new(WorkspacePath: path, SidebarCollapsed: _state.SidebarCollapsed,
+            SidebarWidth: _state.SidebarWidth));
+        _persistence = new(WorkspaceStatePath(path));
+        var saved = await _persistence.LoadAsync();
+        _state = saved.WorkspacePath is null
+            ? _state with { WorkspacePath = path, ExpandedPaths = [] }
+            : saved with { WorkspacePath = path };
         _workspace.Open(path); _children.Clear(); _expanded.Clear();
-        await LoadAsync(_workspace.RootPath!); Rebuild(); await SaveStateAsync();
+        await RestoreAsync(); await SaveStateAsync();
     }
+    private static string WorkspaceStatePath(string root) => Path.Combine(root, ".Nova", "explorer.json");
     private static bool PathsEqual(string left, string right) => string.Equals(Path.GetFullPath(left), Path.GetFullPath(right),
         OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 
@@ -424,7 +446,14 @@
 
     private void OnWorkspaceError(string message) => _ = InvokeAsync(() => { _error = message; StateHasChanged(); });
     private void OnWorkspaceRescanRequired() => _ = InvokeAsync(RefreshAsync);
-    private async Task CloseWorkspaceAsync() { _workspace.Close(); _children.Clear(); _expanded.Clear(); _visible.Clear(); _selected = null; await SaveStateAsync(); }
+    public async Task CloseWorkspaceAsync()
+    {
+        await SaveStateAsync();
+        _workspace.Close(); _children.Clear(); _expanded.Clear(); _visible.Clear(); _selected = null;
+        _persistence = _globalPersistence;
+        _state = _state with { WorkspacePath = null, ExpandedPaths = [] };
+        await SaveStateAsync();
+    }
     public async Task ToggleCollapsedAsync()
     {
         _state = _state with { SidebarCollapsed = !_state.SidebarCollapsed };
@@ -449,7 +478,8 @@
         };
         return Program.CompletePhase3SmokeAsync(verified);
     }
-    private Task SaveStateAsync() => _persistence.SaveAsync(_state with { WorkspacePath = _workspace.RootPath, ExpandedPaths = _expanded.ToArray() });
+    private Task SaveStateAsync() => _persistence.SaveAsync(_state with { WorkspacePath = _workspace.RootPath,
+        ExpandedPaths = _expanded.ToArray(), SolutionView = _solutionView });
     private sealed record TreeRow(WorkspaceEntry Entry, int Depth);
 
     public async ValueTask DisposeAsync()

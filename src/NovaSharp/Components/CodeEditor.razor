@@ -1,7 +1,8 @@
 @inject IJSRuntime JS
 @implements IAsyncDisposable
 
-<div class="code-editor @(WordWrap ? "word-wrap" : null)" data-language="@LanguageInfo.LanguageId" @ref="_root">
+<div class="code-editor @(WordWrap ? "word-wrap" : null) @(SemanticPending ? "semantic-pending" : null)"
+     data-language="@LanguageInfo.LanguageId" @ref="_root">
     @if (_outlineOpen)
     {
         <div class="outline-popup language-popup" role="dialog" aria-label="Document outline">
@@ -165,8 +166,11 @@
     private long _observedLanguageAnalysisRevision = -1;
     private int _selectedCompletion;
     private bool _outlineOpen;
+    private bool _semanticReady;
     private bool _scrollCompletionAfterRender;
     private bool _refreshLanguageAfterRender;
+    private bool _synchronizeViewStateAfterRender;
+    private string? _renderedValue, _locallyEditedValue;
     private string _formatDiagnostic = "Not started";
     private double _popupX = 72, _popupY = 24;
     private double _hoverPopupX = 72, _hoverPopupY = 24;
@@ -174,6 +178,8 @@
     private LanguageProviderInfo LanguageInfo => Document.FilePath is { } path
         ? ExtendedProvider.GetInfo(path) : new("text", "Text", LanguageCapabilities.None, false, "Language services unavailable");
     private ICollection<EditorLine> Lines => (ICollection<EditorLine>)_lines;
+    private bool SemanticPending => !_semanticReady && SemanticHighlighting
+        && (ProjectLoading || Has(LanguageCapabilities.SemanticTokens));
     private void QueuePresentation()
     {
         if (_semanticValue != Value)
@@ -222,6 +228,13 @@
 
     protected override void OnParametersSet()
     {
+        if (_renderedValue is not null && Value != _renderedValue && Value != _locallyEditedValue)
+        {
+            ViewState.ApplyTextChange(_renderedValue, Value);
+            _synchronizeViewStateAfterRender = true;
+        }
+        _renderedValue = Value;
+        _locallyEditedValue = null;
         if (Document.FilePath is { } diagnosticPath)
             _diagnostics = Diagnostics.Where(item => string.Equals(Path.GetFullPath(item.DocumentPath),
                 Path.GetFullPath(diagnosticPath), OperatingSystem.IsWindows()
@@ -265,6 +278,11 @@
         }
         else if (!firstRender && _module is not null)
         {
+            if (_synchronizeViewStateAfterRender)
+            {
+                _synchronizeViewStateAfterRender = false;
+                await _module.InvokeVoidAsync("setEditorSelection", _root, ViewState.SelectionStart, ViewState.SelectionEnd);
+            }
             await _module.InvokeVoidAsync("fitLanguagePopups", _root);
             if (_scrollCompletionAfterRender)
             {
@@ -279,8 +297,9 @@
     {
         _semanticRefreshCancellation?.Cancel();
         _diagnosticRefreshCancellation?.Cancel();
-        await ValueChanged.InvokeAsync(value);
         ViewState.SetSelection(caret, caret, value.Length);
+        _locallyEditedValue = value;
+        await ValueChanged.InvokeAsync(value);
         if (ProjectLoading || Document.FilePath is null) return;
         if (SuggestionsEnabled && Has(LanguageCapabilities.Completion)
             && (trigger is "." or " " or "<" or "@" or ":" or "-" || trigger?.Length == 1 && char.IsLetterOrDigit(trigger[0])))
@@ -526,6 +545,7 @@
         {
             _semanticSpans = spans;
             _semanticValue = value;
+            _semanticReady = true;
             _semanticRevision++;
             await InvokeAsync(QueuePresentation);
         }

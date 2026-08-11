@@ -5,6 +5,9 @@ export function createEditor(root, wordWrap, dotNet, selectionStart, selectionEn
     input.setSelectionRange(selectionStart, selectionEnd);
     input.scrollTop = scrollTop;
     input.scrollLeft = scrollLeft;
+    const resizeObserver = new ResizeObserver(() =>
+        root.style.setProperty('--editor-bottom-space', `${Math.max(24, Math.round(input.clientHeight / 10))}px`));
+    resizeObserver.observe(input);
 
     let viewStateTimer;
     const persistViewState = () => {
@@ -158,7 +161,7 @@ export function createEditor(root, wordWrap, dotNet, selectionStart, selectionEn
     root.addEventListener('pointerover', rootPointerover);
     root.addEventListener('pointerout', rootPointerout);
     root.__novaEditor = { input, dotNet, sync, keydown, compositionStart, compositionInput, inputChanged, compositionEnd,
-        selectionChange, blur, pointermove, pointerleave, rootPointerover, rootPointerout,
+        selectionChange, blur, pointermove, pointerleave, rootPointerover, rootPointerout, resizeObserver,
         get viewStateTimer() { return viewStateTimer; },
         get hoverTimer() { return hoverTimer; }, get hoverCloseTimer() { return hoverCloseTimer; } };
 }
@@ -178,6 +181,7 @@ export function disposeEditor(root) {
     clearTimeout(editor.viewStateTimer);
     clearTimeout(editor.hoverTimer);
     clearTimeout(editor.hoverCloseTimer);
+    editor.resizeObserver.disconnect();
     editor.input.removeEventListener('pointermove', editor.pointermove);
     editor.input.removeEventListener('pointerleave', editor.pointerleave);
     root.removeEventListener('pointerover', editor.rootPointerover);
@@ -215,6 +219,12 @@ export function replaceEditorText(root, text, selectionStart, selectionLength) {
     input.value = text;
     input.setSelectionRange(selectionStart, selectionStart + selectionLength);
     input.dispatchEvent(new InputEvent('input', { bubbles: true, data: null, inputType: 'insertReplacementText' }));
+    input.focus();
+}
+
+export function setEditorSelection(root, selectionStart, selectionEnd) {
+    const input = root.querySelector('.editor-input');
+    input.setSelectionRange(selectionStart, selectionEnd);
     input.focus();
 }
 
@@ -264,10 +274,11 @@ function fitPopup(root, popup) {
 function pinPopup(root, popup) {
     if (!popup.matches('.completion-popup, .hover-popup')) return false;
     const workbench = root.closest('.workbench');
-    const placement = ['topleft', 'topright', 'bottomleft', 'bottomright']
+    const placement = ['topleft', 'topcenter', 'topright', 'leftcenter', 'rightcenter',
+        'bottomleft', 'bottomcenter', 'bottomright']
         .find(value => workbench?.classList.contains(`popup-placement-${value}`));
     if (!placement) {
-        for (const property of ['position', 'top', 'right', 'bottom', 'left', 'max-width', 'max-height'])
+        for (const property of ['position', 'top', 'right', 'bottom', 'left', 'max-width', 'max-height', 'transform'])
             popup.style.removeProperty(property);
         return false;
     }
@@ -279,10 +290,17 @@ function pinPopup(root, popup) {
     popup.style.setProperty('position', 'fixed', 'important');
     popup.style.setProperty('max-width', `${Math.max(260, rect.width - margin * 2)}px`, 'important');
     popup.style.setProperty('max-height', `${Math.max(80, rect.height - margin * 2)}px`, 'important');
-    popup.style.setProperty('top', placement.startsWith('top') ? `${rect.top + margin}px` : 'auto', 'important');
+    const verticallyCentered = placement === 'leftcenter' || placement === 'rightcenter';
+    const horizontallyCentered = placement === 'topcenter' || placement === 'bottomcenter';
+    popup.style.setProperty('top', placement.startsWith('top') ? `${rect.top + margin}px`
+        : verticallyCentered ? `${rect.top + rect.height / 2}px` : 'auto', 'important');
     popup.style.setProperty('bottom', placement.startsWith('bottom') ? `${innerHeight - rect.bottom + margin}px` : 'auto', 'important');
-    popup.style.setProperty('left', placement.endsWith('left') ? `${rect.left + margin}px` : 'auto', 'important');
-    popup.style.setProperty('right', placement.endsWith('right') ? `${innerWidth - rect.right + margin}px` : 'auto', 'important');
+    popup.style.setProperty('left', placement.endsWith('left') || placement === 'leftcenter' ? `${rect.left + margin}px`
+        : horizontallyCentered ? `${rect.left + rect.width / 2}px` : 'auto', 'important');
+    popup.style.setProperty('right', placement.endsWith('right') || placement === 'rightcenter'
+        ? `${innerWidth - rect.right + margin}px` : 'auto', 'important');
+    popup.style.setProperty('transform', verticallyCentered ? 'translateY(-50%)'
+        : horizontallyCentered ? 'translateX(-50%)' : 'none', 'important');
     return true;
 }
 

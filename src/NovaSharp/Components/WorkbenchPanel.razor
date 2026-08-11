@@ -11,8 +11,9 @@
             <button title="Forward (Alt+Right)" aria-label="Forward" disabled="@(!CanNavigateForward)" @onclick="NavigateForwardAsync">→</button>
         </div>
         <nav class="menu-bar" aria-label="Application menu">
-            @if (_openMenu is not null) { <div class="menu-dismiss" @onclick="CloseMenu"></div> }
-            <div class="main-menu">
+            @if (_openMenu is not null) { <div class="menu-dismiss" @onclick="CloseMenu"
+                @oncontextmenu="CloseMenu" @oncontextmenu:preventDefault></div> }
+            <div class="main-menu" @onmouseenter='() => SwitchMenu("file")'>
                 <button class="menu-trigger" @onclick='() => ToggleMenu("file")' aria-expanded="@(_openMenu == "file")">File</button>
                 @if (_openMenu == "file")
                 {
@@ -20,12 +21,13 @@
                     <button role="menuitem" @onclick="OpenFileAsync">Open <kbd>Ctrl+O</kbd></button>
                     <button role="menuitem" @onclick="OpenQuickOpen">Quick Open <kbd>Ctrl+P</kbd></button>
                     <button role="menuitem" @onclick="OpenSolutionAsync">Open Solution</button>
+                    <button role="menuitem" @onclick="CloseSolutionAsync" disabled="@(_projectSystem.State.Path is null)">Close Solution</button>
                     <button role="menuitem" @onclick="SaveAsync" disabled="@(!_document.IsDirty)">Save <kbd>Ctrl+S</kbd></button>
                     <button role="menuitem" @onclick="SaveAsAsync" disabled="@(_document.FilePath is null)">Save As</button>
                 </div>
                 }
             </div>
-            <div class="main-menu">
+            <div class="main-menu" @onmouseenter='() => SwitchMenu("edit")'>
                 <button class="menu-trigger" @onclick='() => ToggleMenu("edit")' aria-expanded="@(_openMenu == "edit")">Edit</button>
                 @if (_openMenu == "edit")
                 {
@@ -40,7 +42,7 @@
                 </div>
                 }
             </div>
-            <div class="main-menu">
+            <div class="main-menu" @onmouseenter='() => SwitchMenu("view")'>
                 <button class="menu-trigger" @onclick='() => ToggleMenu("view")' aria-expanded="@(_openMenu == "view")">View</button>
                 @if (_openMenu == "view")
                 {
@@ -53,7 +55,7 @@
                 </div>
                 }
             </div>
-            <div class="main-menu">
+            <div class="main-menu" @onmouseenter='() => SwitchMenu("run")'>
                 <button class="menu-trigger" @onclick='() => ToggleMenu("run")' aria-expanded="@(_openMenu == "run")">Run</button>
                 @if (_openMenu == "run")
                 {
@@ -68,7 +70,7 @@
                 </div>
                 }
             </div>
-            <div class="main-menu">
+            <div class="main-menu" @onmouseenter='() => SwitchMenu("groups")'>
                 <button class="menu-trigger" @onclick='() => ToggleMenu("groups")' aria-expanded="@(_openMenu == "groups")">Groups</button>
                 @if (_openMenu == "groups")
                 {
@@ -152,7 +154,8 @@
                      Activated="OpenSearchMatchAsync" PreviewRequested="PreviewSearchReplace"
                      Close="ToggleSearch" />
         <WorkspaceExplorer @ref="_explorer" Document="_document" ProjectSystem="_projectSystem" FileOpened="OpenWorkspaceFileAsync"
-                           FilePreviewed="PreviewWorkspaceFileAsync" OpenChanged="ExplorerOpenChanged" />
+                           FilePreviewed="PreviewWorkspaceFileAsync" OpenChanged="ExplorerOpenChanged"
+                           WorkspaceOpened="OfferWorkspaceSolutionAsync" />
         <nav class="activity-bar" aria-label="Tool windows">
             <button class="@(_explorerOpen ? "active" : null)" @onclick="ToggleExplorerAsync" aria-label="Explorer"
                     title="Explorer" aria-pressed="@_explorerOpen">
@@ -213,7 +216,7 @@
                     <label class="settings-switch"><span>High contrast</span><input type="checkbox" @bind="_settingsHighContrast" /><span class="switch-track" aria-hidden="true"></span></label>
                     <label class="settings-switch"><span>Editor ligatures</span><input type="checkbox" @bind="_settingsLigatures" /><span class="switch-track" aria-hidden="true"></span></label>
                 </div>
-                <label class="settings-field"><span>Popup location</span><select @bind="_settingsPopupPlacement"><option value="Contextual">Follow caret or pointer</option><option value="TopLeft">Top left</option><option value="TopRight">Top right</option><option value="BottomLeft">Bottom left</option><option value="BottomRight">Bottom right</option></select></label>
+                <label class="settings-field"><span>Popup location</span><select @bind="_settingsPopupPlacement"><option value="Contextual">Follow caret or pointer</option><option value="TopLeft">Top left</option><option value="TopCenter">Top center</option><option value="TopRight">Top right</option><option value="LeftCenter">Left center</option><option value="RightCenter">Right center</option><option value="BottomLeft">Bottom left</option><option value="BottomCenter">Bottom center</option><option value="BottomRight">Bottom right</option></select></label>
                 <div class="modal-actions"><button type="submit">Save</button><button type="button" @onclick="CloseSettings">Cancel</button></div>
             </form>
         </div>
@@ -299,6 +302,7 @@
     private readonly List<NavigationState> _navigationHistory = [];
     private readonly EditorDocumentState _emptyDocument = new();
     private EditorLayoutPersistence _persistence = null!;
+    private EditorLayoutPersistence _globalPersistence = null!;
     private WorkbenchLayoutState? _lastNonEmptyLayout;
     private WorkbenchPersistence _recovery = null!;
     private BuildConfigurationStore _buildConfigurationStore = null!;
@@ -354,8 +358,9 @@
         .Select(tab => tab.Document).Distinct().ToArray();
     private IReadOnlyList<string> StartupProjects => _projectSystem.CurrentSolution?.Projects.Select(project => project.FilePath)
         .Where(path => path is not null).Cast<string>().Distinct().Order().ToArray() ?? [];
-    private string? StartupProject => _startupProject is not null && StartupProjects.Contains(_startupProject)
-        ? _startupProject : StartupProjects.FirstOrDefault();
+    private string? StartupProject => _startupProject is { } selected
+        ? StartupProjects.FirstOrDefault(project => PathsEqual(project, selected)) ?? StartupProjects.FirstOrDefault()
+        : StartupProjects.FirstOrDefault();
     private string WorkbenchClass => $"workbench {(Program.Configuration.Current.Theme == "Light" ? "theme-light" : "theme-dark")}{(Program.Configuration.Current.HighContrast ? " high-contrast" : "")}{(Program.Configuration.Current.ReducedMotion ? " reduced-motion" : "")}{(Program.Configuration.Current.Ligatures ? " editor-ligatures" : "")} popup-placement-{Program.Configuration.Current.PopupPlacement.ToLowerInvariant()}";
 
     public WorkbenchPanel()
@@ -376,7 +381,8 @@
         _wordWrap = Program.Configuration.Current.WordWrap;
         _suggestions = Program.Configuration.Current.AutoCompletion;
         var applicationData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NovaSharp");
-        _persistence = new(Path.Combine(applicationData, "workbench-session.json"));
+        _globalPersistence = new(Path.Combine(applicationData, "workbench-session.json"));
+        _persistence = _globalPersistence;
         _recovery = new(Path.Combine(applicationData, "workbench-state.json"), Path.Combine(applicationData, "recovery"));
         _buildConfigurationStore = new(Path.Combine(applicationData, "build-configurations"));
         _restoreGuard = new(Path.Combine(applicationData, "restore-attempts.json"));
@@ -402,7 +408,19 @@
         {
             if (await _restoreGuard.BeginAsync())
             {
-                var state = await _persistence.LoadAsync();
+                var state = await _globalPersistence.LoadAsync();
+                var storedRoot = state.WorkspacePath ?? (state.SolutionPath is { } storedSolution
+                    ? Path.GetDirectoryName(storedSolution) : null);
+                if (storedRoot is not null)
+                {
+                    var workspaceStatePath = WorkspaceStatePath(storedRoot);
+                    if (File.Exists(workspaceStatePath))
+                    {
+                        _persistence = new(workspaceStatePath);
+                        state = await _persistence.LoadAsync();
+                    }
+                    _buildConfigurationStore = BuildConfigurationStoreFor(storedRoot);
+                }
                 _persistedSolutionPath = state.SolutionPath;
                 if (HasTabs(state.Root)) _lastNonEmptyLayout = state;
                 await _workspace.RestoreAsync(state);
@@ -537,12 +555,17 @@
 
     private async Task ReplaceLanguageServersAsync()
     {
+        await StopLanguageServersAsync();
+        await StartLanguageServersAsync();
+    }
+
+    private async Task StopLanguageServersAsync()
+    {
         foreach (var coordinator in _languageCoordinators.Values) await coordinator.DisposeAsync();
         foreach (var server in _languageServers) await server.Manager.DisposeAsync();
         _languageCoordinators.Clear();
         _languageServers.Clear();
         _languageDocuments.Clear();
-        await StartLanguageServersAsync();
     }
 
     private LanguageServerStatus ServerStatus(LanguageServerKind kind) => _languageServerStatuses[kind];
@@ -587,13 +610,61 @@
     {
         if (_projectSystem.State.Path is not null || _explorer?.RootPath is not { } root
             || Program.Phase3Workspace is not null) return;
-        var candidates = new[] { "*.slnx", "*.sln", "*.csproj" }
+        await OfferWorkspaceSolutionAsync(root);
+    }
+
+    private async Task OfferWorkspaceSolutionAsync(string root)
+    {
+        root = Path.GetFullPath(root);
+        var locatorGroup = Guid.NewGuid();
+        await _globalPersistence.SaveAsync(new(2, new("group", locatorGroup, Tabs: []), locatorGroup,
+            WorkspacePath: root));
+        _persistence = new(WorkspaceStatePath(root));
+        _buildConfigurationStore = BuildConfigurationStoreFor(root);
+        WorkbenchLayoutState? savedWorkspace = null;
+        if (OpenDocuments.Count == 0 && File.Exists(WorkspaceStatePath(root)))
+        {
+            savedWorkspace = await _persistence.LoadAsync();
+            await _workspace.RestoreAsync(savedWorkspace);
+            _lastNonEmptyLayout = HasTabs(savedWorkspace.Root) ? savedWorkspace : null;
+        }
+        if (_projectSystem.State.Path is not null) return;
+        var candidates = new[] { "*.slnx", "*.sln" }
             .SelectMany(pattern => Directory.EnumerateFiles(root, pattern, SearchOption.TopDirectoryOnly))
             .Take(2).ToArray();
+        if (candidates.Length == 0)
+            candidates = Directory.EnumerateFiles(root, "*.csproj", SearchOption.TopDirectoryOnly).Take(2).ToArray();
         if (candidates is not [var path]) return;
+        savedWorkspace ??= File.Exists(WorkspaceStatePath(root)) ? await _persistence.LoadAsync() : null;
+        if (savedWorkspace?.SolutionPath is { } accepted && PathsEqual(accepted, path))
+        {
+            await LoadSolutionAsync(path);
+            return;
+        }
+        var result = await Program.App.MainWindow.ShowMessageDialogAsync("Load solution",
+            $"Load {Path.GetFileName(path)}?", DialogButtons.YesNo, DialogIcon.Question);
+        if (result != DialogResult.Yes) return;
+        await LoadSolutionAsync(path);
+    }
+
+    private async Task LoadSolutionAsync(string path)
+    {
+        _languageProvider.Diagnostics.Clear();
         await _projectSystem.OpenAsync(path);
         if (_projectSystem.State.Path is null) return;
         _persistedSolutionPath = Path.GetFullPath(path);
+        var root = Path.GetDirectoryName(_persistedSolutionPath)!;
+        var locatorGroup = Guid.NewGuid();
+        await _globalPersistence.SaveAsync(new(2, new("group", locatorGroup, Tabs: []), locatorGroup,
+            SolutionPath: _persistedSolutionPath, WorkspacePath: root));
+        _persistence = new(WorkspaceStatePath(root));
+        _buildConfigurationStore = BuildConfigurationStoreFor(root);
+        if (File.Exists(WorkspaceStatePath(root)))
+        {
+            var saved = await _persistence.LoadAsync();
+            _startupProject = saved.StartupProject is { } savedProject
+                ? StartupProjects.FirstOrDefault(candidate => PathsEqual(candidate, savedProject)) : null;
+        }
         await ReplaceLanguageServersAsync();
         if (StartupProject is { } project)
         {
@@ -622,13 +693,44 @@
             filterPatterns: [new FileFilter("Solution", "*.sln"), new FileFilter("XML solution", "*.slnx"),
                 new FileFilter("C# project", "*.csproj")]);
         if (files is not [var path]) return;
-        _languageProvider.Diagnostics.Clear();
-        await _projectSystem.OpenAsync(path);
-        _persistedSolutionPath = Path.GetFullPath(path);
-        await ReplaceLanguageServersAsync();
+        await LoadSolutionAsync(path);
         _status = _projectSystem.State.Progress;
         await SaveLayoutAsync();
     }
+    private async Task CloseSolutionAsync()
+    {
+        _openMenu = null;
+        if (_projectSystem.State.Path is not { } solutionPath) return;
+        var root = Path.GetDirectoryName(solutionPath)!;
+        var comparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+        var solutionDocuments = _projectSystem.CurrentSolution?.Projects.SelectMany(project =>
+                project.Documents.Select(document => document.FilePath)
+                    .Concat(project.AdditionalDocuments.Select(document => document.FilePath)))
+            .Where(path => path is not null).Select(path => Path.GetFullPath(path!)).ToHashSet(comparer) ?? [];
+        var tabs = _workspace.Layout.Groups.SelectMany(group => group.Tabs)
+            .Where(tab => tab.Document.FilePath is { } path
+                && (solutionDocuments.Contains(Path.GetFullPath(path)) || IsUnderRoot(path, root))).ToArray();
+        await CloseRequestedAsync(new(tabs));
+        if (tabs.Any(tab => _workspace.Layout.Groups.Any(group => group.Tabs.Contains(tab)))) return;
+
+        await StopLanguageServersAsync();
+        await _projectSystem.CloseAsync();
+        if (_explorer is not null) await _explorer.CloseWorkspaceAsync();
+        _persistedSolutionPath = null;
+        _startupProject = null;
+        _languageProvider.Diagnostics.Clear();
+        _persistence = _globalPersistence;
+        await SaveLayoutAsync(allowEmpty: true);
+    }
+    private static bool IsUnderRoot(string path, string root)
+    {
+        var relative = Path.GetRelativePath(root, Path.GetFullPath(path));
+        return relative != ".." && !relative.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+            && !Path.IsPathFullyQualified(relative);
+    }
+    private static string WorkspaceStatePath(string root) => Path.Combine(root, ".Nova", "workspace.json");
+    private static BuildConfigurationStore BuildConfigurationStoreFor(string root) =>
+        new(Path.Combine(root, ".Nova", "configurations"));
     private Task OpenWorkspaceFileAsync(string path) => OpenTabAsync(path);
     private Task PreviewWorkspaceFileAsync(string path) => OpenTabAsync(path, true);
     private async Task OpenTabAsync(string path, bool preview = false)
@@ -729,6 +831,7 @@
     private void ToggleFind() { _openMenu = null; _showFind = !_showFind; }
     private void ToggleSearch() { _openMenu = null; _searchOpen = !_searchOpen; _ = SaveLayoutAsync(); }
     private void ToggleMenu(string menu) => _openMenu = _openMenu == menu ? null : menu;
+    private void SwitchMenu(string menu) { if (_openMenu is not null) _openMenu = menu; }
     private void CloseMenu() => _openMenu = null;
     private async Task ToggleWrapAsync() { _openMenu = null; _wordWrap = !_wordWrap; await Program.Configuration.SaveUserAsync(Program.Configuration.Current with { WordWrap = _wordWrap }); }
     private async Task ToggleSuggestionsAsync() { _openMenu = null; _suggestions = !_suggestions; await Program.Configuration.SaveUserAsync(Program.Configuration.Current with { AutoCompletion = _suggestions }); }
@@ -1110,7 +1213,7 @@
     {
         var state = _workspace.CaptureState() with { SolutionPath = _projectSystem.State.Path ?? _persistedSolutionPath, ExplorerOpen = _explorerOpen,
             SearchOpen = _searchOpen, ProblemsOpen = _problemsOpen, OutputOpen = _outputOpen,
-            TerminalOpen = _terminalOpen, StartupProject = StartupProject };
+            TerminalOpen = _terminalOpen, StartupProject = StartupProject, WorkspacePath = WorkspaceRoot };
         if (HasTabs(state.Root)) _lastNonEmptyLayout = state;
         else if (allowEmpty) _lastNonEmptyLayout = null;
         else if (_lastNonEmptyLayout is { } previous)

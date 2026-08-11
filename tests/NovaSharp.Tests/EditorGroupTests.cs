@@ -190,7 +190,7 @@ public sealed class EditorGroupTests
                 await workspace.CopyAsync(tab!, second.Id);
                 captured = workspace.CaptureState() with { SolutionPath = Path.Combine(root, "NovaSharp.slnx"),
                     ExplorerOpen = false, SearchOpen = true, ProblemsOpen = true, OutputOpen = true, TerminalOpen = true,
-                    StartupProject = Path.Combine(root, "NovaSharp.csproj") };
+                    StartupProject = Path.Combine(root, "NovaSharp.csproj"), WorkspacePath = root };
                 await persistence.SaveAsync(captured);
             }
             using (var restored = new EditorGroupWorkspace())
@@ -203,6 +203,7 @@ public sealed class EditorGroupTests
             }
             Assert.AreEqual(captured.SolutionPath, (await persistence.LoadAsync()).SolutionPath);
             var panels = await persistence.LoadAsync();
+            Assert.AreEqual(root, panels.WorkspacePath);
             Assert.IsFalse(panels.ExplorerOpen);
             Assert.IsTrue(panels.SearchOpen);
             Assert.IsTrue(panels.ProblemsOpen);

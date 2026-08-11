@@ -18,7 +18,8 @@ internal sealed class ConfigurationService(string userPath, string? workspacePat
             ?? await ReadAsync(userPath, cancellationToken) ?? new();
         if (Current.SchemaVersion != 1 || Current.TabSize is < 1 or > 16
             || Current.Zoom is < 50 or > 200 || Current.Theme is not ("Rider Dark" or "Light")
-            || Current.PopupPlacement is not ("Contextual" or "TopLeft" or "TopRight" or "BottomLeft" or "BottomRight")
+            || Current.PopupPlacement is not ("Contextual" or "TopLeft" or "TopCenter" or "TopRight"
+                or "LeftCenter" or "RightCenter" or "BottomLeft" or "BottomCenter" or "BottomRight")
             || Current.ExplorerIgnoredNames?.Any(name => string.IsNullOrWhiteSpace(name)
                 || name is "." or ".." || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0) == true)
             Current = new();

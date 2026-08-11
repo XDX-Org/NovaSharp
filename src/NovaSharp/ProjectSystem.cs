@@ -117,6 +117,28 @@ public sealed class RoslynProjectSystem : IAsyncDisposable
         await OpenAsync(path, cancellationToken);
     }
 
+    internal async Task CloseAsync()
+    {
+        Interlocked.Increment(ref _loadVersion);
+        _loadCancellation?.Cancel();
+        _reloadDebounce?.Cancel();
+        StopWatching();
+        await _mutationGate.WaitAsync();
+        try
+        {
+            _workspace?.Dispose();
+            _workspace = null;
+            _solution = null;
+            _documents.Clear();
+            _activeContexts.Clear();
+            Diagnostics.Clear();
+            lock (_rawMsBuildLog) _rawMsBuildLog.Clear();
+            State = new(null, null, false, null, TimeSpan.Zero, 0, 0);
+        }
+        finally { _mutationGate.Release(); }
+        Changed?.Invoke();
+    }
+
     internal void StopWatching()
     {
         lock (_watcherGate)
@@ -308,7 +330,8 @@ public sealed class RoslynProjectSystem : IAsyncDisposable
             if (generated.Length > 0)
                 children = children.Add(new($"g:{project.FilePath}", "Generated Documents", ProjectNodeKind.Folder, null, generated));
             children = children.AddRange(files);
-            return new ProjectNode($"p:{project.FilePath}", project.Name, ProjectNodeKind.Project, project.FilePath, children);
+            return new ProjectNode($"p:{project.FilePath}", Path.GetFileName(project.FilePath) ?? project.Name, ProjectNodeKind.Project,
+                project.FilePath, children);
         }).ToImmutableArray();
         return new($"s:{path}", Path.GetFileNameWithoutExtension(path), ProjectNodeKind.Solution, path, projects)
             { Detail = $"{projects.Length} project{(projects.Length == 1 ? "" : "s")}" };
@@ -339,14 +362,14 @@ public sealed class RoslynProjectSystem : IAsyncDisposable
             {
                 var relative = Path.GetRelativePath(root, file);
                 var segments = relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                if (segments.Any(segment => segment is "bin" or "obj" or ".git" or ".vs")
+                if (segments.Any(segment => segment is "bin" or "obj" or ".git" or ".vs" or ".Nova")
                     || PathComparer.Equals(file, project.FilePath!)) continue;
                 paths.Add(Path.GetFullPath(file));
             }
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
         foreach (var file in contexts.SelectMany(context => context.Documents).Select(document => document.FilePath)
-                     .Where(file => file is not null)) paths.Add(Path.GetFullPath(file!));
+                     .Where(file => file is not null && !IsGeneratedPath(root, file))) paths.Add(Path.GetFullPath(file!));
         var entries = paths.Select(file =>
         {
             var relative = Path.GetRelativePath(root, file);
@@ -393,6 +416,8 @@ public sealed class RoslynProjectSystem : IAsyncDisposable
     }
 
     private static bool HasDirectory(string path) => path.IndexOfAny([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar]) >= 0;
+    private static bool IsGeneratedPath(string root, string path) => Path.GetRelativePath(root, path)
+        .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Any(segment => segment is "bin" or "obj");
     private static string FirstSegment(string path) { var index = path.IndexOfAny([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar]); return index < 0 ? path : path[..index]; }
     private static string Remainder(string path) { var index = path.IndexOfAny([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar]); return path[(index + 1)..]; }
     private sealed record ProjectFile(string RelativePath, string FullPath);

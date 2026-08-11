@@ -56,6 +56,25 @@ public sealed class EditorViewState
         ScrollTop = Math.Max(0, top);
         ScrollLeft = Math.Max(0, left);
     }
+
+    internal void ApplyTextChange(string oldText, string newText)
+    {
+        var prefix = 0;
+        var sharedLength = Math.Min(oldText.Length, newText.Length);
+        while (prefix < sharedLength && oldText[prefix] == newText[prefix]) prefix++;
+
+        var suffix = 0;
+        while (suffix < oldText.Length - prefix && suffix < newText.Length - prefix
+            && oldText[oldText.Length - suffix - 1] == newText[newText.Length - suffix - 1]) suffix++;
+
+        var oldEnd = oldText.Length - suffix;
+        var newEnd = newText.Length - suffix;
+        SelectionStart = MapPosition(SelectionStart, prefix, oldEnd, newEnd);
+        SelectionEnd = MapPosition(SelectionEnd, prefix, oldEnd, newEnd);
+    }
+
+    private static int MapPosition(int position, int start, int oldEnd, int newEnd) => position <= start
+        ? position : position >= oldEnd ? position + newEnd - oldEnd : newEnd;
 }
 
 public sealed class EditorDocumentState : IDisposable

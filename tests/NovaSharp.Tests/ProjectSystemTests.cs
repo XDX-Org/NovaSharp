@@ -54,8 +54,9 @@ public sealed class ProjectSystemTests
         Assert.IsTrue(projectSystem.State.DocumentCount >= 3);
         Assert.HasCount(3, projectSystem.State.Root!.Items);
         Assert.AreEqual("3 projects", projectSystem.State.Root.Detail);
-        var webNode = projectSystem.State.Root.Items.Single(node => node.Name == "Web");
+        var webNode = projectSystem.State.Root.Items.Single(node => node.Name == "Web.csproj");
         Assert.EndsWith("Web.csproj", webNode.Path);
+        Assert.IsFalse(Descendants(webNode).Any(node => node.Name is "bin" or "obj"));
         Assert.AreEqual("Dependencies", webNode.Items[0].Name);
         Assert.IsTrue(Descendants(webNode).Any(node => node.Name == "Component.razor"));
         Assert.IsTrue(Descendants(webNode).Any(node => node.Kind == ProjectNodeKind.GeneratedFile

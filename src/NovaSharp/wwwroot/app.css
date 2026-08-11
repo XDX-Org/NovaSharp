@@ -78,7 +78,7 @@ select:disabled { opacity: .45; cursor: default; }
 .build-actions button:last-child { border-right: 0; }
 .build-actions .run-action { color: #bce8cb; }
 .build-actions .stop-action:not(:disabled) { color: #ff9b9b; }
-.main-menu { position: relative; }
+.main-menu { position: relative; z-index: 50; }
 .menu-bar { display: flex; align-items: center; gap: 2px; }
 .menu-dismiss { position: fixed; z-index: 49; inset: 0; }
 .menu-trigger { height: 28px; min-width: 0; padding: 0 8px; border: 0; background: transparent; line-height: 1; }
@@ -334,6 +334,7 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
 .quick-access-results button.selected { background: #3b4d68; }
 .quick-access-results small, .quick-access-results kbd, .quick-access-results p { color: #929cab; }
 .code-editor {
+    --editor-bottom-space: 24px;
     position: relative;
     width: 100%;
     height: 100%;
@@ -346,10 +347,11 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
 .outline-popup button, .navigation-popup button { display: flex; width: 100%; justify-content: space-between; gap: 12px; padding: 5px 8px; border: 0; border-radius: 0; background: transparent; text-align: left; }
 .outline-popup button:hover, .navigation-popup button:hover { background: #3b4d68; }
 .outline-popup small, .navigation-popup small { color: #929cab; }
-.presentation { overflow: hidden; padding: 0; pointer-events: none; font: var(--text-code)/var(--line-code) var(--font-code); }
+.presentation { overflow: hidden; padding: 0 0 var(--editor-bottom-space); pointer-events: none; font: var(--text-code)/var(--line-code) var(--font-code); }
 .source-line { display: grid; grid-template-columns: 54px max-content; min-width: max-content; height: 20px; white-space: pre; }
 .source-line .line-number { position: sticky; left: 0; padding-right: 12px; color: #6f737a; background: #191a1c; text-align: right; user-select: none; }
 .source-line code { padding: 0 66px 0 12px; color: var(--syntax-text); font: inherit; }
+.code-editor.semantic-pending .source-line code, .code-editor.semantic-pending .source-line code span { color: var(--syntax-text); }
 .diagnostic { text-decoration-line: underline; text-decoration-style: wavy; text-decoration-thickness: 1px; text-underline-offset: 2px; }
 .diagnostic-error { text-decoration-color: #f06a6a; }
 .diagnostic-warning { text-decoration-color: #d9b56d; }
@@ -386,7 +388,7 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
     width: 100%;
     height: 100%;
     overflow: auto;
-    padding: 0 66px;
+    padding: 0 66px var(--editor-bottom-space);
     resize: none;
     border: 0;
     outline: none;

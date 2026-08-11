@@ -42,6 +42,7 @@ ScaffoldingReadMe.txt
 
 # Others
 .idea/
+.Nova/
 ~$*
 *~
 CodeCoverage/

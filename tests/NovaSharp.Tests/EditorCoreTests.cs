@@ -29,6 +29,21 @@ public sealed class EditorCoreTests
     }
 
     [TestMethod]
+    public void SelectionTracksRevertedCompletionEdit()
+    {
+        const string completed = "class C { Task Run() { var result = Task.CompletedTask; return result; } }";
+        const string typed = "class C { Task Run() { var result = Task.c; return result; } }";
+        var view = new EditorViewState();
+        var completedCaret = completed.IndexOf(';');
+        view.SetSelection(completedCaret, completedCaret, completed.Length);
+
+        view.ApplyTextChange(completed, typed);
+
+        Assert.AreEqual(typed.IndexOf(';'), view.SelectionStart);
+        Assert.AreEqual(view.SelectionStart, view.SelectionEnd);
+    }
+
+    [TestMethod]
     public async Task FindReplaceAndTokenizerAreOwnedByDocument()
     {
         var document = await DocumentAsync("public class Demo { // Demo\n string value = \"Demo\"; }");
@@ -247,10 +262,11 @@ public sealed class WorkbenchServiceTests
         try
         {
             var service = new ConfigurationService(path);
-            await service.SaveUserAsync(new(1, true, 2));
+            var settings = new EditorSettings(1, true, 2, PopupPlacement: "BottomCenter");
+            await service.SaveUserAsync(settings);
             var restored = new ConfigurationService(path);
             await restored.LoadAsync();
-            Assert.AreEqual(new EditorSettings(1, true, 2), restored.Current);
+            Assert.AreEqual(settings, restored.Current);
             Assert.IsFalse(Directory.EnumerateFiles(Path.GetDirectoryName(path)!, $".{Path.GetFileName(path)}.*.tmp").Any());
         }
         finally { File.Delete(path); }

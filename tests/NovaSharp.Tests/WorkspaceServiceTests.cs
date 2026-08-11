@@ -7,11 +7,13 @@ namespace NovaSharp.Tests;
 public sealed class WorkspaceServiceTests
 {
     [TestMethod]
-    public async Task EnumerationIsSortedTypedAndIgnoresBuildFolders()
+    public async Task EnumerationIsSortedTypedAndShowsBuildFolders()
     {
         using var fixture = new WorkspaceFixture();
         Directory.CreateDirectory(Path.Combine(fixture.Root, "z-folder"));
+        Directory.CreateDirectory(Path.Combine(fixture.Root, ".git"));
         Directory.CreateDirectory(Path.Combine(fixture.Root, "bin"));
+        Directory.CreateDirectory(Path.Combine(fixture.Root, "obj"));
         Directory.CreateDirectory(Path.Combine(fixture.Root, ".cache"));
         await File.WriteAllTextAsync(Path.Combine(fixture.Root, "a.cs"), "class A;");
         await File.WriteAllTextAsync(Path.Combine(fixture.Root, "b.data"), "data");
@@ -20,10 +22,10 @@ public sealed class WorkspaceServiceTests
 
         var children = await workspace.GetChildrenAsync(fixture.Root);
 
-        CollectionAssert.AreEqual(new[] { "z-folder", "a.cs", "b.data" }, children.Select(entry => entry.Name).ToArray());
+        CollectionAssert.AreEqual(new[] { ".git", "bin", "obj", "z-folder", "a.cs", "b.data" }, children.Select(entry => entry.Name).ToArray());
         Assert.AreEqual(WorkspaceEntryKind.Folder, children[0].Kind);
-        Assert.AreEqual(WorkspaceEntryKind.SupportedFile, children[1].Kind);
-        Assert.AreEqual(WorkspaceEntryKind.UnknownFile, children[2].Kind);
+        Assert.AreEqual(WorkspaceEntryKind.SupportedFile, children[4].Kind);
+        Assert.AreEqual(WorkspaceEntryKind.UnknownFile, children[5].Kind);
     }
 
     [TestMethod]

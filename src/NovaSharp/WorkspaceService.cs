@@ -14,7 +14,8 @@ internal sealed record WorkspaceRestoreState(
     string? WorkspacePath = null,
     string[]? ExpandedPaths = null,
     bool SidebarCollapsed = false,
-    double SidebarWidth = 280);
+    double SidebarWidth = 280,
+    bool? SolutionView = null);
 
 internal sealed class WorkspacePersistence(string path)
 {
@@ -38,7 +39,7 @@ internal sealed class WorkspaceService : IDisposable
 {
     private static readonly StringComparer Paths = OperatingSystem.IsWindows()
         ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
-    private static readonly HashSet<string> DefaultIgnored = new(StringComparer.OrdinalIgnoreCase) { ".git", "bin", "obj" };
+    private static readonly HashSet<string> DefaultIgnored = new(StringComparer.OrdinalIgnoreCase);
     private static readonly HashSet<string> SupportedExtensions = new(StringComparer.OrdinalIgnoreCase)
         { ".cs", ".csproj", ".sln", ".slnx", ".razor", ".cshtml", ".html", ".htm", ".css", ".json", ".xml", ".md", ".txt" };
     private readonly HashSet<string> _ignored;
