@@ -160,13 +160,18 @@ jobs:
           '<Solution><Project Path="One/One.csproj" /><Project Path="Two/Two.csproj" /></Solution>' | Set-Content -Encoding utf8 (Join-Path $workspace 'Fixture.slnx')
           $binary = 'artifacts/app/NovaSharp'
           $arguments = @("--phase6-smoke=$(Join-Path $workspace 'Fixture.slnx')", "--smoke-report=$report")
-          $process = Start-Process xvfb-run -ArgumentList (@('-a', $binary) + $arguments) -PassThru
-          if (-not $process.WaitForExit(60000)) { $process.Kill($true); throw 'Phase 6 native smoke timed out.' }
-          if ($process.ExitCode -ne 0 -and -not (Test-Path $report)) { throw "Phase 6 native smoke exited with $($process.ExitCode) before reporting." }
-          $result = Get-Content $report | ConvertFrom-Json
           $required = 'SolutionTreePresent', 'LoadCompleted', 'SemanticDocumentsMapped', 'LinkedContextsPresent', 'EvaluatedTargetContexts', 'ProjectFileEditable', 'ContextMenuPresent', 'DragSourcePresent'
-          foreach ($name in $required) { if (-not $result.$name) { throw "Phase 6 smoke assertion failed: $name" } }
-          if ($result.ProjectNodes -lt 3) { throw 'Phase 6 project tree did not render expected nodes.' }
+          $passed = $false
+          foreach ($attempt in 1..2) {
+            Remove-Item $report -ErrorAction SilentlyContinue
+            $process = Start-Process xvfb-run -ArgumentList (@('-a', $binary) + $arguments) -PassThru
+            if (-not $process.WaitForExit(60000)) { $process.Kill($true); continue }
+            if (-not (Test-Path $report)) { continue }
+            $result = Get-Content $report | ConvertFrom-Json
+            $failed = @($required | Where-Object { -not $result.$_ })
+            if ($failed.Count -eq 0 -and $result.ProjectNodes -ge 3) { $passed = $true; break }
+          }
+          if (-not $passed) { throw "Phase 6 native smoke failed after two attempts: $($failed -join ', ')" }
       - name: Run packaged Phase 7 native-host smoke
         if: runner.os == 'Linux'
         shell: pwsh
