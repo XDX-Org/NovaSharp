@@ -52,11 +52,18 @@ internal sealed class LspLanguageProvider : ILanguageProvider, IExtendedLanguage
         await _synchronize(request.DocumentId, cancellationToken);
         var (server, snapshot, position) = Context(request);
         if (server is null || snapshot is null) return Missing<CompletionResult>(request);
-        object context = explicitInvocation ? new { triggerKind = 1 } : new
+        var triggerCharacter = request.Position > 0 && request.Position <= snapshot.Value.Text.Length
+            ? snapshot.Value.Text[request.Position - 1].ToString() : string.Empty;
+        var isTriggerCharacter = !explicitInvocation
+            && server.Capabilities.TryGetProperty("completionProvider", out var completionProvider)
+            && completionProvider.ValueKind == JsonValueKind.Object
+            && completionProvider.TryGetProperty("triggerCharacters", out var triggerCharacters)
+            && triggerCharacters.ValueKind == JsonValueKind.Array
+            && triggerCharacters.EnumerateArray().Any(item => item.GetString() == triggerCharacter);
+        object context = !isTriggerCharacter ? new { triggerKind = 1 } : new
         {
             triggerKind = 2,
-            triggerCharacter = request.Position > 0 && request.Position <= snapshot.Value.Text.Length
-                ? snapshot.Value.Text[request.Position - 1].ToString() : string.Empty
+            triggerCharacter
         };
         var response = await server.RequestAsync<JsonElement>("textDocument/completion", new
         {

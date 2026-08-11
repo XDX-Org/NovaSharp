@@ -175,7 +175,7 @@
     {
         if (_semanticValue != Value)
         {
-            _semanticSpans = [];
+            _semanticSpans = RemapSemanticSpans(_semanticValue, Value, _semanticSpans);
             _semanticValue = Value;
             _semanticRevision++;
         }
@@ -458,6 +458,25 @@
             else if (text[index] == '\n') starts.Add(index + 1);
         }
         return starts.ToArray();
+    }
+
+    private static IReadOnlyList<SemanticSpan> RemapSemanticSpans(string oldValue, string newValue,
+        IReadOnlyList<SemanticSpan> spans)
+    {
+        var prefix = 0;
+        while (prefix < oldValue.Length && prefix < newValue.Length && oldValue[prefix] == newValue[prefix]) prefix++;
+        var oldSuffix = oldValue.Length;
+        var newSuffix = newValue.Length;
+        while (oldSuffix > prefix && newSuffix > prefix && oldValue[oldSuffix - 1] == newValue[newSuffix - 1])
+        {
+            oldSuffix--;
+            newSuffix--;
+        }
+        var delta = newSuffix - oldSuffix;
+        return spans.Where(span => span.Start + span.Length <= prefix || span.Start >= oldSuffix)
+            .Select(span => span.Start >= oldSuffix ? span with { Start = span.Start + delta } : span)
+            .Where(span => span.Start >= 0 && span.Start + span.Length <= newValue.Length)
+            .ToArray();
     }
 
     private async Task RefreshSemanticAsync()
