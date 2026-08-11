@@ -120,6 +120,24 @@ public sealed class LanguageServerTests
     }
 
     [TestMethod]
+    public async Task SynchronizeOpensDocumentAfterServerBecomesReady()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"novasharp-{Guid.NewGuid():N}.cs");
+        await File.WriteAllTextAsync(path, "class C { }");
+        using var document = new EditorDocumentState();
+        await document.OpenAsync(path);
+        var sink = new Sink { IsReady = false };
+        await using var coordinator = new LanguageDocumentCoordinator(sink);
+
+        await coordinator.OpenAsync(document);
+        sink.IsReady = true;
+        await coordinator.SynchronizeAsync(path);
+
+        CollectionAssert.AreEqual(new[] { "textDocument/didOpen" }, sink.Methods.ToArray());
+        File.Delete(path);
+    }
+
+    [TestMethod]
     public void MissingPackagedAssetsAreExplicitlyUnavailable()
     {
         var catalog = LanguageServerCatalog.Discover(Path.GetTempPath(), Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N")));
@@ -401,7 +419,7 @@ public sealed class LanguageServerTests
     {
         internal List<string> Methods { get; } = [];
         internal List<LspTextDocumentContentChangeEvent> Changes { get; } = [];
-        public bool IsReady => true;
+        public bool IsReady { get; set; } = true;
         public Task NotifyAsync(string method, object parameters, CancellationToken cancellationToken = default)
         {
             Methods.Add(method);

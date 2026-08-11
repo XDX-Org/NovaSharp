@@ -53,12 +53,14 @@ internal sealed class LanguageDocumentCoordinator : IAsyncDisposable
             new LspDidSaveTextDocumentParams(new(entry.Uri.AbsoluteUri)), cancellationToken);
     }
 
-    internal Task SynchronizeAsync(string path, CancellationToken cancellationToken = default)
+    internal async Task SynchronizeAsync(string path, CancellationToken cancellationToken = default)
     {
         Entry? entry;
         var uri = LspConverters.FileUri(path);
         lock (_gate) entry = _entries.Values.FirstOrDefault(item => item.Uri == uri);
-        return entry is null ? Task.CompletedTask : FlushAsync(entry, cancellationToken);
+        if (entry is null) return;
+        await FlushAsync(entry, cancellationToken);
+        if (!entry.Open && _sink.IsReady) await SendOpenAsync(entry, cancellationToken);
     }
 
     internal async Task CloseAsync(EditorDocumentState document, CancellationToken cancellationToken = default)
@@ -115,7 +117,7 @@ internal sealed class LanguageDocumentCoordinator : IAsyncDisposable
     private async Task SendOpenAsync(Entry entry, CancellationToken cancellationToken)
     {
         await entry.SendLock.WaitAsync(cancellationToken);
-        try { await SendOpenCoreAsync(entry, cancellationToken); }
+        try { if (!entry.Open) await SendOpenCoreAsync(entry, cancellationToken); }
         finally { entry.SendLock.Release(); }
     }
 
