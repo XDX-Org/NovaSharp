@@ -215,7 +215,7 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
 .explorer-view-picker { position: relative; display: inline-flex; height: 26px; align-items: center; }
 .explorer-view-picker select { width: auto; height: 28px; field-sizing: content; }
 .explorer-empty { padding: 18px 8px; text-align: center; }
-.tree { height: calc(100% - 42px); overflow: auto; outline: none; }
+.tree { height: calc(100% - 42px); overflow: auto; padding-bottom: 24px; outline: none; }
 .tree-row { display: flex; height: 20px; align-items: center; overflow: hidden; cursor: pointer; user-select: none; }
 .tree-row:hover { background: #2b2f37; }
 .tree-row.selected { background: #35445e; outline: 1px solid #58709a; outline-offset: -1px; }
@@ -431,7 +431,7 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
 @media (prefers-reduced-motion: reduce) { .language-server-indicator.loading .language-server-dot { animation: none; } }
 .document-info { flex: 0 0 auto; margin-left: auto; color: #929cab; }
 .solution-explorer { height: calc(100% - 42px); overflow: auto; background: transparent; }
-.project-tree { padding: 4px 5px 7px; font-size: var(--text-ui); }
+.project-tree { padding: 4px 5px 24px; font-size: var(--text-ui); }
 .project-node > summary { cursor: pointer; list-style: none; }
 .project-node > summary::-webkit-details-marker { display: none; }
 .project-node > summary::before { content: "›"; width: 12px; flex: 0 0 12px; color: #929cab; text-align: center; }

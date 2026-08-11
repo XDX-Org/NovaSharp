@@ -321,6 +321,7 @@
     private IReadOnlyList<string> _availableConfigurations = ["Debug", "Release"], _availableFrameworks = [];
     private IReadOnlyList<LaunchProfile> _availableProfiles = [];
     private string? _startupProject;
+    private string? _persistedSolutionPath;
     private WorkspaceEdit? _pendingWorkspaceEdit;
     private WorkspaceEditPreview? _editPreview;
     private IReadOnlyList<SymbolEntry> _workspaceSymbols = [];
@@ -396,6 +397,7 @@
             if (await _restoreGuard.BeginAsync())
             {
                 var state = await _persistence.LoadAsync();
+                _persistedSolutionPath = state.SolutionPath;
                 await _workspace.RestoreAsync(state);
                 _explorerOpen = state.ExplorerOpen;
                 _searchOpen = state.SearchOpen;
@@ -409,11 +411,9 @@
             }
             else _status = "Safe mode: workbench layout restoration was disabled after repeated startup failures.";
         }
-        if (Program.Phase6Solution is not null) await _projectSystem.OpenAsync(Program.Phase6Solution);
-        if (Program.Phase7Solution is not null) await _projectSystem.OpenAsync(Program.Phase7Solution);
-        if (Program.Phase8Solution is not null) await _projectSystem.OpenAsync(Program.Phase8Solution);
-        if (Program.Phase9Solution is not null) await _projectSystem.OpenAsync(Program.Phase9Solution);
-        if (Program.Phase15Solution is not null) await _projectSystem.OpenAsync(Program.Phase15Solution);
+        var smokeSolution = Program.Phase15Solution ?? Program.Phase9Solution ?? Program.Phase8Solution
+            ?? Program.Phase7Solution ?? Program.Phase6Solution;
+        if (smokeSolution is not null) { await _projectSystem.OpenAsync(smokeSolution); _persistedSolutionPath = smokeSolution; }
         if (restoredStartupProject is not null && StartupProjects.Any(project => PathsEqual(project, restoredStartupProject)))
             _startupProject = StartupProjects.First(project => PathsEqual(project, restoredStartupProject));
         if (StartupProject is { } startupProject)
@@ -596,6 +596,7 @@
         if (files is not [var path]) return;
         _languageProvider.Diagnostics.Clear();
         await _projectSystem.OpenAsync(path);
+        _persistedSolutionPath = Path.GetFullPath(path);
         await ReplaceLanguageServersAsync();
         _status = _projectSystem.State.Progress;
         await SaveLayoutAsync();
@@ -1075,7 +1076,7 @@
     }
     private void ExplorerOpenChanged(bool open) { _explorerOpen = open; _ = SaveLayoutAsync(); }
     private Task SaveLayoutAsync() => _persistence.SaveAsync(
-        _workspace.CaptureState() with { SolutionPath = _projectSystem.State.Path, ExplorerOpen = _explorerOpen,
+        _workspace.CaptureState() with { SolutionPath = _projectSystem.State.Path ?? _persistedSolutionPath, ExplorerOpen = _explorerOpen,
             SearchOpen = _searchOpen, ProblemsOpen = _problemsOpen, OutputOpen = _outputOpen,
             TerminalOpen = _terminalOpen, StartupProject = StartupProject });
     private void WorkspaceChanged() => _ = InvokeAsync(StateHasChanged);
@@ -1304,7 +1305,7 @@
         _recoverySave?.Dispose();
         if (_debugSession is not null) _debugSession.DisposeAsync().AsTask().GetAwaiter().GetResult();
         CloseQuickAccess();
-        _ = SaveLayoutAsync();
+        Task.Run(SaveLayoutAsync).GetAwaiter().GetResult();
         _workspace.Changed -= WorkspaceChanged;
         _projectSystem.Changed -= ProjectSystemChanged;
         _languageProvider.Diagnostics.Changed -= DiagnosticsChanged;
@@ -1324,6 +1325,13 @@
     }
 
     private bool ConfirmClose()
+    {
+        var confirmed = CanClose();
+        if (confirmed) Task.Run(SaveLayoutAsync).GetAwaiter().GetResult();
+        return confirmed;
+    }
+
+    private bool CanClose()
     {
         var dirty = _workspace.Layout.Groups.SelectMany(group => group.Tabs).Where(tab => tab.Document.IsDirty)
             .DistinctBy(tab => tab.Document).ToArray();
