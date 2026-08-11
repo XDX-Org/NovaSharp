@@ -197,7 +197,7 @@
                 _state = (await _persistence.LoadAsync()) with { WorkspacePath = storedRoot };
             }
         }
-        if (Program.Phase6Solution is not null) _state = _state with { SidebarCollapsed = false };
+        if (Program.Phase6Solution is not null) _state = _state with { SidebarCollapsed = false, SolutionView = true };
         await OpenChanged.InvokeAsync(!_state.SidebarCollapsed);
         _workspace.Changed += OnWorkspaceChanged;
         _workspace.Error += OnWorkspaceError;
