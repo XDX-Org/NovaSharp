@@ -4,14 +4,21 @@
         <header>
             <strong>Debugger</strong>
             <span aria-live="polite">@State</span>
+            @if (Session?.StopReason is { } reason) { <span aria-live="polite">@reason</span> }
             <button @onclick="Continue" disabled="@(State != DebugSessionState.Paused)">Continue</button>
             <button @onclick="Pause" disabled="@(State != DebugSessionState.Running)">Pause</button>
             <button @onclick='() => Step("next")' disabled="@(State != DebugSessionState.Paused)">Step over</button>
             <button @onclick='() => Step("stepIn")' disabled="@(State != DebugSessionState.Paused)">Step into</button>
             <button @onclick='() => Step("stepOut")' disabled="@(State != DebugSessionState.Paused)">Step out</button>
+            <button @onclick="RunToCursor" disabled="@(State != DebugSessionState.Paused)">Run to cursor</button>
+            <button @onclick="Restart" disabled="@(Session is null)">Restart</button>
             <button @onclick="Stop" disabled="@(Session is null)">Stop</button>
-            <button @onclick="RefreshStack" disabled="@(State != DebugSessionState.Paused)">Refresh stack</button>
+            <button @onclick="Refresh" disabled="@(State != DebugSessionState.Paused)">Refresh</button>
         </header>
+        @if (_threads.Count > 0)
+        {
+            <ul aria-label="Threads">@foreach (var thread in _threads) { <li><button @onclick="() => SelectThread(thread)">@thread.Name</button></li> }</ul>
+        }
         @if (Session?.Breakpoints.Count > 0)
         {
             <ul aria-label="Breakpoints">@foreach (var breakpoint in Session.Breakpoints) { <li>@Path.GetFileName(breakpoint.SourcePath):@breakpoint.Line — @breakpoint.State</li> }</ul>
@@ -28,10 +35,19 @@
         {
             <table aria-label="Variables"><tbody>@foreach (var variable in _variables) { <tr><th>@variable.Name</th><td>@variable.Value</td><td>@variable.Type</td></tr> }</tbody></table>
         }
-        <form class="debug-evaluate" @onsubmit="Evaluate" aria-label="Watch expression">
+        <label class="debug-exceptions"><input type="checkbox" @bind="_breakOnThrown" @bind:after="ConfigureExceptions" disabled="@(Session is null)" /> Break on thrown exceptions</label>
+        <form class="debug-evaluate" @onsubmit="AddWatch" aria-label="Add watch expression">
             <input aria-label="Expression" @bind="_expression" disabled="@(State != DebugSessionState.Paused)" />
+            <button type="submit" disabled="@(State != DebugSessionState.Paused)">Add watch</button>
+        </form>
+        @if (_watches.Count > 0)
+        {
+            <table aria-label="Watch expressions"><tbody>@foreach (var watch in _watches) { <tr><th>@watch.Expression</th><td>@watch.Value</td><td><button aria-label="Remove @watch.Expression" @onclick="() => RemoveWatch(watch)">×</button></td></tr> }</tbody></table>
+        }
+        <form class="debug-evaluate" @onsubmit="EvaluateConsole" aria-label="Debug console">
+            <input aria-label="Debug console input" @bind="_consoleExpression" disabled="@(State != DebugSessionState.Paused)" />
             <button type="submit" disabled="@(State != DebugSessionState.Paused)">Evaluate</button>
-            @if (_evaluation is not null) { <output>@_evaluation.Result @if (_evaluation.Type is not null) { <small>(@_evaluation.Type)</small> }</output> }
+            @if (_consoleEvaluation is not null) { <output aria-live="polite">@_consoleEvaluation.Result</output> }
         </form>
     </section>
 }
@@ -40,17 +56,36 @@
     [Parameter] public bool Open { get; set; }
     [Parameter] public DebugAdapterSession? Session { get; set; }
     [Parameter] public EventCallback Stopped { get; set; }
+    [Parameter] public EventCallback Restarted { get; set; }
+    [Parameter] public EventCallback RunToCursorRequested { get; set; }
     private DebugSessionState State => Session?.Coordinator.State ?? DebugSessionState.Idle;
     private string _expression = "";
-    private DebugEvaluation? _evaluation;
+    private string _consoleExpression = "";
+    private DebugEvaluation? _consoleEvaluation;
+    private readonly List<DebugWatch> _watches = [];
+    private bool _breakOnThrown;
     private IReadOnlyList<DebugScope> _scopes = [];
     private IReadOnlyList<DebugVariable> _variables = [];
+    private IReadOnlyList<DebugThread> _threads = [];
     private int? _selectedFrame;
     private Task Continue() => Session?.CurrentThreadId is { } thread ? Session.ContinueAsync(thread) : Task.CompletedTask;
     private Task Pause() => Session?.PauseAsync(Session.CurrentThreadId ?? 0) ?? Task.CompletedTask;
     private Task Step(string command) => Session?.CurrentThreadId is { } thread ? Session.StepAsync(command, thread) : Task.CompletedTask;
     private Task Stop() => Stopped.InvokeAsync();
-    private async Task RefreshStack() { if (Session is not null) await Session.LoadStackAsync(); }
+    private Task Restart() => Restarted.InvokeAsync();
+    private Task RunToCursor() => RunToCursorRequested.InvokeAsync();
+    private async Task Refresh()
+    {
+        if (Session is null) return;
+        _threads = await Session.LoadThreadsAsync();
+        await Session.LoadStackAsync();
+    }
+    private async Task SelectThread(DebugThread thread)
+    {
+        if (Session is null) return;
+        Session.SelectThread(thread.Id);
+        await Session.LoadStackAsync();
+    }
     private async Task SelectFrame(DebugStackFrame frame)
     {
         if (Session is null) return;
@@ -62,9 +97,23 @@
     {
         if (Session is not null) _variables = await Session.LoadVariablesAsync(scope.VariablesReference);
     }
-    private async Task Evaluate()
+    private async Task AddWatch()
+    {
+        if (Session is null || string.IsNullOrWhiteSpace(_expression)) return;
+        var evaluation = await Session.EvaluateAsync(_expression, _selectedFrame ?? Session.Inspection.Frames.FirstOrDefault()?.Id);
+        _watches.Add(new(_expression, evaluation?.Result ?? "Unavailable"));
+        _expression = "";
+    }
+    private void RemoveWatch(DebugWatch watch) => _watches.Remove(watch);
+    private async Task EvaluateConsole()
     {
         if (Session is null) return;
-        _evaluation = await Session.EvaluateAsync(_expression, _selectedFrame ?? Session.Inspection.Frames.FirstOrDefault()?.Id);
+        _consoleEvaluation = await Session.EvaluateAsync(_consoleExpression,
+            _selectedFrame ?? Session.Inspection.Frames.FirstOrDefault()?.Id, context: "repl");
     }
+    private async Task ConfigureExceptions()
+    {
+        if (Session is not null) await Session.SetExceptionBreakpointsAsync([new("all", _breakOnThrown)]);
+    }
+    private sealed record DebugWatch(string Expression, string Value);
 }

@@ -53,6 +53,25 @@ public sealed class Phase2AcceptanceTests
         Assert.AreEqual("class Before;", document.Content);
     }
 
+    [TestMethod]
+    public async Task SettingsSupportValidatedUserAndWorkspaceScopes()
+    {
+        var user = TempPath();
+        var workspace = TempPath();
+        var service = new ConfigurationService(user);
+        await service.SaveUserAsync(new(Zoom: 110));
+        await service.UseWorkspaceAsync(workspace);
+        Assert.AreEqual(110, service.Current.Zoom);
+        await service.SaveWorkspaceAsync(service.Current with
+            { Zoom = 130, Keybindings = new() { ["workbench.action.files.save"] = "Ctrl+Alt+S" } });
+        await service.LoadAsync();
+        Assert.AreEqual(130, service.Current.Zoom);
+        Assert.AreEqual("Ctrl+Alt+S", service.Current.Keybindings!["workbench.action.files.save"]);
+        await File.WriteAllTextAsync(workspace, "{\"Zoom\":130,\"Keybindings\":{\"save\":\"Ctrl+Ctrl+S\"}}");
+        await service.LoadAsync();
+        Assert.AreEqual(110, service.Current.Zoom);
+    }
+
     private static string TempPath()
     {
         var directory = Path.Combine(Path.GetTempPath(), "NovaSharp.Tests", Guid.NewGuid().ToString("N"));

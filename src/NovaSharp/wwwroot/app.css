@@ -261,6 +261,8 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
 .settings-switch input:checked + .switch-track { border-color: #6287bd; background: #3f6597; }
 .settings-switch input:checked + .switch-track::after { background: #fff; transform: translateX(16px); }
 .settings-switch input:focus-visible + .switch-track { outline: 2px solid #7088b6; outline-offset: 2px; }
+.settings-keybindings { max-height: 180px; overflow: auto; margin: 12px 0; border: 1px solid #3c4450; }
+.settings-keybindings label { display: grid; grid-template-columns: 1fr 140px; gap: 8px; align-items: center; margin: 6px 0; }
 .path-picker { display: flex; min-width: 0; gap: 5px; }
 .path-picker input { min-width: 0; flex: 1; }
 .path-picker button { display: grid; width: 32px; flex: 0 0 32px; place-items: center; padding: 0; }
@@ -270,6 +272,7 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
 .debug-panel header span { margin-right: auto; color: #9ca6b5; }
 .debug-evaluate { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
 .debug-evaluate input { min-width: 220px; }
+.debug-exceptions { display: inline-flex; gap: 6px; align-items: center; margin-top: 8px; }
 .debug-scopes { display: flex; gap: 4px; }
 .debug-panel table { border-collapse: collapse; }
 .debug-panel th, .debug-panel td { padding: 2px 8px; text-align: left; }

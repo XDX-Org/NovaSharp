@@ -34,3 +34,17 @@ Full stack/variable UI and stepping experience move to phase 13.
 ## Next phase
 
 Build the daily debugging experience over the proven session boundary.
+
+## Implementation status
+
+Implemented: pinned netcoredbg packaging; bounded DAP transport; launch/attach ownership; negotiated capabilities;
+deterministic session and adapter-loss states; conditional, hit-count, log, function, and temporary run-to-cursor
+breakpoints; SHA-256 source identity and explicit longest-root source mapping; bounded request and shutdown behavior.
+
+Cross-platform completion remains evidence-gated by the macOS source-binding limitation in `known-limitations.md`.
+
+## Verification budgets
+
+The managed console fixture must initialize, launch, configure, and pause within 15 seconds. Stack, variable,
+thread, scope, breakpoint, control, and evaluation requests each have a five-second deadline; disconnect has a
+three-second deadline. DAP payloads are limited to 8 MiB, headers to 4 KiB, and pending requests to 128.

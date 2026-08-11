@@ -6,29 +6,47 @@ namespace NovaSharp;
 internal sealed record EditorSettings(int SchemaVersion = 1, bool WordWrap = false, int TabSize = 4,
     string[]? ExplorerIgnoredNames = null, bool AutoCompletion = true, bool SemanticHighlighting = true,
     string Theme = "Rider Dark", int Zoom = 100, bool ReducedMotion = false, bool HighContrast = false,
-    bool Ligatures = false, string PopupPlacement = "Contextual");
+    bool Ligatures = false, string PopupPlacement = "Contextual", Dictionary<string, string>? Keybindings = null);
 
 internal sealed class ConfigurationService(string userPath, string? workspacePath = null)
 {
+    private string? _workspacePath = workspacePath;
     internal EditorSettings Current { get; private set; } = new();
 
     internal async Task LoadAsync(CancellationToken cancellationToken = default)
     {
-        Current = await ReadAsync(workspacePath, cancellationToken)
-            ?? await ReadAsync(userPath, cancellationToken) ?? new();
-        if (Current.SchemaVersion != 1 || Current.TabSize is < 1 or > 16
-            || Current.Zoom is < 50 or > 200 || Current.Theme is not ("Rider Dark" or "Light")
-            || Current.PopupPlacement is not ("Contextual" or "TopLeft" or "TopCenter" or "TopRight"
-                or "LeftCenter" or "RightCenter" or "BottomLeft" or "BottomCenter" or "BottomRight")
-            || Current.ExplorerIgnoredNames?.Any(name => string.IsNullOrWhiteSpace(name)
-                || name is "." or ".." || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0) == true)
-            Current = new();
+        var workspace = await ReadAsync(_workspacePath, cancellationToken);
+        var user = await ReadAsync(userPath, cancellationToken);
+        Current = IsValid(workspace) ? workspace! : IsValid(user) ? user! : new();
     }
+
+    private static bool IsValid(EditorSettings? settings) => settings is not null
+            && settings.SchemaVersion == 1 && settings.TabSize is >= 1 and <= 16
+            && settings.Zoom is >= 50 and <= 200 && settings.Theme is ("Rider Dark" or "Light")
+            && settings.PopupPlacement is ("Contextual" or "TopLeft" or "TopCenter" or "TopRight"
+                or "LeftCenter" or "RightCenter" or "BottomLeft" or "BottomCenter" or "BottomRight")
+            && settings.ExplorerIgnoredNames?.Any(name => string.IsNullOrWhiteSpace(name)
+                || name is "." or ".." || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0) != true
+            && settings.Keybindings is not { Count: > 256 }
+            && settings.Keybindings?.Any(pair => string.IsNullOrWhiteSpace(pair.Key) || !KeyGesture.IsValid(pair.Value)) != true;
 
     internal async Task SaveUserAsync(EditorSettings settings, CancellationToken cancellationToken = default)
     {
         var bytes = JsonSerializer.SerializeToUtf8Bytes(settings);
         await AtomicFile.WriteAsync(userPath, bytes, cancellationToken);
+        Current = settings;
+    }
+
+    internal async Task UseWorkspaceAsync(string? storagePath, CancellationToken cancellationToken = default)
+    {
+        _workspacePath = storagePath;
+        await LoadAsync(cancellationToken);
+    }
+
+    internal async Task SaveWorkspaceAsync(EditorSettings settings, CancellationToken cancellationToken = default)
+    {
+        if (_workspacePath is null) throw new InvalidOperationException("Open a workspace before saving workspace settings.");
+        await AtomicFile.WriteAsync(_workspacePath, JsonSerializer.SerializeToUtf8Bytes(settings), cancellationToken);
         Current = settings;
     }
 
@@ -41,6 +59,17 @@ internal sealed class ConfigurationService(string userPath, string? workspacePat
             return await JsonSerializer.DeserializeAsync<EditorSettings>(stream, cancellationToken: cancellationToken);
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException) { return null; }
+    }
+}
+
+internal static class KeyGesture
+{
+    internal static bool IsValid(string value)
+    {
+        var parts = value.Split('+', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length is >= 1 and <= 4 && parts[^1].Length is >= 1 and <= 24
+            && parts[..^1].All(part => part is "Ctrl" or "Alt" or "Shift" or "Meta")
+            && parts[..^1].Distinct(StringComparer.Ordinal).Count() == parts.Length - 1;
     }
 }
 

@@ -148,7 +148,8 @@
                          Export="ExportOutputAsync" Clear="_buildRun.Output.Clear" />
             <TerminalPanel Open="_terminalOpen" Service="_terminal" WorkingDirectory="@(Program.Phase11Workspace ?? WorkspaceRoot)"
                            ConfirmClose="ConfirmTerminalCloseAsync" />
-            <DebugPanel Open="_debugOpen" Session="_debugSession" Stopped="StopDebugAsync" />
+            <DebugPanel Open="_debugOpen" Session="_debugSession" Stopped="StopDebugAsync" Restarted="RestartDebugAsync"
+                        RunToCursorRequested="RunDebugToCursorAsync" />
         </div>
         <SearchPanel @ref="_searchPanel" Open="_searchOpen" RootPath="WorkspaceRoot" OpenDocuments="OpenDocuments"
                      Activated="OpenSearchMatchAsync" PreviewRequested="PreviewSearchReplace"
@@ -209,6 +210,7 @@
         <div class="modal-backdrop" @onclick="CloseSettings">
             <form class="modal-dialog settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title" @onclick:stopPropagation @onsubmit="SaveSettingsAsync">
                 <h2 id="settings-title">Settings</h2>
+                <label class="settings-field"><span>Scope</span><select @bind="_settingsScope"><option value="User">User</option><option value="Workspace" disabled="@(WorkspaceRoot is null)">Workspace</option></select></label>
                 <label class="settings-field"><span>Theme</span><select @bind="_settingsTheme"><option>Rider Dark</option><option>Light</option></select></label>
                 <label class="settings-field"><span>Zoom (%)</span><input type="number" min="50" max="200" step="10" @bind="_settingsZoom" /></label>
                 <div class="settings-switches">
@@ -217,6 +219,12 @@
                     <label class="settings-switch"><span>Editor ligatures</span><input type="checkbox" @bind="_settingsLigatures" /><span class="switch-track" aria-hidden="true"></span></label>
                 </div>
                 <label class="settings-field"><span>Popup location</span><select @bind="_settingsPopupPlacement"><option value="Contextual">Follow caret or pointer</option><option value="TopLeft">Top left</option><option value="TopCenter">Top center</option><option value="TopRight">Top right</option><option value="LeftCenter">Left center</option><option value="RightCenter">Right center</option><option value="BottomLeft">Bottom left</option><option value="BottomCenter">Bottom center</option><option value="BottomRight">Bottom right</option></select></label>
+                <fieldset class="settings-keybindings"><legend>Keyboard shortcuts</legend>
+                    @foreach (var command in _commands.Commands.Where(item => item.Keybinding is not null))
+                    {
+                        <label><span>@command.Title</span><input aria-label="Shortcut for @command.Title" value="@SettingKeybinding(command)" @onchange="args => SetKeybinding(command.Id, args.Value?.ToString() ?? string.Empty)" /></label>
+                    }
+                </fieldset>
                 <div class="modal-actions"><button type="submit">Save</button><button type="button" @onclick="CloseSettings">Cancel</button></div>
             </form>
         </div>
@@ -325,7 +333,9 @@
     private bool _buildConfiguratorOpen;
     private bool _settingsOpen, _settingsReducedMotion, _settingsHighContrast, _settingsLigatures;
     private string _settingsTheme = "Rider Dark";
+    private string _settingsScope = "User";
     private string _settingsPopupPlacement = "Contextual";
+    private Dictionary<string, string> _settingsKeybindings = [];
     private int _settingsZoom = 100;
     private string _configuredProject = "", _configuredConfiguration = "Debug", _configuredFramework = "", _configuredProfile = "", _configuredArguments = "", _configuredWorkingDirectory = "";
     private IReadOnlyList<string> _availableConfigurations = ["Debug", "Release"], _availableFrameworks = [];
@@ -971,18 +981,30 @@
         _settingsHighContrast = settings.HighContrast;
         _settingsLigatures = settings.Ligatures;
         _settingsPopupPlacement = settings.PopupPlacement;
+        _settingsKeybindings = settings.Keybindings is null ? [] : new(settings.Keybindings, StringComparer.Ordinal);
         _settingsOpen = true;
     }
     private async Task SaveSettingsAsync()
     {
         if (_settingsZoom is < 50 or > 200) { _status = "Zoom must be between 50% and 200%."; return; }
-        await Program.Configuration.SaveUserAsync(Program.Configuration.Current with { Theme = _settingsTheme, Zoom = _settingsZoom,
+        if (_settingsKeybindings.Values.Any(value => !KeyGesture.IsValid(value))) { _status = "A keyboard shortcut is invalid."; return; }
+        var settings = Program.Configuration.Current with { Theme = _settingsTheme, Zoom = _settingsZoom,
             ReducedMotion = _settingsReducedMotion, HighContrast = _settingsHighContrast, Ligatures = _settingsLigatures,
-            PopupPlacement = _settingsPopupPlacement });
+            PopupPlacement = _settingsPopupPlacement, Keybindings = new(_settingsKeybindings, StringComparer.Ordinal) };
+        if (_settingsScope == "Workspace" && WorkspaceRoot is { } root)
+        {
+            var settingsRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NovaSharp", "workspace-settings");
+            var key = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(Path.GetFullPath(root))));
+            await Program.Configuration.UseWorkspaceAsync(Path.Combine(settingsRoot, key + ".json"));
+            await Program.Configuration.SaveWorkspaceAsync(settings);
+        }
+        else await Program.Configuration.SaveUserAsync(settings);
         Program.App.MainWindow.SetZoom(_settingsZoom);
         _settingsOpen = false;
     }
     private void CloseSettings() => _settingsOpen = false;
+    private string SettingKeybinding(CommandDescriptor command) => _settingsKeybindings.GetValueOrDefault(command.Id, command.Keybinding ?? "");
+    private void SetKeybinding(string commandId, string value) => _settingsKeybindings[commandId] = value;
     private void StopBuild() => _buildRun.Stop();
     private async Task StartDebugAsync()
     {
@@ -1008,6 +1030,19 @@
         _debugSession.Coordinator.StateChanged -= DebugStateChanged;
         await _debugSession.DisposeAsync();
         _debugSession = null;
+    }
+    private async Task RestartDebugAsync()
+    {
+        await StopDebugAsync();
+        await StartDebugAsync();
+    }
+    private async Task RunDebugToCursorAsync()
+    {
+        if (_debugSession is null || _document.FilePath is null) return;
+        var content = _document.Content ?? "";
+        var position = Math.Clamp(ActiveTab?.ViewState.SelectionEnd ?? 0, 0, content.Length);
+        var line = content.AsSpan(0, position).Count('\n') + 1;
+        await _debugSession.RunToCursorAsync(_document.FilePath, line);
     }
     private void DebugStateChanged(DebugSessionState state) => _ = InvokeAsync(StateHasChanged);
     private async Task RestartRunAsync()
@@ -1308,6 +1343,12 @@
 
     private async Task HandleKeyAsync(KeyboardEventArgs args)
     {
+        var gesture = string.Join('+', new[] { args.CtrlKey ? "Ctrl" : null, args.AltKey ? "Alt" : null,
+            args.ShiftKey ? "Shift" : null, args.MetaKey ? "Meta" : null, NormalizeGestureKey(args.Key) }.Where(value => value is not null));
+        var configured = _commands.Commands.FirstOrDefault(command => string.Equals(
+            Program.Configuration.Current.Keybindings?.GetValueOrDefault(command.Id, command.Keybinding ?? "") ?? command.Keybinding,
+            gesture, StringComparison.OrdinalIgnoreCase));
+        if (configured is not null) { await _commands.ExecuteAsync(configured.Id); return; }
         if (!(args.CtrlKey || args.MetaKey)) return;
         switch (args.Key.ToLowerInvariant())
         {
@@ -1336,6 +1377,11 @@
             case "`": await ToggleTerminalAsync(); break;
         }
     }
+    private static string NormalizeGestureKey(string key) => key.Length == 1 ? key.ToUpperInvariant() : key switch
+    {
+        " " => "Space",
+        _ => char.ToUpperInvariant(key[0]) + key[1..]
+    };
 
     [JSInvokable]
     public Task CompletePhase4SmokeAsync(Phase4SmokeResult result) => Program.CompletePhase4SmokeAsync(result);

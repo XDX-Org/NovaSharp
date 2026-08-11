@@ -44,6 +44,17 @@ public sealed class DebuggingTests
     }
 
     [TestMethod]
+    public async Task ProtocolReportsAdapterLossAndFailsPendingRequests()
+    {
+        await using var client = new DebugProtocolClient(new MemoryStream(), new MemoryStream());
+        var disconnected = new TaskCompletionSource<Exception>(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.Disconnected += exception => disconnected.TrySetResult(exception);
+        await Assert.ThrowsAsync<DebugProtocolException>(() =>
+            client.RequestAsync("threads", null, TimeSpan.FromSeconds(1)));
+        Assert.IsInstanceOfType<DebugProtocolException>(await disconnected.Task.WaitAsync(TimeSpan.FromSeconds(1)));
+    }
+
+    [TestMethod]
     public void InspectionIsBoundedPagedAndRejectedAfterResume()
     {
         var store = new DebugInspectionStore(maxFrames: 2, maxVariables: 3);
@@ -71,6 +82,27 @@ public sealed class DebuggingTests
     }
 
     [TestMethod]
+    public void SourceMappingUsesLongestRootAndDoesNotMatchFileNames()
+    {
+        var root = Path.GetFullPath(Path.Combine("workspace", "src"));
+        var nested = Path.Combine(root, "generated");
+        var remote = Path.GetFullPath(Path.Combine("remote", "source"));
+        var generated = Path.GetFullPath(Path.Combine("remote", "generated"));
+        var mapper = new DebugSourceMapper(new Dictionary<string, string> { [root] = remote, [nested] = generated });
+        var client = Path.Combine(nested, "Program.cs");
+        Assert.AreEqual(Path.Combine(generated, "Program.cs"), mapper.ToAdapter(client));
+        Assert.AreEqual(client, mapper.ToClient(Path.Combine(generated, "Program.cs")));
+        Assert.AreNotEqual(client, mapper.ToClient(Path.Combine(remote, "other", "Program.cs")));
+    }
+
+    [TestMethod]
+    public void SourceMappingRejectsRelativeRoots()
+    {
+        Assert.Throws<ArgumentException>(() => new DebugSourceMapper(new Dictionary<string, string>
+            { ["relative"] = Path.GetFullPath("remote") }));
+    }
+
+    [TestMethod]
     public void PackagedAdapterResolutionIsExplicit()
     {
         var root = Path.Combine(Path.GetTempPath(), "novasharp-adapter-" + Guid.NewGuid().ToString("N"));
@@ -88,7 +120,6 @@ public sealed class DebuggingTests
         var rid = OperatingSystem.IsWindows() ? "win-x64" : OperatingSystem.IsMacOS()
             ? (System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture == System.Runtime.InteropServices.Architecture.Arm64 ? "osx-arm64" : "osx-x64")
             : "linux-x64";
-        var macOs = OperatingSystem.IsMacOS();
         var executable = OperatingSystem.IsWindows() ? "netcoredbg.exe" : "netcoredbg";
         var adapter = new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory }.SelectMany(start =>
         {
@@ -110,16 +141,13 @@ public sealed class DebuggingTests
             await build.WaitForExitAsync();
             Assert.AreEqual(0, build.ExitCode, await build.StandardError.ReadToEndAsync());
             var program = Path.Combine(root, "bin", "Debug", "net9.0", "Fixture.dll");
+            var launchStarted = Stopwatch.GetTimestamp();
             await using var session = await DebugAdapterSession.LaunchAsync(new(program, root, [], StopAtEntry: true,
-                Breakpoints: macOs ? null : [new(source, 2)]), adapter);
+                Breakpoints: [new(source, 2)]), adapter);
+            Assert.IsTrue(Stopwatch.GetElapsedTime(launchStarted) < TimeSpan.FromSeconds(15), "Debug launch exceeded 15 seconds.");
             var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
             while (session.Coordinator.State == DebugSessionState.Running && DateTime.UtcNow < deadline) await Task.Delay(20);
             Assert.AreEqual(DebugSessionState.Paused, session.Coordinator.State);
-            if (macOs)
-            {
-                Assert.IsTrue((await session.LoadStackAsync()).Count > 0);
-                return;
-            }
             if (session.Breakpoints.Single().State != DebugBreakpointState.Verified && session.Coordinator.State == DebugSessionState.Paused)
             {
                 var epoch = session.Coordinator.PauseEpoch;
@@ -130,6 +158,7 @@ public sealed class DebuggingTests
             }
             Assert.AreEqual(DebugBreakpointState.Verified, session.Breakpoints.Single().State, session.Breakpoints.Single().Message);
             var frames = await session.LoadStackAsync();
+            Assert.IsTrue((await session.LoadThreadsAsync()).Count > 0);
             if (frames[0].Line != 2)
             {
                 var epoch = session.Coordinator.PauseEpoch;
@@ -140,8 +169,11 @@ public sealed class DebuggingTests
             }
             Assert.IsTrue(frames.Count > 0);
             Assert.AreEqual(2, frames[0].Line);
+            var evaluationStarted = Stopwatch.GetTimestamp();
             var evaluation = await session.EvaluateAsync("value", frames[0].Id);
+            Assert.IsTrue(Stopwatch.GetElapsedTime(evaluationStarted) < TimeSpan.FromSeconds(5), "Evaluation exceeded five seconds.");
             Assert.AreEqual("41", evaluation!.Result);
+            Assert.IsTrue((await session.LoadScopesAsync(frames[0].Id)).Count > 0);
         }
         finally { Directory.Delete(root, true); }
     }

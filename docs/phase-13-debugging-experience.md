@@ -32,3 +32,16 @@ Inspect and control managed execution through a complete, keyboard-operable debu
 ## Next phase
 
 Harden persistence, configuration, recovery, accessibility, and performance across the full C# workbench.
+
+## Implementation status
+
+Implemented: continue, pause, step over/into/out, run to cursor, threads, bounded stacks/scopes/lazy variables,
+pause-epoch stale-response rejection, watch/repl evaluation contexts, exception filters, stop reasons, and
+keyboard-operable debugger controls. Optimized/async/multithread interaction and screen-reader release evidence
+remain required before marking the phase complete.
+
+## Verification budgets
+
+On the managed console fixture, evaluation and stack refresh must each complete within five seconds. Inspection
+retains at most 256 frames and 10,000 variables per reference, returns at most 1,000 variables per page, and drops
+all paused-state data immediately on resume. Thread lists are capped at 1,024 entries.

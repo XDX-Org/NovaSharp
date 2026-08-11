@@ -32,3 +32,16 @@ Make the C# workbench resilient and configurable enough for sustained daily use.
 ## Next phase
 
 Expose a deliberately small, stable subset of proven workbench capabilities to extensions.
+
+## Implementation status
+
+Implemented: atomic validated settings and layout storage; exact dirty-buffer recovery; automatic restoration safe
+mode; theme, zoom, reduced-motion, high-contrast, and ligature controls; bounded persisted breakpoint/run/panel state;
+redacted persistence diagnostics and independently resettable state. Full-workbench accessibility, lifecycle-growth,
+and named performance-budget evidence remain required before marking the phase complete.
+
+## Verification budgets
+
+The named recovery fixture repeatedly atomically captures a 1 MiB dirty buffer 20 times and restores the newest
+exact content within ten seconds on the CI runner, while retaining one recovery file per canonical source path.
+Restoration accepts at most 256 documents and recovery buffers, 4,096 breakpoints, and 64 run configurations.

@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using System.Security.Cryptography;
 
 namespace NovaSharp;
 
@@ -12,7 +13,14 @@ internal sealed record DebugBreakpoint(string SourcePath, int Line, string? Cond
     string? LogMessage = null, DebugBreakpointState State = DebugBreakpointState.Pending, int? BoundLine = null, string? Message = null);
 internal sealed record DebugLaunchConfiguration(string Program, string WorkingDirectory, IReadOnlyList<string> Arguments,
     IReadOnlyDictionary<string, string>? Environment = null, bool StopAtEntry = false,
-    IReadOnlyList<DebugBreakpoint>? Breakpoints = null);
+    IReadOnlyList<DebugBreakpoint>? Breakpoints = null, IReadOnlyDictionary<string, string>? SourceMap = null);
+internal sealed record DebugCapabilities(bool SupportsFunctionBreakpoints, bool SupportsConditionalBreakpoints,
+    bool SupportsHitConditionalBreakpoints, bool SupportsLogPoints, bool SupportsExceptionOptions,
+    bool SupportsRestartRequest, bool SupportsStepBack);
+internal sealed record DebugThread(int Id, string Name);
+internal sealed record DebugFunctionBreakpoint(string Name, string? Condition = null, string? HitCondition = null,
+    DebugBreakpointState State = DebugBreakpointState.Pending, string? Message = null);
+internal sealed record DebugExceptionFilter(string Filter, bool Enabled, string? Condition = null);
 
 internal sealed class DebugProtocolException(string message) : Exception(message);
 
@@ -25,6 +33,7 @@ internal sealed class DebugProtocolClient(Stream input, Stream output, int maxMe
     private int _sequence;
     private Task? _reader;
     internal event Action<string, JsonElement>? EventReceived;
+    internal event Action<Exception>? Disconnected;
 
     internal void Start() => _reader ??= ReadLoopAsync(_shutdown.Token);
 
@@ -79,9 +88,9 @@ internal sealed class DebugProtocolClient(Stream input, Stream output, int maxMe
                 }
                 finally { ArrayPool<byte>.Shared.Return(rented); }
             }
-            FailPending(new DebugProtocolException("Debug adapter disconnected."));
+            Disconnect(new DebugProtocolException("Debug adapter disconnected."));
         }
-        catch (Exception ex) when (ex is not OperationCanceledException) { FailPending(ex); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { Disconnect(ex); }
     }
 
     private async Task<int?> ReadHeaderAsync(CancellationToken cancellationToken)
@@ -127,6 +136,12 @@ internal sealed class DebugProtocolClient(Stream input, Stream output, int maxMe
     private void FailPending(Exception exception)
     {
         foreach (var request in _pending.Values) request.TrySetException(exception);
+    }
+
+    private void Disconnect(Exception exception)
+    {
+        FailPending(exception);
+        Disconnected?.Invoke(exception);
     }
 
     public async ValueTask DisposeAsync()
@@ -187,17 +202,23 @@ public sealed class DebugAdapterSession : IAsyncDisposable
     private readonly DebugProtocolClient _protocol;
     private readonly bool _ownsTarget;
     private readonly TaskCompletionSource _initialized = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly DebugSourceMapper _sourceMapper;
     internal DebugSessionCoordinator Coordinator { get; } = new();
     internal DebugInspectionStore Inspection { get; } = new();
     internal IReadOnlyList<DebugBreakpoint> Breakpoints { get; private set; } = [];
     internal int? CurrentThreadId { get; private set; }
+    internal string? StopReason { get; private set; }
+    internal DebugCapabilities Capabilities { get; private set; } = new(false, false, false, false, false, false, false);
 
-    private DebugAdapterSession(Process process, DebugProtocolClient protocol, bool ownsTarget = true)
+    private DebugAdapterSession(Process process, DebugProtocolClient protocol, bool ownsTarget = true,
+        IReadOnlyDictionary<string, string>? sourceMap = null)
     {
         _process = process;
         _protocol = protocol;
         _ownsTarget = ownsTarget;
+        _sourceMapper = new(sourceMap);
         protocol.EventReceived += OnEvent;
+        protocol.Disconnected += OnDisconnected;
     }
 
     internal static async Task<DebugAdapterSession> LaunchAsync(DebugLaunchConfiguration configuration,
@@ -213,13 +234,14 @@ public sealed class DebugAdapterSession : IAsyncDisposable
         start.ArgumentList.Add("--interpreter=vscode");
         var process = Process.Start(start) ?? throw new InvalidOperationException("Debug adapter did not start.");
         var protocol = new DebugProtocolClient(process.StandardOutput.BaseStream, process.StandardInput.BaseStream);
-        var session = new DebugAdapterSession(process, protocol);
+        var session = new DebugAdapterSession(process, protocol, sourceMap: configuration.SourceMap);
         session.Coordinator.Transition(DebugSessionState.Starting);
         try
         {
-            await protocol.RequestAsync("initialize", new { clientID = "novasharp", clientName = "NovaSharp",
+            var capabilities = await protocol.RequestAsync("initialize", new { clientID = "novasharp", clientName = "NovaSharp",
                 adapterID = "coreclr", pathFormat = "path", linesStartAt1 = true, columnsStartAt1 = true,
                 supportsVariableType = true, supportsRunInTerminalRequest = false }, TimeSpan.FromSeconds(5), cancellationToken);
+            session.Capabilities = ParseCapabilities(capabilities);
             session.Coordinator.Transition(DebugSessionState.Configuring);
             var launched = protocol.RequestAsync("launch", new { name = "NovaSharp", type = "coreclr", request = "launch",
                 program, cwd = workingDirectory, args = configuration.Arguments,
@@ -234,7 +256,8 @@ public sealed class DebugAdapterSession : IAsyncDisposable
         }
         catch
         {
-            session.Coordinator.Transition(DebugSessionState.Failed);
+            if (session.Coordinator.State != DebugSessionState.Disconnected)
+                session.Coordinator.Transition(DebugSessionState.Failed);
             await session.DisposeAsync();
             throw;
         }
@@ -254,8 +277,9 @@ public sealed class DebugAdapterSession : IAsyncDisposable
         session.Coordinator.Transition(DebugSessionState.Starting);
         try
         {
-            await protocol.RequestAsync("initialize", new { clientID = "novasharp", adapterID = "coreclr",
+            var capabilities = await protocol.RequestAsync("initialize", new { clientID = "novasharp", adapterID = "coreclr",
                 pathFormat = "path", linesStartAt1 = true, columnsStartAt1 = true }, TimeSpan.FromSeconds(5), cancellationToken);
+            session.Capabilities = ParseCapabilities(capabilities);
             session.Coordinator.Transition(DebugSessionState.Configuring);
             var attached = protocol.RequestAsync("attach", new { name = "NovaSharp attach", type = "coreclr",
                 request = "attach", processId }, TimeSpan.FromSeconds(10), cancellationToken);
@@ -267,7 +291,8 @@ public sealed class DebugAdapterSession : IAsyncDisposable
         }
         catch
         {
-            session.Coordinator.Transition(DebugSessionState.Failed);
+            if (session.Coordinator.State != DebugSessionState.Disconnected)
+                session.Coordinator.Transition(DebugSessionState.Failed);
             await session.DisposeAsync();
             throw;
         }
@@ -279,9 +304,63 @@ public sealed class DebugAdapterSession : IAsyncDisposable
         command is "next" or "stepIn" or "stepOut" ? ControlAsync(command, new { threadId }, cancellationToken)
             : throw new ArgumentOutOfRangeException(nameof(command));
 
+    internal async Task<IReadOnlyList<DebugThread>> LoadThreadsAsync(CancellationToken cancellationToken = default)
+    {
+        if (Coordinator.State != DebugSessionState.Paused) return [];
+        var epoch = Coordinator.PauseEpoch;
+        var body = await _protocol.RequestAsync("threads", null, TimeSpan.FromSeconds(5), cancellationToken);
+        if (!Coordinator.IsCurrentPause(epoch)) return [];
+        return body.TryGetProperty("threads", out var values) ? values.EnumerateArray().Take(1024).Select(value =>
+            new DebugThread(value.GetProperty("id").GetInt32(), value.GetProperty("name").GetString() ?? "Thread")).ToArray() : [];
+    }
+
+    internal void SelectThread(int threadId)
+    {
+        if (Coordinator.State != DebugSessionState.Paused) throw new InvalidOperationException("A thread can only be selected while paused.");
+        CurrentThreadId = threadId > 0 ? threadId : throw new ArgumentOutOfRangeException(nameof(threadId));
+    }
+
+    internal async Task<IReadOnlyList<DebugFunctionBreakpoint>> SetFunctionBreakpointsAsync(IReadOnlyList<DebugFunctionBreakpoint> breakpoints,
+        CancellationToken cancellationToken = default)
+    {
+        if (!Capabilities.SupportsFunctionBreakpoints) throw new NotSupportedException("The debug adapter does not support function breakpoints.");
+        var body = await _protocol.RequestAsync("setFunctionBreakpoints", new { breakpoints = breakpoints.Select(item =>
+            new { name = item.Name, condition = item.Condition, hitCondition = item.HitCondition }) }, TimeSpan.FromSeconds(5), cancellationToken);
+        var bound = body.TryGetProperty("breakpoints", out var values) ? values.EnumerateArray().ToArray() : [];
+        return breakpoints.Select((item, index) => index < bound.Length && bound[index].TryGetProperty("verified", out var verified) && verified.GetBoolean()
+                ? breakpoints[index] with { State = DebugBreakpointState.Verified }
+                : breakpoints[index] with { State = DebugBreakpointState.Rejected, Message = index < bound.Length && bound[index].TryGetProperty("message", out var message) ? message.GetString() : "Adapter omitted breakpoint binding." }).ToArray();
+    }
+
+    internal Task SetExceptionBreakpointsAsync(IReadOnlyList<DebugExceptionFilter> filters, CancellationToken cancellationToken = default)
+    {
+        var enabled = filters.Where(item => item.Enabled).ToArray();
+        return _protocol.RequestAsync("setExceptionBreakpoints", new { filters = enabled.Select(item => item.Filter),
+            filterOptions = enabled.Where(item => item.Condition is not null).Select(item => new { filterId = item.Filter, condition = item.Condition }) },
+            TimeSpan.FromSeconds(5), cancellationToken);
+    }
+
+    internal async Task RunToCursorAsync(string sourcePath, int line, CancellationToken cancellationToken = default)
+    {
+        if (line < 1) throw new ArgumentOutOfRangeException(nameof(line));
+        if (Coordinator.State != DebugSessionState.Paused || CurrentThreadId is not { } threadId)
+            throw new InvalidOperationException("Run to cursor requires a paused debug session.");
+        await SetBreakpointsAsync([.. Breakpoints.Where(item => PathsEqual(item.SourcePath, sourcePath)), new(sourcePath, line)], cancellationToken);
+        await ContinueAsync(threadId, cancellationToken);
+    }
+
     internal async Task SetBreakpointsAsync(IReadOnlyList<DebugBreakpoint> breakpoints, CancellationToken cancellationToken = default)
     {
-        var sourcePath = breakpoints.Select(item => Path.GetFullPath(item.SourcePath)).Distinct(StringComparer.OrdinalIgnoreCase).Single();
+        if (breakpoints.Count == 0) throw new ArgumentException("At least one breakpoint is required.", nameof(breakpoints));
+        if (breakpoints.Any(item => item.Condition is not null) && !Capabilities.SupportsConditionalBreakpoints)
+            throw new NotSupportedException("The debug adapter does not support conditional breakpoints.");
+        if (breakpoints.Any(item => item.HitCondition is not null) && !Capabilities.SupportsHitConditionalBreakpoints)
+            throw new NotSupportedException("The debug adapter does not support hit-count breakpoints.");
+        if (breakpoints.Any(item => item.LogMessage is not null) && !Capabilities.SupportsLogPoints)
+            throw new NotSupportedException("The debug adapter does not support log points.");
+        var sourcePath = breakpoints.Select(item => Path.GetFullPath(item.SourcePath)).Distinct(DebugSourceMapper.PathComparer).Single();
+        var adapterPath = _sourceMapper.ToAdapter(sourcePath);
+        var checksum = File.Exists(sourcePath) ? Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(sourcePath))).ToLowerInvariant() : null;
         var requested = breakpoints.Select(item =>
         {
             var value = new Dictionary<string, object?> { ["line"] = item.Line };
@@ -290,7 +369,8 @@ public sealed class DebugAdapterSession : IAsyncDisposable
             if (item.LogMessage is not null) value["logMessage"] = item.LogMessage;
             return value;
         }).ToArray();
-        var response = await _protocol.RequestAsync("setBreakpoints", new { source = new { path = sourcePath },
+        var response = await _protocol.RequestAsync("setBreakpoints", new { source = new { path = adapterPath,
+                checksums = checksum is null ? null : new[] { new { algorithm = "SHA256", checksum } } },
             breakpoints = requested }, TimeSpan.FromSeconds(5), cancellationToken);
         var bound = response.TryGetProperty("breakpoints", out var items) ? items.EnumerateArray().ToArray() : [];
         Breakpoints = breakpoints.Select((item, index) => index >= bound.Length ? item with { State = DebugBreakpointState.Rejected, Message = "Adapter omitted breakpoint binding." }
@@ -306,9 +386,10 @@ public sealed class DebugAdapterSession : IAsyncDisposable
         if (Coordinator.State != DebugSessionState.Paused || CurrentThreadId is not { } threadId) return [];
         var epoch = Coordinator.PauseEpoch;
         var body = await _protocol.RequestAsync("stackTrace", new { threadId, startFrame = 0, levels = 256 }, TimeSpan.FromSeconds(5), cancellationToken);
+        if (!Coordinator.IsCurrentPause(epoch)) return [];
         var frames = body.TryGetProperty("stackFrames", out var values) ? values.EnumerateArray().Select(frame => new DebugStackFrame(
             frame.GetProperty("id").GetInt32(), frame.GetProperty("name").GetString() ?? "frame",
-            frame.TryGetProperty("source", out var source) && source.TryGetProperty("path", out var path) ? path.GetString() : null,
+            frame.TryGetProperty("source", out var source) && source.TryGetProperty("path", out var path) ? _sourceMapper.ToClient(path.GetString()!) : null,
             frame.TryGetProperty("line", out var line) ? line.GetInt32() : 0,
             frame.TryGetProperty("column", out var column) ? column.GetInt32() : 0)).ToArray() : [];
         Inspection.SetFrames(epoch, frames);
@@ -321,6 +402,7 @@ public sealed class DebugAdapterSession : IAsyncDisposable
         if (Coordinator.State != DebugSessionState.Paused) return [];
         var epoch = Coordinator.PauseEpoch;
         var body = await _protocol.RequestAsync("variables", new { variablesReference, start, count }, TimeSpan.FromSeconds(5), cancellationToken);
+        if (!Coordinator.IsCurrentPause(epoch)) return [];
         var variables = body.TryGetProperty("variables", out var values) ? values.EnumerateArray().Select(value => new DebugVariable(
             value.GetProperty("name").GetString() ?? "", value.GetProperty("value").GetString() ?? "",
             value.TryGetProperty("type", out var type) ? type.GetString() : null,
@@ -334,7 +416,9 @@ public sealed class DebugAdapterSession : IAsyncDisposable
     internal async Task<IReadOnlyList<DebugScope>> LoadScopesAsync(int frameId, CancellationToken cancellationToken = default)
     {
         if (Coordinator.State != DebugSessionState.Paused) return [];
+        var epoch = Coordinator.PauseEpoch;
         var body = await _protocol.RequestAsync("scopes", new { frameId }, TimeSpan.FromSeconds(5), cancellationToken);
+        if (!Coordinator.IsCurrentPause(epoch)) return [];
         return body.TryGetProperty("scopes", out var values) ? values.EnumerateArray().Take(64).Select(value => new DebugScope(
             value.GetProperty("name").GetString() ?? "Scope", value.GetProperty("variablesReference").GetInt32(),
             value.TryGetProperty("expensive", out var expensive) && expensive.GetBoolean(),
@@ -342,12 +426,16 @@ public sealed class DebugAdapterSession : IAsyncDisposable
             value.TryGetProperty("indexedVariables", out var indexed) ? indexed.GetInt32() : null)).ToArray() : [];
     }
 
-    internal async Task<DebugEvaluation?> EvaluateAsync(string expression, int? frameId, CancellationToken cancellationToken = default)
+    internal async Task<DebugEvaluation?> EvaluateAsync(string expression, int? frameId, CancellationToken cancellationToken = default,
+        string context = "watch")
     {
         if (Coordinator.State != DebugSessionState.Paused || string.IsNullOrWhiteSpace(expression)) return null;
-        var arguments = new Dictionary<string, object?> { ["expression"] = expression, ["context"] = "watch" };
+        if (context is not ("watch" or "repl" or "hover")) throw new ArgumentOutOfRangeException(nameof(context));
+        var epoch = Coordinator.PauseEpoch;
+        var arguments = new Dictionary<string, object?> { ["expression"] = expression, ["context"] = context };
         if (frameId is not null) arguments["frameId"] = frameId;
         var body = await _protocol.RequestAsync("evaluate", arguments, TimeSpan.FromSeconds(5), cancellationToken);
+        if (!Coordinator.IsCurrentPause(epoch)) return null;
         return new(body.TryGetProperty("result", out var result) ? result.GetString() ?? "" : "",
             body.TryGetProperty("type", out var type) ? type.GetString() : null,
             body.TryGetProperty("variablesReference", out var reference) ? reference.GetInt32() : 0);
@@ -378,12 +466,15 @@ public sealed class DebugAdapterSession : IAsyncDisposable
         else if (name == "stopped" && Coordinator.State is DebugSessionState.Running or DebugSessionState.Configuring)
         {
             CurrentThreadId = body.TryGetProperty("threadId", out var thread) ? thread.GetInt32() : null;
+            StopReason = body.TryGetProperty("description", out var description) ? description.GetString()
+                : body.TryGetProperty("reason", out var reason) ? reason.GetString() : null;
             Coordinator.Transition(DebugSessionState.Paused);
             Inspection.BeginPause(Coordinator.PauseEpoch);
         }
         else if (name == "continued" && Coordinator.State == DebugSessionState.Paused)
         {
             CurrentThreadId = null;
+            StopReason = null;
             Inspection.Resume();
             Coordinator.Transition(DebugSessionState.Running);
         }
@@ -391,12 +482,27 @@ public sealed class DebugAdapterSession : IAsyncDisposable
             Coordinator.Transition(DebugSessionState.Terminated);
     }
 
+    private void OnDisconnected(Exception exception)
+    {
+        if (Coordinator.State is DebugSessionState.Starting or DebugSessionState.Configuring
+            or DebugSessionState.Running or DebugSessionState.Paused)
+            Coordinator.Transition(DebugSessionState.Disconnected);
+    }
+
     private static bool PathsEqual(string left, string right) => string.Equals(Path.GetFullPath(left), Path.GetFullPath(right),
         OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+
+    private static DebugCapabilities ParseCapabilities(JsonElement body) => new(
+        Flag(body, "supportsFunctionBreakpoints"), Flag(body, "supportsConditionalBreakpoints"),
+        Flag(body, "supportsHitConditionalBreakpoints"), Flag(body, "supportsLogPoints"),
+        Flag(body, "supportsExceptionOptions"), Flag(body, "supportsRestartRequest"), Flag(body, "supportsStepBack"));
+    private static bool Flag(JsonElement body, string name) => body.ValueKind == JsonValueKind.Object
+        && body.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.True;
 
     public async ValueTask DisposeAsync()
     {
         _protocol.EventReceived -= OnEvent;
+        _protocol.Disconnected -= OnDisconnected;
         try { await _protocol.RequestAsync("disconnect", new { terminateDebuggee = _ownsTarget }, TimeSpan.FromSeconds(3)); } catch { }
         await _protocol.DisposeAsync();
         if (!_process.HasExited) _process.Kill(entireProcessTree: true);
@@ -478,5 +584,43 @@ internal sealed class BreakpointStore
             var nextLine = breakpoint.Line < startLine + removedLineCount ? startLine : Math.Max(1, breakpoint.Line + delta);
             values[index] = breakpoint with { Line = nextLine, State = DebugBreakpointState.Pending, BoundLine = null, Message = null };
         }
+    }
+}
+
+internal sealed class DebugSourceMapper
+{
+    private readonly (string Client, string Adapter)[] _mappings;
+    internal static StringComparer PathComparer => OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+
+    internal DebugSourceMapper(IReadOnlyDictionary<string, string>? mappings)
+    {
+        _mappings = mappings?.Select(pair => (NormalizeRoot(pair.Key), NormalizeRoot(pair.Value)))
+            .OrderByDescending(pair => pair.Item1.Length).ToArray() ?? [];
+        if (_mappings.Select(pair => pair.Item1).Distinct(PathComparer).Count() != _mappings.Length)
+            throw new ArgumentException("Source-map client roots must be unique.", nameof(mappings));
+    }
+
+    internal string ToAdapter(string path) => Map(path, clientToAdapter: true);
+    internal string ToClient(string path) => Map(path, clientToAdapter: false);
+
+    private string Map(string path, bool clientToAdapter)
+    {
+        var full = Path.GetFullPath(path);
+        foreach (var mapping in _mappings)
+        {
+            var source = clientToAdapter ? mapping.Client : mapping.Adapter;
+            var target = clientToAdapter ? mapping.Adapter : mapping.Client;
+            if (PathComparer.Equals(full, source)) return target;
+            if (full.StartsWith(source + Path.DirectorySeparatorChar, PathComparer == StringComparer.OrdinalIgnoreCase
+                    ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+                return Path.Combine(target, Path.GetRelativePath(source, full));
+        }
+        return full;
+    }
+
+    private static string NormalizeRoot(string path)
+    {
+        if (!Path.IsPathFullyQualified(path)) throw new ArgumentException("Source-map roots must be absolute.");
+        return Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
     }
 }
