@@ -319,7 +319,8 @@
     public int CompletionItemCount() => _completion?.Items.Count ?? 0;
 
     [JSInvokable]
-    public bool LanguageReady() => !ProjectLoading && Document.FilePath is not null;
+    public bool LanguageReady() => !ProjectLoading && Document.FilePath is not null
+        && Has(LanguageCapabilities.Completion);
 
     [JSInvokable]
     public string CompletionDiagnostic() => _completionRequest.LastError?.ToString()
