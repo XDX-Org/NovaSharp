@@ -249,6 +249,18 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
 .modal-dialog p { margin: 0 0 20px; color: #9ca6b5; line-height: 1.45; }
 .build-configurator label { display: grid; gap: 4px; margin: 10px 0; color: #b9c2d0; }
 .build-configurator input, .build-configurator select { min-width: 0; height: 30px; }
+.settings-dialog { width: min(430px, 100%); }
+.settings-dialog h2 { margin-bottom: 14px; }
+.settings-field { display: grid; gap: 5px; margin: 11px 0; color: #b9c2d0; }
+.settings-field input, .settings-field select { width: 100%; min-width: 0; height: 30px; }
+.settings-switches { margin: 14px 0; padding: 4px 0; border-block: 1px solid #363d48; }
+.settings-switch { display: flex; min-height: 38px; align-items: center; justify-content: space-between; gap: 18px; color: #c6ced9; cursor: pointer; }
+.settings-switch input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.switch-track { position: relative; width: 34px; height: 18px; flex: 0 0 34px; border: 1px solid #596272; border-radius: 10px; background: #343a45; transition: background-color .15s, border-color .15s; }
+.switch-track::after { position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #c4ccd7; content: ""; transition: transform .15s, background-color .15s; }
+.settings-switch input:checked + .switch-track { border-color: #6287bd; background: #3f6597; }
+.settings-switch input:checked + .switch-track::after { background: #fff; transform: translateX(16px); }
+.settings-switch input:focus-visible + .switch-track { outline: 2px solid #7088b6; outline-offset: 2px; }
 .path-picker { display: flex; min-width: 0; gap: 5px; }
 .path-picker input { min-width: 0; flex: 1; }
 .path-picker button { display: grid; width: 32px; flex: 0 0 32px; place-items: center; padding: 0; }

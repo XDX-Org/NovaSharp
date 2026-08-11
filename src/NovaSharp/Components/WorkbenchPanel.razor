@@ -204,14 +204,16 @@
     @if (_settingsOpen)
     {
         <div class="modal-backdrop" @onclick="CloseSettings">
-            <form class="modal-dialog build-configurator" role="dialog" aria-modal="true" aria-labelledby="settings-title" @onclick:stopPropagation @onsubmit="SaveSettingsAsync">
+            <form class="modal-dialog settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title" @onclick:stopPropagation @onsubmit="SaveSettingsAsync">
                 <h2 id="settings-title">Settings</h2>
-                <label>Theme<select @bind="_settingsTheme"><option>Rider Dark</option><option>Light</option></select></label>
-                <label>Zoom (%)<input type="number" min="50" max="200" step="10" @bind="_settingsZoom" /></label>
-                <label><input type="checkbox" @bind="_settingsReducedMotion" /> Reduced motion</label>
-                <label><input type="checkbox" @bind="_settingsHighContrast" /> High contrast</label>
-                <label><input type="checkbox" @bind="_settingsLigatures" /> Editor ligatures</label>
-                <label>Popup location<select @bind="_settingsPopupPlacement"><option value="Contextual">Follow caret or pointer</option><option value="TopLeft">Top left</option><option value="TopRight">Top right</option><option value="BottomLeft">Bottom left</option><option value="BottomRight">Bottom right</option></select></label>
+                <label class="settings-field"><span>Theme</span><select @bind="_settingsTheme"><option>Rider Dark</option><option>Light</option></select></label>
+                <label class="settings-field"><span>Zoom (%)</span><input type="number" min="50" max="200" step="10" @bind="_settingsZoom" /></label>
+                <div class="settings-switches">
+                    <label class="settings-switch"><span>Reduced motion</span><input type="checkbox" @bind="_settingsReducedMotion" /><span class="switch-track" aria-hidden="true"></span></label>
+                    <label class="settings-switch"><span>High contrast</span><input type="checkbox" @bind="_settingsHighContrast" /><span class="switch-track" aria-hidden="true"></span></label>
+                    <label class="settings-switch"><span>Editor ligatures</span><input type="checkbox" @bind="_settingsLigatures" /><span class="switch-track" aria-hidden="true"></span></label>
+                </div>
+                <label class="settings-field"><span>Popup location</span><select @bind="_settingsPopupPlacement"><option value="Contextual">Follow caret or pointer</option><option value="TopLeft">Top left</option><option value="TopRight">Top right</option><option value="BottomLeft">Bottom left</option><option value="BottomRight">Bottom right</option></select></label>
                 <div class="modal-actions"><button type="submit">Save</button><button type="button" @onclick="CloseSettings">Cancel</button></div>
             </form>
         </div>
