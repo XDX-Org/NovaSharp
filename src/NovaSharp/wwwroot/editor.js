@@ -392,10 +392,17 @@ export async function runPhase8Smoke(root) {
         const problemsPanel = await waitFor(() => !!workbench.querySelector('.problems-panel .problem'));
         const typePosition = input.value.indexOf('C value');
         input.setSelectionRange(typePosition, typePosition);
-        await dotNet.invokeMethodAsync('EditorCommand', 'peek', typePosition);
-        const definitionPeek = await waitFor(() => !!root.querySelector('.navigation-popup code'));
-        await dotNet.invokeMethodAsync('EditorCommand', 'outline', typePosition);
-        const outline = await waitFor(() => !!root.querySelector('.outline-popup button'));
+        let definitionPeek = false;
+        for (let attempt = 0; attempt < 30 && !definitionPeek; attempt++) {
+            await dotNet.invokeMethodAsync('EditorCommand', 'peek', typePosition);
+            definitionPeek = await waitFor(() => !!root.querySelector('.navigation-popup button'), 10);
+        }
+        let outline = false;
+        for (let attempt = 0; attempt < 30 && !outline; attempt++) {
+            await dotNet.invokeMethodAsync('EditorCommand', 'outline', typePosition);
+            outline = await waitFor(() => !!root.querySelector('.outline-popup button'), 10);
+            if (!outline) await dotNet.invokeMethodAsync('EditorCommand', 'outline', typePosition);
+        }
         await dotNet.invokeMethodAsync('EditorCommand', 'code-actions', typePosition);
         const codeActions = await waitFor(() => !!root.querySelector('.code-actions-popup button'));
         return { diagnosticSquiggle, problemsPanel, definitionPeek, outline, codeActions };

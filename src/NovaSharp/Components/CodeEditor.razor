@@ -304,7 +304,11 @@
             case "implementation" when Has(LanguageCapabilities.Navigation): await RequestNavigationAsync(caret, "implementation"); break;
             case "references" when Has(LanguageCapabilities.Navigation): await RequestNavigationAsync(caret, "references"); break;
             case "peek" when Has(LanguageCapabilities.Navigation): await RequestNavigationAsync(caret, "peek"); break;
-            case "outline" when Has(LanguageCapabilities.Symbols): _outlineOpen = !_outlineOpen; break;
+            case "outline" when Has(LanguageCapabilities.Symbols):
+                if (!_outlineOpen && _symbols.Count == 0)
+                    _symbols = await ExtendedProvider.GetDocumentSymbolsAsync(Request(Value.Length), default);
+                _outlineOpen = !_outlineOpen;
+                break;
             case "rename" when Has(LanguageCapabilities.Rename):
                 await LanguageCommand.InvokeAsync(new(command, caret)); break;
             case "back": case "forward":

@@ -598,7 +598,11 @@ internal sealed class LspLanguageProvider : ILanguageProvider, IExtendedLanguage
         if (values.ValueKind != JsonValueKind.Array) yield break;
         foreach (var item in values.EnumerateArray())
         {
-            var range = item.TryGetProperty("selectionRange", out var selection) ? selection : item.GetProperty("range");
+            var range = item.TryGetProperty("selectionRange", out var selection) ? selection
+                : item.TryGetProperty("range", out var direct) ? direct
+                : item.TryGetProperty("location", out var location) && location.TryGetProperty("range", out var located)
+                    ? located : default;
+            if (range.ValueKind != JsonValueKind.Object) continue;
             var lsp = ParseRange(range); var converted = LspConverters.ToRange(text, lsp);
             yield return new(String(item, "name") ?? "symbol", Kind(Int(item, "kind")), path, converted, lsp.Start.Line, lsp.Start.Character, "", String(item, "detail"));
             if (item.TryGetProperty("children", out var children)) foreach (var child in Symbols(children, path, text)) yield return child;
