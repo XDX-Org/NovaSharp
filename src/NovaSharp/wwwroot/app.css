@@ -95,6 +95,9 @@ select:disabled { opacity: .45; cursor: default; }
 .build-actions .stop-action:not(:disabled) { color: #ff9b9b; }
 .main-menu { position: relative; z-index: 50; }
 .menu-bar { display: flex; align-items: center; gap: 2px; }
+.command-palette-shift-indicator { display: flex; align-items: center; gap: 5px; color: #929dac; font-size: var(--text-small); white-space: nowrap; }
+.command-palette-shift-indicator kbd { padding: 2px 5px; border: 1px solid #46505e; border-radius: 4px; color: #77818f; background: #242932; font: inherit; opacity: .45; }
+.command-palette-shift-indicator kbd.active { border-color: #7294ce; color: #dbe8ff; background: #304260; box-shadow: 0 0 0 1px #7294ce33; opacity: 1; }
 .menu-dismiss { position: fixed; z-index: 49; inset: 0; }
 .menu-trigger { height: 28px; min-width: 0; padding: 0 8px; border: 0; background: transparent; line-height: 1; }
 .menu-popup { position: absolute; z-index: 50; top: calc(100% + 7px); left: 0; display: flex; width: 245px; flex-direction: column; padding: 5px; border: 1px solid #4c566a; border-radius: 5px; background: #252932; box-shadow: 0 10px 30px rgba(0, 0, 0, .45); }

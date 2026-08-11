@@ -264,6 +264,42 @@ window.novaSharp.initEditorDragCleanup = function (workbench, dotNet) {
     });
 };
 
+window.novaSharp.initCommandPaletteShortcut = function (workbench, dotNet, interval) {
+    if (!workbench) return;
+    window.novaSharp.commandPaletteShortcut?.abort();
+    const controller = new AbortController();
+    window.novaSharp.commandPaletteShortcut = controller;
+    let lastTap = 0, resetTimer;
+    const reset = delay => {
+        clearTimeout(resetTimer);
+        resetTimer = setTimeout(() => {
+            lastTap = 0;
+            dotNet?.invokeMethodAsync('ResetCommandPaletteShiftTaps');
+        }, delay);
+    };
+    window.addEventListener('keydown', event => {
+        if (event.key === 'Escape') {
+            dotNet?.invokeMethodAsync('DismissQuickAccess');
+            return;
+        }
+        if (event.code !== 'ShiftLeft' || event.repeat) {
+            if (!event.repeat && !event.shiftKey && lastTap) reset(0);
+            return;
+        }
+        const now = performance.now();
+        const completed = lastTap > 0 && now - lastTap <= interval;
+        lastTap = completed ? 0 : now;
+        dotNet?.invokeMethodAsync('CommandPaletteShiftTaps', completed ? 2 : 1);
+        reset(completed ? 250 : interval);
+    }, { capture: true, signal: controller.signal });
+};
+
+window.novaSharp.prepareQuickAccessInput = function (input) {
+    if (!input) return;
+    input.value = '';
+    input.focus();
+};
+
 window.novaSharp.initPointerTabDrag = function (workbench, dotNet) {
     if (!workbench || workbench.dataset.pointerTabDragReady) return;
     workbench.dataset.pointerTabDragReady = 'true';

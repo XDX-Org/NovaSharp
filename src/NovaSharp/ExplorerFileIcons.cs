@@ -4,7 +4,7 @@ internal static class ExplorerFileIcons
 {
     internal static string Text(string name, bool symbolicLink = false) => Kind(name) switch
     {
-        ".cs" => "C#", ".js" => "JS", ".css" => "CSS", ".html" or ".htm" => "HTML",
+        ".cs" => "C#", ".js" or ".jsx" => "JS", ".ts" or ".tsx" => "TS", ".css" => "CSS", ".html" or ".htm" => "HTML",
         ".json" => "{}", ".md" or ".markdown" => "MD", "git" => "GIT", ".props" => "MSB",
         ".sln" => "SLN", ".slnx" => "SLNX", ".razor" or ".cshtml" => "RZ", ".dll" => "⚙",
         ".exe" or ".com" => "🖥︎", ".csproj" => "CSP", ".xml" => "<>", ".pdb" => "PDB",
@@ -13,7 +13,7 @@ internal static class ExplorerFileIcons
 
     internal static string CssClass(string name) => Kind(name) switch
     {
-        ".cs" => "csharp", ".js" => "javascript", ".css" => "stylesheet", ".html" or ".htm" => "html",
+        ".cs" => "csharp", ".js" or ".jsx" or ".ts" or ".tsx" => "javascript", ".css" => "stylesheet", ".html" or ".htm" => "html",
         ".json" => "json", ".md" or ".markdown" => "markdown", "git" => "git", ".props" => "props",
         ".sln" or ".slnx" => "solution", ".razor" or ".cshtml" => "razor", ".dll" => "assembly",
         ".exe" or ".com" => "executable", ".csproj" => "csproj", ".xml" => "xml", ".pdb" => "symbols",

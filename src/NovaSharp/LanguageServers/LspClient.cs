@@ -193,10 +193,14 @@ internal sealed class LspClient : IAsyncDisposable
         public IReadOnlyList<object?> Configuration(JsonElement parameters)
         {
             if (!parameters.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array) return [];
-            return items.EnumerateArray().Select(item => item.TryGetProperty("section", out var section)
-                && section.GetString() is { } name && (name.EndsWith(".dotnet_compiler_diagnostics_scope", StringComparison.Ordinal)
-                    || name.EndsWith(".dotnet_analyzer_diagnostics_scope", StringComparison.Ordinal))
-                    ? (object?)"OpenFiles" : null).ToArray();
+            return items.EnumerateArray().Select<JsonElement, object?>(item => item.TryGetProperty("section", out var section)
+                && section.GetString() is { } name ? name switch
+                {
+                    "formattingOptions" => new { tabSize = 4, insertSpaces = true },
+                    _ when name.EndsWith(".dotnet_compiler_diagnostics_scope", StringComparison.Ordinal)
+                        || name.EndsWith(".dotnet_analyzer_diagnostics_scope", StringComparison.Ordinal) => "OpenFiles",
+                    _ => null
+                } : null).ToArray();
         }
 
         [JsonRpcMethod("workspace/applyEdit", UseSingleObjectParameterDeserialization = true)]

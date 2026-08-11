@@ -145,6 +145,10 @@ public sealed class LanguageServerTests
         Assert.IsNotNull(server);
         Assert.IsNull(server.Launch);
         StringAssert.Contains(server.UnavailableReason, "missing");
+        var javascript = catalog.ForDocument("app.tsx");
+        Assert.IsNotNull(javascript);
+        Assert.AreEqual(LanguageServerKind.Javascript, javascript.Kind);
+        Assert.IsNull(javascript.Launch);
     }
 
     [TestMethod]
@@ -332,6 +336,51 @@ public sealed class LanguageServerTests
                 Assert.Contains("</section>", rename.Documents.Single().NewText);
             }
         }
+        root.Delete(true);
+    }
+
+    [TestMethod]
+    [DoNotParallelize]
+    public async Task PackagedJavascriptServerProvidesProjectAwareFeatures()
+    {
+        var root = Directory.CreateTempSubdirectory("novasharp-js-lsp-");
+        var path = Path.Combine(root.FullName, "index.js");
+        const string text = "const value = 42;\nconsole.log(value);\n";
+        await File.WriteAllTextAsync(path, text);
+        await File.WriteAllTextAsync(Path.Combine(root.FullName, "package.json"), "{\"private\":true}");
+        var definition = LanguageServerCatalog.Discover(root.FullName).Definitions
+            .Single(item => item.Kind == LanguageServerKind.Javascript);
+        if (definition.Launch is null) { root.Delete(true); return; }
+        await using var manager = new LanguageServerManager(definition, root.FullName);
+        await manager.StartAsync();
+        Assert.IsTrue(manager.IsReady, manager.Status.Detail);
+        using var document = new EditorDocumentState();
+        await document.OpenAsync(path);
+        await using var coordinator = new LanguageDocumentCoordinator(manager);
+        await coordinator.OpenAsync(document);
+        var provider = new LspLanguageProvider(_ => manager, _ => document.CreateSnapshot(),
+            synchronize: (_, token) => coordinator.SynchronizeAsync(path, token));
+        var info = provider.GetInfo(path);
+        Assert.AreEqual("javascript", info.LanguageId);
+        Assert.IsTrue(info.Capabilities.HasFlag(LanguageCapabilities.Completion));
+        Assert.IsTrue(info.Capabilities.HasFlag(LanguageCapabilities.Hover));
+        Assert.IsTrue(info.Capabilities.HasFlag(LanguageCapabilities.Navigation));
+        Assert.IsTrue(info.Capabilities.HasFlag(LanguageCapabilities.Formatting));
+
+        var reference = text.LastIndexOf("value", StringComparison.Ordinal);
+        HoverResult? hover = null;
+        for (var attempt = 0; attempt < 20 && hover is null; attempt++)
+        {
+            await Task.Delay(100);
+            hover = (await provider.GetHoverAsync(new(path, null, document.Version, reference), default)).Value;
+        }
+        Assert.IsNotNull(hover);
+        var definitions = await provider.GetDefinitionsAsync(new(path, null, document.Version, reference), false, default);
+        Assert.IsNotEmpty(definitions);
+        Assert.AreEqual(text.IndexOf("value", StringComparison.Ordinal), definitions[0].Range.Start);
+        var formatted = (await provider.FormatAsync(new(path, null, document.Version, 0), default)).Value;
+        Assert.IsNotNull(formatted);
+        StringAssert.Contains(formatted.Text, "const value = 42;");
         root.Delete(true);
     }
 

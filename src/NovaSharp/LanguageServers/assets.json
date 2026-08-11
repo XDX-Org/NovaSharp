@@ -18,6 +18,11 @@
     "languageServer": "10.1.0",
     "textDocument": "1.0.12"
   },
+  "javascript": {
+    "typescriptLanguageServer": "5.3.0",
+    "typescript": "6.0.3",
+    "license": "Apache-2.0"
+  },
   "node": {
     "version": "24.19.0",
     "license": "MIT",

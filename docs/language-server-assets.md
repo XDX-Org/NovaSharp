@@ -9,6 +9,8 @@ NovaSharp pins and verifies all language-server inputs in
 | Razor cohost payload | 10.0.0-preview.26262.2 | Version-matched payload inside C# 2.140.9 | MIT |
 | HTML language service | 5.6.2 | npm | MIT |
 | CSS language service | 6.3.10 | npm | MIT |
+| TypeScript Language Server | 5.3.0 | npm | Apache-2.0 |
+| TypeScript | 6.0.3 | npm | Apache-2.0 |
 | VS Code LSP library | 10.1.0 | npm | MIT |
 | Node.js | 24.19.0 LTS | nodejs.org | MIT and bundled third-party licenses |
 
@@ -33,5 +35,6 @@ Supported release RIDs are `win-x64`, `linux-x64`, `osx-x64`, and `osx-arm64`. T
 Generated assets are ignored by Git. They must be acquired before publishing. `dotnet publish -r <RID>` includes only
 the matching RID directory. NovaSharp never downloads language-server assets at runtime.
 
-The web host in `LanguageServers/Web/server.cjs` only exposes the official language-service packages over LSP. Remote
-HTML custom-data fetching is not enabled.
+The web host in `LanguageServers/Web/server.cjs` only exposes the official HTML/CSS language-service packages over
+LSP. JavaScript and TypeScript use the packaged TypeScript Language Server and `tsserver`. Remote HTML custom-data
+fetching is not enabled.

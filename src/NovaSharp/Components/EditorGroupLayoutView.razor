@@ -8,6 +8,7 @@
                                ProjectSystem="ProjectSystem" LanguageProvider="LanguageProvider"
                                Diagnostics="Diagnostics"
                                LanguageAnalysisRevision="LanguageAnalysisRevision"
+                               BraceGuides="BraceGuides"
                                SuggestionsEnabled="SuggestionsEnabled" SemanticHighlighting="SemanticHighlighting"
                                ExternalDragActive="ExternalDragActive"
                                ActiveChanged="ActiveChanged" ContentEdited="ContentEdited" CloseRequested="CloseRequested"
@@ -17,6 +18,7 @@
                                ProjectSystem="ProjectSystem" LanguageProvider="LanguageProvider"
                                Diagnostics="Diagnostics"
                                LanguageAnalysisRevision="LanguageAnalysisRevision"
+                               BraceGuides="BraceGuides"
                                SuggestionsEnabled="SuggestionsEnabled" SemanticHighlighting="SemanticHighlighting"
                                ExternalDragActive="ExternalDragActive"
                                ActiveChanged="ActiveChanged" ContentEdited="ContentEdited" CloseRequested="CloseRequested"
@@ -82,11 +84,12 @@ else if (Node is EditorGroup group)
                             Document="active.Document" LanguageProvider="LanguageProvider"
                             Diagnostics="Diagnostics"
                             LanguageAnalysisRevision="LanguageAnalysisRevision"
+                            BraceGuides="BraceGuides"
                             ProjectContext="@(active.Document.FilePath is { } path ? ProjectSystem.GetActiveDocument(path)?.Project.Id.Id.ToString() : null)"
                             ProjectLoading="ProjectSystem.State.IsLoading"
                             SuggestionsEnabled="SuggestionsEnabled" SemanticHighlighting="SemanticHighlighting"
                             LanguageCommand="LanguageCommand"
-                            @key="(active.Id, WordWrap)" />
+                            @key="(active.Id, WordWrap, BraceGuides)" />
             }
             @if (Workspace.DraggedTab is not null || ExternalDragActive)
             {
@@ -113,6 +116,7 @@ else if (Node is EditorGroup group)
     [Parameter] public long LanguageAnalysisRevision { get; set; }
     [Parameter] public bool SuggestionsEnabled { get; set; } = true;
     [Parameter] public bool SemanticHighlighting { get; set; } = true;
+    [Parameter] public bool BraceGuides { get; set; }
     [Parameter] public EventCallback ActiveChanged { get; set; }
     [Parameter] public EventCallback ContentEdited { get; set; }
     [Parameter] public EventCallback<CloseViewRequest> CloseRequested { get; set; }

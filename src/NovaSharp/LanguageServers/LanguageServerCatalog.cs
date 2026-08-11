@@ -1,6 +1,6 @@
 namespace NovaSharp.LanguageServers;
 
-internal enum LanguageServerKind { RoslynRazor, Html, Css }
+internal enum LanguageServerKind { RoslynRazor, Javascript, Html, Css }
 internal sealed record LanguageServerDefinition(LanguageServerKind Kind, IReadOnlySet<string> Extensions,
     LanguageServerLaunchOptions? Launch, string? UnavailableReason = null);
 
@@ -20,6 +20,7 @@ internal sealed class LanguageServerCatalog
         var razor = Path.Combine(assetRoot, "razor");
         var razorExtension = Path.Combine(razor, "Microsoft.VisualStudioCode.RazorExtension.dll");
         var webServer = Path.Combine(assetRoot, "server.cjs");
+        var javascriptServer = Path.Combine(assetRoot, "node_modules", "typescript-language-server", "lib", "cli.mjs");
         var node = Path.Combine(assetRoot, "node", OperatingSystem.IsWindows() ? "node.exe" : "bin/node");
         var environment = new Dictionary<string, string> { ["DOTNET_gcServer"] = "0" };
         var logDirectory = Path.Combine(Path.GetTempPath(), "NovaSharp", "LanguageServers");
@@ -37,7 +38,12 @@ internal sealed class LanguageServerCatalog
                 : new(LanguageServerKind.RoslynRazor, new HashSet<string>([".cs", ".razor", ".cshtml"]), null,
                     "Packaged Roslyn/Razor assets are missing. Run tools/acquire-language-servers.sh for the publish RID."),
             Web(LanguageServerKind.Html, [".html", ".htm"], "--html"),
-            Web(LanguageServerKind.Css, [".css"], "--css")
+            Web(LanguageServerKind.Css, [".css"], "--css"),
+            File.Exists(node) && File.Exists(javascriptServer)
+                ? new(LanguageServerKind.Javascript, new HashSet<string>([".js", ".jsx", ".ts", ".tsx"]),
+                    new(node, [javascriptServer, "--stdio"], workspace))
+                : new(LanguageServerKind.Javascript, new HashSet<string>([".js", ".jsx", ".ts", ".tsx"]), null,
+                    "Packaged JavaScript/TypeScript language-server assets are missing. Run tools/acquire-language-servers.sh for the publish RID.")
         };
         return new(definitions);
 
@@ -90,5 +96,7 @@ internal sealed class LanguageServerCatalog
         new(LanguageServerKind.Html, new HashSet<string>([".html", ".htm"]), null,
             "The packaged HTML language server is unavailable."),
         new(LanguageServerKind.Css, new HashSet<string>([".css"]), null,
-            "The packaged CSS language server is unavailable.")]);
+            "The packaged CSS language server is unavailable."),
+        new(LanguageServerKind.Javascript, new HashSet<string>([".js", ".jsx", ".ts", ".tsx"]), null,
+            "The packaged JavaScript/TypeScript language server is unavailable.")]);
 }

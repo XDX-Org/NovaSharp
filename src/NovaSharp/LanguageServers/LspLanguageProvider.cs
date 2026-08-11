@@ -35,6 +35,7 @@ internal sealed class LspLanguageProvider : ILanguageProvider, IExtendedLanguage
         var language = Path.GetExtension(path).ToLowerInvariant() switch
         {
             ".cs" => ("csharp", "C#"), ".razor" or ".cshtml" => ("razor", "Razor"),
+            ".js" or ".jsx" => ("javascript", "JavaScript"), ".ts" or ".tsx" => ("typescript", "TypeScript"),
             ".html" or ".htm" => ("html", "HTML"), ".css" => ("css", "CSS"), _ => ("text", "Text")
         };
         if (language.Item1 == "text") return new(language.Item1, language.Item2, LanguageCapabilities.None, false,
@@ -460,7 +461,7 @@ internal sealed class LspLanguageProvider : ILanguageProvider, IExtendedLanguage
         return (Ready(request.DocumentId), snapshot, LspConverters.ToPosition(snapshot?.Text ?? "", request.Position));
     }
     private LanguageServerManager? Ready(string path) => _server(path) is { IsReady: true } server ? server : null;
-    private IEnumerable<LanguageServerManager> Servers() => new[] { ".cs", ".html", ".css" }.Select(_server).OfType<LanguageServerManager>().Distinct();
+    private IEnumerable<LanguageServerManager> Servers() => new[] { ".cs", ".js", ".html", ".css" }.Select(_server).OfType<LanguageServerManager>().Distinct();
     private static LanguageResponse<T> Missing<T>(LanguageRequest request) => new(request.Version, default, true);
     private static bool PathEquals(string left, string right) => string.Equals(Path.GetFullPath(left), Path.GetFullPath(right),
         OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);

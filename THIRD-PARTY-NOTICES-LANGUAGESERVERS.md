@@ -5,6 +5,7 @@ NovaSharp distributions include pinned builds of the following MIT-licensed proj
 - .NET Roslyn and Razor tooling, copyright .NET Foundation and contributors.
 - Visual Studio Code HTML and CSS language services, copyright Microsoft Corporation.
 - Visual Studio Code Language Server libraries, copyright Microsoft Corporation.
+- TypeScript, copyright Microsoft Corporation, and TypeScript Language Server contributors.
 - Node.js, copyright Node.js contributors.
 - Samsung netcoredbg, copyright Samsung Electronics Co., Ltd.
 

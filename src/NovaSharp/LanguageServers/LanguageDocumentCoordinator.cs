@@ -159,6 +159,7 @@ internal sealed class LanguageDocumentCoordinator : IAsyncDisposable
     private static string LanguageId(string path) => Path.GetExtension(path).ToLowerInvariant() switch
     {
         ".cs" => "csharp", ".razor" => "razor", ".cshtml" => "aspnetcorerazor",
+        ".js" => "javascript", ".jsx" => "javascriptreact", ".ts" => "typescript", ".tsx" => "typescriptreact",
         ".html" or ".htm" => "html", ".css" => "css", _ => "plaintext"
     };
 

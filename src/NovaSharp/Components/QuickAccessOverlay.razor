@@ -1,12 +1,14 @@
 @using Microsoft.AspNetCore.Components.Web
+@inject IJSRuntime JS
 
 @if (Open)
 {
     <div class="quick-access-backdrop" @onclick="async () => await Close.InvokeAsync()">
         <div class="quick-access" role="dialog" aria-modal="true" aria-label="@(Commands ? "Command palette" : "Quick Open")"
              @onclick:stopPropagation @onkeydown="HandleKeyAsync">
-            <input aria-label="@(Commands ? "Search commands" : "Search files")" value="@Query"
-                   @oninput="QueryChangedAsync" autofocus placeholder="@(Commands ? "Type a command" : "Type a file name")" />
+            <input @ref="_input" aria-label="@(Commands ? "Search commands" : "Search files")" value="@Query"
+                   @oninput="QueryChangedAsync" autocomplete="off" autocapitalize="off" spellcheck="false"
+                   placeholder="@(Commands ? "Type a command" : "Type a file name")" />
             <div class="quick-access-results" role="listbox">
                 @if (Busy) { <p>Searching…</p> }
                 @foreach (var item in Items.Select((value, index) => (value, index)))
@@ -24,6 +26,8 @@
 }
 
 @code {
+    private ElementReference _input;
+
     [Parameter] public bool Open { get; set; }
     [Parameter] public bool Commands { get; set; }
     [Parameter] public string Query { get; set; } = "";
@@ -34,6 +38,11 @@
     [Parameter] public EventCallback<int> SelectedChanged { get; set; }
     [Parameter] public EventCallback<QuickAccessItem> Activate { get; set; }
     [Parameter] public EventCallback Close { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && Open) await JS.InvokeVoidAsync("novaSharp.prepareQuickAccessInput", _input);
+    }
 
     private Task QueryChangedAsync(ChangeEventArgs args) => QueryChanged.InvokeAsync(args.Value?.ToString() ?? "");
     private async Task HandleKeyAsync(KeyboardEventArgs args)

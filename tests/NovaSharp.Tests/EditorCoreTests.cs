@@ -95,6 +95,15 @@ public sealed class EditorCoreTests
     }
 
     [TestMethod]
+    public void BraceGuidesCanBeDisabledForEditorPresentation()
+    {
+        var lines = CSharpTokenizer.Tokenize("function run()\n{\n    return true;\n}", [],
+            includeLocalColouring: true, includeBraceGuides: false);
+
+        Assert.IsTrue(lines.All(line => line.BraceGuides is null));
+    }
+
+    [TestMethod]
     public void ServerColouringCoversStandardRazorAndUnknownClassifications()
     {
         const string text = "abcdefghijk";

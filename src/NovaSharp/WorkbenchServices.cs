@@ -6,7 +6,8 @@ namespace NovaSharp;
 internal sealed record EditorSettings(int SchemaVersion = 1, bool WordWrap = false, int TabSize = 4,
     string[]? ExplorerIgnoredNames = null, bool AutoCompletion = true, bool SemanticHighlighting = true,
     string Theme = "Rider Dark", int Zoom = 100, bool ReducedMotion = false, bool HighContrast = false,
-    bool Ligatures = false, string PopupPlacement = "Contextual", Dictionary<string, string>? Keybindings = null);
+    bool Ligatures = false, string PopupPlacement = "Contextual", Dictionary<string, string>? Keybindings = null,
+    bool BraceGuides = false);
 
 internal sealed class ConfigurationService(string userPath, string? workspacePath = null)
 {
@@ -66,6 +67,7 @@ internal static class KeyGesture
 {
     internal static bool IsValid(string value)
     {
+        if (value == "LeftShift+LeftShift") return true;
         var parts = value.Split('+', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
         return parts.Length is >= 1 and <= 4 && parts[^1].Length is >= 1 and <= 24
             && parts[..^1].All(part => part is "Ctrl" or "Alt" or "Shift" or "Meta")

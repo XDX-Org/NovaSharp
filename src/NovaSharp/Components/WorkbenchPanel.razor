@@ -37,7 +37,6 @@
                     <hr />
                     <button role="menuitem" @onclick="ToggleFind">Find <kbd>Ctrl+F</kbd></button>
                     <button role="menuitem" @onclick="ToggleSearch">Search workspace <kbd>Ctrl+Shift+F</kbd></button>
-                    <button role="menuitem" @onclick="OpenCommandPalette">Command palette <kbd>Ctrl+Shift+P</kbd></button>
                     <button role="menuitem" @onclick="ToggleSuggestionsAsync">Suggestions <span>@(_suggestions ? "On" : "Off")</span></button>
                 </div>
                 }
@@ -49,48 +48,20 @@
                 <div class="menu-popup" role="menu" @onclick:stopPropagation>
                     <button role="menuitem" @onclick="ToggleExplorerAsync">Explorer</button>
                     <button role="menuitem" @onclick="ToggleTerminalAsync">Terminal <kbd>Ctrl+`</kbd></button>
-                    <button role="menuitem" @onclick="ToggleWrapAsync">Word wrap <span>@(_wordWrap ? "On" : "Off")</span></button>
                     <button role="menuitem" @onclick="OpenWorkspaceSymbols">Workspace symbols <kbd>Ctrl+T</kbd></button>
                     <button role="menuitem" @onclick="OpenSettings">Settings</button>
                 </div>
                 }
             </div>
-            <div class="main-menu" @onmouseenter='() => SwitchMenu("run")'>
-                <button class="menu-trigger" @onclick='() => ToggleMenu("run")' aria-expanded="@(_openMenu == "run")">Run</button>
-                @if (_openMenu == "run")
-                {
-                <div class="menu-popup" role="menu" @onclick:stopPropagation>
-                    <button role="menuitem" @onclick="() => StartBuildAsync(BuildOperation.Build)" disabled="@(StartupProject is null)">Build <kbd>Ctrl+Shift+B</kbd></button>
-                    <button role="menuitem" @onclick="() => StartBuildAsync(BuildOperation.Rebuild)" disabled="@(StartupProject is null)">Rebuild</button>
-                    <button role="menuitem" @onclick="() => StartBuildAsync(BuildOperation.Clean)" disabled="@(StartupProject is null)">Clean</button>
-                    <button role="menuitem" @onclick="() => StartBuildAsync(BuildOperation.Restore)" disabled="@(StartupProject is null)">Restore</button>
-                    <button role="menuitem" @onclick="() => StartBuildAsync(BuildOperation.Run)" disabled="@(StartupProject is null)">Run <kbd>Ctrl+F5</kbd></button>
-                    <button role="menuitem" @onclick="RestartRunAsync" disabled="@(_buildRun.ActiveTask?.Request.Operation != BuildOperation.Run)">Restart</button>
-                    <button role="menuitem" @onclick="StopBuild" disabled="@(_buildRun.ActiveTask is null)">Stop</button>
-                </div>
-                }
-            </div>
-            <div class="main-menu" @onmouseenter='() => SwitchMenu("groups")'>
-                <button class="menu-trigger" @onclick='() => ToggleMenu("groups")' aria-expanded="@(_openMenu == "groups")">Groups</button>
-                @if (_openMenu == "groups")
-                {
-                <div class="menu-popup" role="menu" @onclick:stopPropagation>
-                    <button role="menuitem" @onclick="() => Split(SplitDirection.Left)">Split left</button>
-                    <button role="menuitem" @onclick="() => Split(SplitDirection.Right)">Split right <kbd>Ctrl+\</kbd></button>
-                    <button role="menuitem" @onclick="() => Split(SplitDirection.Up)">Split up</button>
-                    <button role="menuitem" @onclick="() => Split(SplitDirection.Down)">Split down</button>
-                    <button role="menuitem" @onclick="Equalize" disabled="@(_workspace.Layout.Groups.Count < 2)">Distribute evenly</button>
-                    <button role="menuitem" @onclick="() => TransferToNextAsync(false)" disabled="@(ActiveTab is null)">Move view to next group</button>
-                    <button role="menuitem" @onclick="() => TransferToNextAsync(true)" disabled="@(ActiveTab is null)">Copy view to next group</button>
-                    <button role="menuitem" @onclick="FocusNext" disabled="@(_workspace.Layout.Groups.Count < 2)">Focus next group</button>
-                    <button role="menuitem" @onclick='() => FocusDirectionAsync("left")' disabled="@(_workspace.Layout.Groups.Count < 2)">Focus left</button>
-                    <button role="menuitem" @onclick='() => FocusDirectionAsync("right")' disabled="@(_workspace.Layout.Groups.Count < 2)">Focus right</button>
-                    <button role="menuitem" @onclick='() => FocusDirectionAsync("up")' disabled="@(_workspace.Layout.Groups.Count < 2)">Focus up</button>
-                    <button role="menuitem" @onclick='() => FocusDirectionAsync("down")' disabled="@(_workspace.Layout.Groups.Count < 2)">Focus down</button>
-                </div>
-                }
-            </div>
         </nav>
+        @if (_commandPaletteShiftTaps > 0)
+        {
+            <div class="command-palette-shift-indicator" role="status" aria-live="polite">
+                <span>Command Palette</span>
+                <kbd class="active">L Shift</kbd>
+                <kbd class="@(_commandPaletteShiftTaps > 1 ? "active" : null)">L Shift</kbd>
+            </div>
+        }
         @if (StartupProjects.Count > 0)
         {
             <div class="build-controls" aria-label="Build and run settings">
@@ -138,6 +109,7 @@
                                    Diagnostics="_languageProvider.Diagnostics.Entries"
                                    LanguageAnalysisRevision="_languageAnalysisRevision"
                                    SuggestionsEnabled="_suggestions" SemanticHighlighting="Program.Configuration.Current.SemanticHighlighting"
+                                   BraceGuides="_braceGuides"
                                    ExternalDragActive="_explorerFileDrag is not null"
                                    ActiveChanged="ActiveChangedAsync" ContentEdited="ContentEditedAsync"
                                    CloseRequested="CloseRequestedAsync" LanguageCommand="HandleLanguageCommandAsync" />
@@ -185,6 +157,7 @@
         <div class="language-server-indicators" aria-label="Language servers">
             <ServerStatusIndicator Label="C#" Status="ServerStatus(LanguageServerKind.RoslynRazor)" />
             <ServerStatusIndicator Label="Razor" Status="ServerStatus(LanguageServerKind.RoslynRazor)" />
+            <ServerStatusIndicator Label="JS/TS" Status="ServerStatus(LanguageServerKind.Javascript)" />
             <ServerStatusIndicator Label="HTML" Status="ServerStatus(LanguageServerKind.Html)" />
             <ServerStatusIndicator Label="CSS" Status="ServerStatus(LanguageServerKind.Css)" />
         </div>
@@ -217,6 +190,8 @@
                     <label class="settings-switch"><span>Reduced motion</span><input type="checkbox" @bind="_settingsReducedMotion" /><span class="switch-track" aria-hidden="true"></span></label>
                     <label class="settings-switch"><span>High contrast</span><input type="checkbox" @bind="_settingsHighContrast" /><span class="switch-track" aria-hidden="true"></span></label>
                     <label class="settings-switch"><span>Editor ligatures</span><input type="checkbox" @bind="_settingsLigatures" /><span class="switch-track" aria-hidden="true"></span></label>
+                    <label class="settings-switch"><span>Word wrap</span><input type="checkbox" @bind="_settingsWordWrap" /><span class="switch-track" aria-hidden="true"></span></label>
+                    <label class="settings-switch"><span>Brace guides</span><input type="checkbox" @bind="_settingsBraceGuides" /><span class="switch-track" aria-hidden="true"></span></label>
                 </div>
                 <label class="settings-field"><span>Popup location</span><select @bind="_settingsPopupPlacement"><option value="Contextual">Follow caret or pointer</option><option value="TopLeft">Top left</option><option value="TopCenter">Top center</option><option value="TopRight">Top right</option><option value="LeftCenter">Left center</option><option value="RightCenter">Right center</option><option value="BottomLeft">Bottom left</option><option value="BottomCenter">Bottom center</option><option value="BottomRight">Bottom right</option></select></label>
                 <fieldset class="settings-keybindings"><legend>Keyboard shortcuts</legend>
@@ -280,7 +255,7 @@
             </form>
         </div>
     }
-    <QuickAccessOverlay Open="_quickAccessOpen" Commands="_quickAccessCommands" Query="_quickAccessQuery"
+    <QuickAccessOverlay @key="_quickAccessSession" Open="_quickAccessOpen" Commands="_quickAccessCommands" Query="_quickAccessQuery"
                         Busy="_quickAccessBusy" Items="_quickAccessItems" Selected="_quickAccessSelected"
                         QueryChanged="UpdateQuickAccessAsync" SelectedChanged="value => _quickAccessSelected = value"
                         Activate="ActivateQuickAccessAsync" Close="CloseQuickAccess" />
@@ -304,6 +279,7 @@
     private readonly Dictionary<LanguageServerKind, LanguageServerStatus> _languageServerStatuses = new()
     {
         [LanguageServerKind.RoslynRazor] = new(LanguageServerState.Stopped, Detail: "Waiting for workspace restoration."),
+        [LanguageServerKind.Javascript] = new(LanguageServerState.Stopped, Detail: "Waiting for workspace restoration."),
         [LanguageServerKind.Html] = new(LanguageServerState.Stopped, Detail: "Waiting for workspace restoration."),
         [LanguageServerKind.Css] = new(LanguageServerState.Stopped, Detail: "Waiting for workspace restoration.")
     };
@@ -331,7 +307,8 @@
     private string? _targetFramework, _launchProfile, _runWorkingDirectory;
     private IReadOnlyList<string> _runArguments = [];
     private bool _buildConfiguratorOpen;
-    private bool _settingsOpen, _settingsReducedMotion, _settingsHighContrast, _settingsLigatures;
+    private bool _settingsOpen, _settingsReducedMotion, _settingsHighContrast, _settingsLigatures, _settingsWordWrap,
+        _settingsBraceGuides;
     private string _settingsTheme = "Rider Dark";
     private string _settingsScope = "User";
     private string _settingsPopupPlacement = "Contextual";
@@ -348,12 +325,14 @@
     private IReadOnlyList<QuickAccessItem> _quickAccessItems = [];
     private CancellationTokenSource? _quickAccessCancellation;
     private int _quickAccessSelected;
+    private int _quickAccessSession;
     private int _navigationIndex = -1;
     private bool _restoringNavigation, _symbolSearchOpen, _searchOpen;
     private long _languageAnalysisRevision;
+    private int _commandPaletteShiftTaps;
     private bool _quickAccessOpen, _quickAccessCommands, _quickAccessBusy;
     private bool _projectReloading, _outputOpen, _terminalOpen, _debugOpen;
-    private bool _showFind, _wordWrap, _externalChange, _explorerOpen = true, _problemsOpen, _suggestions = true;
+    private bool _showFind, _wordWrap, _braceGuides, _externalChange, _explorerOpen = true, _problemsOpen, _suggestions = true;
     private DocumentTab? ActiveTab => _workspace.FocusedGroup.ActiveTab;
     private EditorDocumentState _document => ActiveTab?.Document ?? _emptyDocument;
     private IReadOnlyList<(Microsoft.CodeAnalysis.ProjectId Id, string Name)> ActiveContexts =>
@@ -390,6 +369,7 @@
         string? restoredStartupProject = null;
         WorkbenchLayoutState? restoredState = null;
         _wordWrap = Program.Configuration.Current.WordWrap;
+        _braceGuides = Program.Configuration.Current.BraceGuides;
         _suggestions = Program.Configuration.Current.AutoCompletion;
         var applicationData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NovaSharp");
         _globalPersistence = new(Path.Combine(applicationData, "workbench-session.json"));
@@ -606,6 +586,7 @@
         if (!firstRender) return;
         _self = DotNetObjectReference.Create(this);
         await RecoverWorkspaceSolutionAsync();
+        await JS.InvokeVoidAsync("novaSharp.initCommandPaletteShortcut", _workbench, _self, 1000);
         await JS.InvokeVoidAsync("novaSharp.initEditorDragCleanup", _workbench, _self);
         await JS.InvokeVoidAsync("novaSharp.initPointerTabDrag", _workbench, _self);
         await JS.InvokeVoidAsync("novaSharp.initExplorerFileDrag", _workbench, _self);
@@ -700,7 +681,9 @@
         var files = await Program.App.MainWindow.ShowOpenFileDialogAsync(title: "Open file", multiSelect: true,
             filterPatterns: [new FileFilter("C#", "*.cs"), new FileFilter("Razor component", "*.razor"),
                 new FileFilter("Razor page", "*.cshtml"), new FileFilter("HTML", "*.html"),
-                new FileFilter("HTML", "*.htm"), new FileFilter("CSS", "*.css")]);
+                new FileFilter("HTML", "*.htm"), new FileFilter("CSS", "*.css"),
+                new FileFilter("JavaScript", "*.js"), new FileFilter("JSX", "*.jsx"),
+                new FileFilter("TypeScript", "*.ts"), new FileFilter("TSX", "*.tsx")]);
         UntrackActiveDocument();
         foreach (var path in files ?? []) await _workspace.OpenAsync(path);
         TrackActiveDocument();
@@ -822,14 +805,6 @@
         if (copy) await _workspace.CopyAsync(tab, target.Id); else _workspace.Move(tab, source.Id, target.Id);
         await ActiveChangedAsync();
     }
-    private void FocusNext()
-    {
-        _openMenu = null;
-        var groups = _workspace.Layout.Groups;
-        var index = Array.IndexOf(groups.ToArray(), _workspace.FocusedGroup);
-        _workspace.Focus(groups[(index + 1) % groups.Count].Id);
-        TrackActiveDocument();
-    }
     private async Task FocusDirectionAsync(string direction)
     {
         _openMenu = null;
@@ -853,7 +828,6 @@
     private void ToggleMenu(string menu) => _openMenu = _openMenu == menu ? null : menu;
     private void SwitchMenu(string menu) { if (_openMenu is not null) _openMenu = menu; }
     private void CloseMenu() => _openMenu = null;
-    private async Task ToggleWrapAsync() { _openMenu = null; _wordWrap = !_wordWrap; await Program.Configuration.SaveUserAsync(Program.Configuration.Current with { WordWrap = _wordWrap }); }
     private async Task ToggleSuggestionsAsync() { _openMenu = null; _suggestions = !_suggestions; await Program.Configuration.SaveUserAsync(Program.Configuration.Current with { AutoCompletion = _suggestions }); }
     private async Task ReloadAsync() { await _document.ReloadAsync(); _externalChange = false; StateHasChanged(); }
     private void KeepBuffer() { _document.KeepBuffer(); _externalChange = false; }
@@ -871,7 +845,7 @@
     {
         _commands.Register(new("workbench.action.quickOpen", "Quick Open", "Ctrl+P", () => WorkspaceRoot is not null,
             _ => { OpenQuickOpen(); return Task.CompletedTask; }));
-        _commands.Register(new("workbench.action.showCommands", "Command Palette", "Ctrl+Shift+P", () => true,
+        _commands.Register(new("workbench.action.showCommands", "Command Palette", "LeftShift+LeftShift", () => true,
             _ => { OpenCommandPalette(); return Task.CompletedTask; }));
         _commands.Register(new("workbench.action.findInFiles", "Search Workspace", "Ctrl+Shift+F", () => WorkspaceRoot is not null,
             _ => { if (!_searchOpen) ToggleSearch(); return Task.CompletedTask; }));
@@ -886,6 +860,9 @@
         _commands.Register(new("languages.restartCss", "Restart CSS language server", null,
             () => ServerManager(LanguageServerKind.Css) is not null,
             token => ServerManager(LanguageServerKind.Css)!.RestartAsync(token)));
+        _commands.Register(new("languages.restartJavascript", "Restart JavaScript and TypeScript language server", null,
+            () => ServerManager(LanguageServerKind.Javascript) is not null,
+            token => ServerManager(LanguageServerKind.Javascript)!.RestartAsync(token)));
         _commands.Register(new("workbench.action.files.save", "Save", "Ctrl+S", () => _document.IsDirty,
             _ => SaveAsync()));
         _commands.Register(new("workbench.action.splitEditor", "Split Editor Right", "Ctrl+\\", () => true,
@@ -1015,6 +992,8 @@
         _settingsReducedMotion = settings.ReducedMotion;
         _settingsHighContrast = settings.HighContrast;
         _settingsLigatures = settings.Ligatures;
+        _settingsWordWrap = settings.WordWrap;
+        _settingsBraceGuides = settings.BraceGuides;
         _settingsPopupPlacement = settings.PopupPlacement;
         _settingsKeybindings = settings.Keybindings is null ? [] : new(settings.Keybindings, StringComparer.Ordinal);
         _settingsOpen = true;
@@ -1025,7 +1004,8 @@
         if (_settingsKeybindings.Values.Any(value => !KeyGesture.IsValid(value))) { _status = "A keyboard shortcut is invalid."; return; }
         var settings = Program.Configuration.Current with { Theme = _settingsTheme, Zoom = _settingsZoom,
             ReducedMotion = _settingsReducedMotion, HighContrast = _settingsHighContrast, Ligatures = _settingsLigatures,
-            PopupPlacement = _settingsPopupPlacement, Keybindings = new(_settingsKeybindings, StringComparer.Ordinal) };
+            PopupPlacement = _settingsPopupPlacement, Keybindings = new(_settingsKeybindings, StringComparer.Ordinal),
+            BraceGuides = _settingsBraceGuides, WordWrap = _settingsWordWrap };
         if (_settingsScope == "Workspace" && WorkspaceRoot is { } root)
         {
             var settingsRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NovaSharp", "workspace-settings");
@@ -1034,6 +1014,8 @@
             await Program.Configuration.SaveWorkspaceAsync(settings);
         }
         else await Program.Configuration.SaveUserAsync(settings);
+        _braceGuides = settings.BraceGuides;
+        _wordWrap = settings.WordWrap;
         Program.App.MainWindow.SetZoom(_settingsZoom);
         _settingsOpen = false;
     }
@@ -1080,11 +1062,6 @@
         await _debugSession.RunToCursorAsync(_document.FilePath, line);
     }
     private void DebugStateChanged(DebugSessionState state) => _ = InvokeAsync(StateHasChanged);
-    private async Task RestartRunAsync()
-    {
-        _openMenu = null;
-        if (_buildRun.RestartAsync() is { } restart) await restart;
-    }
     private void ToggleOutput() { _openMenu = null; _outputOpen = !_outputOpen; _ = SaveLayoutAsync(); }
     private void ToggleTerminal() { _openMenu = null; _terminalOpen = !_terminalOpen; _ = SaveLayoutAsync(); }
     private async Task ToggleTerminalAsync()
@@ -1126,18 +1103,18 @@
     {
         _openMenu = null;
         if (WorkspaceRoot is null) { _status = "Open a workspace or solution to use Quick Open."; return; }
-        _quickAccessCommands = false; _quickAccessOpen = true; _quickAccessQuery = "";
+        _quickAccessCommands = false; _quickAccessOpen = true; _quickAccessQuery = ""; _quickAccessSession++;
         _ = UpdateQuickAccessAsync("");
     }
     private void OpenCommandPalette()
     {
-        _openMenu = null; _quickAccessCommands = true; _quickAccessOpen = true; _quickAccessQuery = "";
+        _openMenu = null; _quickAccessCommands = true; _quickAccessOpen = true; _quickAccessQuery = ""; _quickAccessSession++;
         _quickAccessItems = _quickAccess.FindCommands(""); _quickAccessSelected = 0;
     }
     private void CloseQuickAccess()
     {
         _quickAccessCancellation?.Cancel(); _quickAccessCancellation?.Dispose(); _quickAccessCancellation = null;
-        _quickAccessOpen = false; _quickAccessBusy = false;
+        _quickAccessOpen = false; _quickAccessBusy = false; _quickAccessQuery = ""; _quickAccessItems = [];
     }
     private async Task UpdateQuickAccessAsync(string query)
     {
@@ -1360,7 +1337,11 @@
         LanguageServerKind.RoslynRazor => extension.Equals(".cs", StringComparison.OrdinalIgnoreCase)
             || extension.Equals(".razor", StringComparison.OrdinalIgnoreCase) || extension.Equals(".cshtml", StringComparison.OrdinalIgnoreCase),
         LanguageServerKind.Html => extension.Equals(".html", StringComparison.OrdinalIgnoreCase) || extension.Equals(".htm", StringComparison.OrdinalIgnoreCase),
-        LanguageServerKind.Css => extension.Equals(".css", StringComparison.OrdinalIgnoreCase), _ => false
+        LanguageServerKind.Css => extension.Equals(".css", StringComparison.OrdinalIgnoreCase),
+        LanguageServerKind.Javascript => extension.Equals(".js", StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(".jsx", StringComparison.OrdinalIgnoreCase) || extension.Equals(".ts", StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(".tsx", StringComparison.OrdinalIgnoreCase),
+        _ => false
     };
     private static bool PathsEqual(string left, string right) => string.Equals(Path.GetFullPath(left), Path.GetFullPath(right),
         OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
@@ -1395,7 +1376,6 @@
         if (!(args.CtrlKey || args.MetaKey)) return;
         switch (args.Key.ToLowerInvariant())
         {
-            case "p" when args.ShiftKey: OpenCommandPalette(); break;
             case "p": OpenQuickOpen(); break;
             case "f" when args.ShiftKey: if (!_searchOpen) ToggleSearch(); break;
             case "o": await OpenFileAsync(); break;
@@ -1420,6 +1400,33 @@
             case "`": await ToggleTerminalAsync(); break;
         }
     }
+
+    [JSInvokable]
+    public Task CommandPaletteShiftTaps(int taps) => InvokeAsync(() =>
+    {
+        var binding = Program.Configuration.Current.Keybindings?.GetValueOrDefault(
+            "workbench.action.showCommands", "LeftShift+LeftShift") ?? "LeftShift+LeftShift";
+        if (!string.Equals(binding, "LeftShift+LeftShift", StringComparison.OrdinalIgnoreCase)) return;
+        _commandPaletteShiftTaps = taps;
+        if (taps > 1) OpenCommandPalette();
+        StateHasChanged();
+    });
+
+    [JSInvokable]
+    public Task ResetCommandPaletteShiftTaps() => InvokeAsync(() =>
+    {
+        if (_commandPaletteShiftTaps == 0) return;
+        _commandPaletteShiftTaps = 0;
+        StateHasChanged();
+    });
+
+    [JSInvokable]
+    public Task DismissQuickAccess() => InvokeAsync(() =>
+    {
+        if (!_quickAccessOpen) return;
+        CloseQuickAccess();
+        StateHasChanged();
+    });
     private static string NormalizeGestureKey(string key) => key.Length == 1 ? key.ToUpperInvariant() : key switch
     {
         " " => "Space",

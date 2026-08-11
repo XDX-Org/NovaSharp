@@ -41,7 +41,8 @@ internal sealed class WorkspaceService : IDisposable
         ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
     private static readonly HashSet<string> DefaultIgnored = new(StringComparer.OrdinalIgnoreCase);
     private static readonly HashSet<string> SupportedExtensions = new(StringComparer.OrdinalIgnoreCase)
-        { ".cs", ".csproj", ".sln", ".slnx", ".razor", ".cshtml", ".html", ".htm", ".css", ".json", ".xml", ".md", ".txt" };
+        { ".cs", ".csproj", ".sln", ".slnx", ".razor", ".cshtml", ".html", ".htm", ".css",
+            ".js", ".jsx", ".ts", ".tsx", ".json", ".xml", ".md", ".txt" };
     private readonly HashSet<string> _ignored;
     private FileSystemWatcher? _watcher;
     private readonly object _changeGate = new();

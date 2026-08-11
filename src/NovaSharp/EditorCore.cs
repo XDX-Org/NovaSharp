@@ -35,7 +35,9 @@ internal static partial class CSharpTokenizer
         "object", "operator", "out", "override", "params", "partial", "private", "protected", "public", "readonly", "record",
         "ref", "return", "sbyte", "sealed", "short", "sizeof", "stackalloc", "static", "string", "struct",
         "switch", "this", "throw", "true", "try", "typeof", "uint", "ulong", "unchecked", "unsafe", "ushort",
-        "using", "var", "virtual", "void", "volatile", "while", "yield", "get", "set", "add", "remove"
+        "using", "var", "virtual", "void", "volatile", "while", "yield", "get", "set", "add", "remove",
+        "break", "case", "catch", "debugger", "delete", "do", "export", "extends", "finally", "for", "from",
+        "function", "import", "in", "instanceof", "let", "of", "switch", "this", "throw", "try", "typeof", "with"
     ];
 
     internal static IReadOnlyList<EditorLine> Tokenize(string text)
@@ -186,7 +188,7 @@ internal static partial class CSharpTokenizer
     }
 
     internal static IReadOnlyList<EditorLine> Tokenize(string text, IReadOnlyList<SemanticSpan> semanticSpans,
-        bool includeLocalColouring = true)
+        bool includeLocalColouring = true, bool includeBraceGuides = true)
     {
         var lines = includeLocalColouring ? Tokenize(text).ToArray() : PlainLines(text);
         var lineStart = 0;
@@ -208,7 +210,7 @@ internal static partial class CSharpTokenizer
             }
             lineStart = lineEnd + NewLineLength(text, lineEnd);
         }
-        return AddBraceGuides(lines);
+        return includeBraceGuides ? AddBraceGuides(lines) : lines;
     }
 
     private static EditorLine[] AddBraceGuides(EditorLine[] lines)

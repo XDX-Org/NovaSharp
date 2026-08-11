@@ -56,9 +56,11 @@ public sealed class Phase2AcceptanceTests
     [TestMethod]
     public async Task SettingsSupportValidatedUserAndWorkspaceScopes()
     {
+        Assert.IsTrue(KeyGesture.IsValid("LeftShift+LeftShift"));
         var user = TempPath();
         var workspace = TempPath();
         var service = new ConfigurationService(user);
+        Assert.IsFalse(service.Current.BraceGuides);
         await service.SaveUserAsync(new(Zoom: 110));
         await service.UseWorkspaceAsync(workspace);
         Assert.AreEqual(110, service.Current.Zoom);
