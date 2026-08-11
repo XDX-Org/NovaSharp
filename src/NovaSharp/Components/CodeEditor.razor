@@ -76,7 +76,7 @@
     }
     @if (_hover is { Sections.Count: > 0 })
     {
-        <div class="language-popup hover-popup" style="@PopupStyle" role="tooltip">
+        <div class="language-popup hover-popup" style="@HoverPopupStyle" role="tooltip">
             @for (var index = 0; index < _hover.Sections.Count; index++)
             {
                 var section = _hover.Sections[index];
@@ -167,6 +167,7 @@
     private bool _refreshLanguageAfterRender;
     private string _formatDiagnostic = "Not started";
     private double _popupX = 72, _popupY = 24;
+    private double _hoverPopupX = 72, _hoverPopupY = 24;
     private IExtendedLanguageProvider ExtendedProvider => (IExtendedLanguageProvider)LanguageProvider;
     private LanguageProviderInfo LanguageInfo => Document.FilePath is { } path
         ? ExtendedProvider.GetInfo(path) : new("text", "Text", LanguageCapabilities.None, false, "Language services unavailable");
@@ -234,6 +235,7 @@
         _languageReadyKey = readyKey;
     }
     private string PopupStyle => $"left:{_popupX}px;top:{_popupY}px";
+    private string HoverPopupStyle => $"left:{_hoverPopupX}px;top:{_hoverPopupY}px";
     private string OverviewTop(LanguageDiagnostic diagnostic) => $"{Math.Clamp((diagnostic.StartLine + .5) / Math.Max(1, Lines.Count) * 100, 0, 99).ToString(System.Globalization.CultureInfo.InvariantCulture)}%";
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -421,7 +423,7 @@
             _hover = new(diagnostic.Range, sections);
         }
         else _hover = semantic;
-        await UpdateAnchorAsync(caret);
+        await UpdateAnchorAsync(caret, hover: true);
     }
 
     private LanguageDiagnostic? DiagnosticAt(int caret) => _diagnostics
@@ -610,11 +612,13 @@
         catch (Exception exception) { _formatDiagnostic = exception.ToString(); }
     }
 
-    private async Task UpdateAnchorAsync(int caret)
+    private async Task UpdateAnchorAsync(int caret, bool hover = false)
     {
         if (_module is null) return;
         var anchor = await _module.InvokeAsync<double[]>("getEditorAnchor", _root, caret);
-        if (anchor.Length == 2) { _popupX = anchor[0]; _popupY = anchor[1]; }
+        if (anchor.Length != 2) return;
+        if (hover) { _hoverPopupX = anchor[0]; _hoverPopupY = anchor[1]; }
+        else { _popupX = anchor[0]; _popupY = anchor[1]; }
     }
 
     private void MoveCompletion(int delta)
