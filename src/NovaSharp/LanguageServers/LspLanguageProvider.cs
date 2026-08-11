@@ -172,8 +172,17 @@ internal sealed class LspLanguageProvider : ILanguageProvider, IExtendedLanguage
         var server = Ready(request.DocumentId); var snapshot = _snapshot(request.DocumentId);
         if (server is null || snapshot is null) return Missing<IReadOnlyList<SemanticSpan>>(request);
         await _synchronize(request.DocumentId, cancellationToken);
-        var value = await server.RequestAsync<JsonElement>("textDocument/semanticTokens/full",
-            new { textDocument = new { uri = LspConverters.FileUri(request.DocumentId).AbsoluteUri } }, cancellationToken);
+        var textDocument = new { uri = LspConverters.FileUri(request.DocumentId).AbsoluteUri };
+        var razor = Path.GetExtension(request.DocumentId).Equals(".razor", StringComparison.OrdinalIgnoreCase)
+            || Path.GetExtension(request.DocumentId).Equals(".cshtml", StringComparison.OrdinalIgnoreCase);
+        var value = razor
+            ? await server.RequestAsync<JsonElement>("textDocument/semanticTokens/range", new
+            {
+                textDocument,
+                range = new LspRange(new(0, 0), LspConverters.ToPosition(snapshot.Value.Text, snapshot.Value.Text.Length))
+            }, cancellationToken)
+            : await server.RequestAsync<JsonElement>("textDocument/semanticTokens/full",
+                new { textDocument }, cancellationToken);
         if (!value.TryGetProperty("data", out var data)) return new(request.Version, []);
         var semanticProvider = server.Capabilities.TryGetProperty("semanticTokensProvider", out var configuredProvider)
             ? configuredProvider

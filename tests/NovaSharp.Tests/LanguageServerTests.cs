@@ -238,7 +238,7 @@ public sealed class LanguageServerTests
         var project = Path.Combine(root, "Fixture.csproj");
         var path = Path.Combine(root, "Index.razor");
         await File.WriteAllTextAsync(project, "<Project Sdk=\"Microsoft.NET.Sdk.Razor\"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup><ItemGroup><FrameworkReference Include=\"Microsoft.AspNetCore.App\" /></ItemGroup></Project>");
-        await File.WriteAllTextAsync(path, "<div>Content</div>");
+        await File.WriteAllTextAsync(path, "<div>Content</div>\n@code { private void RenderContent() { } }");
         var catalog = LanguageServerCatalog.Discover(root);
         var razorDefinition = catalog.Definitions.Single(item => item.Kind == LanguageServerKind.RoslynRazor);
         var htmlDefinition = catalog.Definitions.Single(item => item.Kind == LanguageServerKind.Html);
@@ -274,6 +274,10 @@ public sealed class LanguageServerTests
             new(path, null, document.Version, 1), true, default)).Value;
         Assert.IsNotNull(completions);
         Assert.IsTrue(completions.Items.Any(item => item.DisplayText.Contains("div", StringComparison.OrdinalIgnoreCase)));
+        var semantics = (await provider.GetSemanticSpansAsync(
+            new(path, null, document.Version, document.Content!.Length), default)).Value ?? [];
+        Assert.IsTrue(semantics.Any(item => item.Classification.Contains("method", StringComparison.OrdinalIgnoreCase)),
+            $"Semantic registrations: {string.Join(" | ", razor.Registrations("textDocument/semanticTokens").Select(item => item.RegisterOptions?.GetRawText()))}");
         await razor.DisposeAsync();
         await html.DisposeAsync();
         Directory.Delete(root, true);
