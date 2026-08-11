@@ -165,6 +165,7 @@
     private int _selectedCompletion;
     private bool _outlineOpen;
     private bool _refreshLanguageAfterRender;
+    private string _formatDiagnostic = "Not started";
     private double _popupX = 72, _popupY = 24;
     private IExtendedLanguageProvider ExtendedProvider => (IExtendedLanguageProvider)LanguageProvider;
     private LanguageProviderInfo LanguageInfo => Document.FilePath is { } path
@@ -325,6 +326,9 @@
     [JSInvokable]
     public string CompletionDiagnostic() => _completionRequest.LastError?.ToString()
         ?? $"{_completionRequest.Status}; {_completion?.Items.Count ?? 0} items; document version {Document.Version}";
+
+    [JSInvokable]
+    public string FormatDiagnostic() => _formatDiagnostic;
 
     private LanguageRequest Request(int position, TextRange? range = null) =>
         new(Document.FilePath!, ProjectContext, Document.Version, Math.Clamp(position, 0, Value.Length), range);
@@ -568,14 +572,19 @@
         if (_module is null || Document.FilePath is null) return;
         try
         {
+            _formatDiagnostic = "Requesting";
             TextRange? range = ViewState.SelectionStart == ViewState.SelectionEnd ? null
                 : new TextRange(ViewState.SelectionStart, ViewState.SelectionEnd - ViewState.SelectionStart);
             var response = await LanguageProvider.FormatAsync(Request(ViewState.SelectionStart, range), default);
             if (response.SourceVersion == Document.Version && response.Value is { } formatted)
+            {
+                _formatDiagnostic = formatted.Text == Value ? "Provider returned unchanged text" : "Applied";
                 await _module.InvokeVoidAsync("replaceEditorText", _root, formatted.Text,
                     formatted.SelectionStart, formatted.SelectionLength);
+            }
+            else _formatDiagnostic = $"Stale or empty response at document version {Document.Version}";
         }
-        catch (Exception) { }
+        catch (Exception exception) { _formatDiagnostic = exception.ToString(); }
     }
 
     private async Task UpdateAnchorAsync(int caret)

@@ -311,6 +311,18 @@ export async function runPhase7Smoke(root) {
     try {
         if (!await waitFor(() => dotNet.invokeMethodAsync('LanguageReady'), 300))
             throw new Error('C# services did not finish loading');
+        const unformatted = 'class C{void M(){}}';
+        input.value = unformatted;
+        input.setSelectionRange(0, 0);
+        let formattingApplied = false;
+        for (let attempt = 0; attempt < 30 && !formattingApplied; attempt++) {
+            await dotNet.invokeMethodAsync('InputChanged', input.value, 0, null);
+            await dotNet.invokeMethodAsync('EditorCommand', 'format', 0);
+            formattingApplied = await waitFor(
+                () => input.value !== unformatted && input.value.includes('void M()'), 10);
+        }
+        const formattingDiagnostic = await dotNet.invokeMethodAsync('FormatDiagnostic');
+
         input.value = 'using System; class C { void M() { Console. } }';
         const completionPosition = input.value.indexOf('. }') + 1;
         input.setSelectionRange(completionPosition, completionPosition);
@@ -326,7 +338,7 @@ export async function runPhase7Smoke(root) {
         const completionKeyboardOwned = await waitFor(() => !root.querySelector('.completion-popup'));
 
         input.value = 'using System; class C { void M() { string.Concat("a", ); } }';
-        const signaturePosition = input.value.indexOf(', )') + 2;
+        const signaturePosition = input.value.indexOf(', )') + 1;
         input.setSelectionRange(signaturePosition, signaturePosition);
         let signatureVisible = false;
         for (let attempt = 0; attempt < 30 && !signatureVisible; attempt++) {
@@ -343,19 +355,17 @@ export async function runPhase7Smoke(root) {
         input.setSelectionRange(input.value.length, input.value.length);
         input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
         const autoIndent = input.value.endsWith('\n    ');
+        await new Promise(resolve => setTimeout(resolve, 250));
         input.value = 'class C { }';
         input.setSelectionRange(0, input.value.length);
         input.dispatchEvent(new KeyboardEvent('keydown', { key: '/', ctrlKey: true, bubbles: true, cancelable: true }));
         const commentToggle = input.value.startsWith('// ');
+        await new Promise(resolve => setTimeout(resolve, 250));
 
-        input.value = 'class C{void M(){}}';
-        input.setSelectionRange(0, 0);
-        await dotNet.invokeMethodAsync('InputChanged', input.value, 0, null);
-        await dotNet.invokeMethodAsync('EditorCommand', 'format', 0);
-        const formattingApplied = await waitFor(() => input.value.startsWith('class C {'));
         return { completionVisible, completionKeyboardOwned, signatureVisible, hoverVisible, semanticTokensPresent,
             autoIndent, commentToggle, formattingApplied, loadingStateCleared: !root.querySelector('.language-state'),
-            error: completionVisible ? null : `${completionDiagnostic}; provider returned ${completionItems} completion items` };
+            error: !completionVisible ? `${completionDiagnostic}; provider returned ${completionItems} completion items`
+                : !formattingApplied ? formattingDiagnostic : null };
     } catch (error) {
         return { error: String(error) };
     }

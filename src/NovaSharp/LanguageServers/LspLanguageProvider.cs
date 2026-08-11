@@ -135,7 +135,14 @@ internal sealed class LspLanguageProvider : ILanguageProvider, IExtendedLanguage
     public async Task<LanguageResponse<SignatureResult>> GetSignatureHelpAsync(LanguageRequest request,
         CancellationToken cancellationToken)
     {
-        var result = await PositionRequest(request, "textDocument/signatureHelp", cancellationToken);
+        var snapshot = _snapshot(request.DocumentId);
+        var trigger = snapshot is not null && request.Position > 0 && request.Position <= snapshot.Value.Text.Length
+            ? snapshot.Value.Text[request.Position - 1].ToString() : string.Empty;
+        object context = trigger is "(" or ","
+            ? new { triggerKind = 2, triggerCharacter = trigger, isRetrigger = false }
+            : new { triggerKind = 1, isRetrigger = false };
+        var result = await PositionRequest(request, "textDocument/signatureHelp", cancellationToken,
+            new { context });
         if (result is not { } value || !value.TryGetProperty("signatures", out var signatures)) return new(request.Version, null);
         return new(request.Version, new(signatures.EnumerateArray().Select(item => String(item, "label") ?? string.Empty).ToArray(),
             Int(value, "activeSignature"), Int(value, "activeParameter")));

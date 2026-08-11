@@ -1067,8 +1067,11 @@
                 _languageDocuments.Remove(document);
             }
             foreach (var document in current)
-                if (_languageDocuments.Add(document) && CoordinatorFor(document.FilePath!) is { } coordinator)
+                if (!_languageDocuments.Contains(document) && CoordinatorFor(document.FilePath!) is { } coordinator)
+                {
                     await coordinator.OpenAsync(document);
+                    _languageDocuments.Add(document);
+                }
         }
         finally { _languageSync.Release(); }
     }
