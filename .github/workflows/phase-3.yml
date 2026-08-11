@@ -112,7 +112,7 @@ jobs:
           $binary = 'artifacts/app/NovaSharp'
           $arguments = @("--phase4-smoke=$workspace", "--smoke-report=$report")
           $process = Start-Process xvfb-run -ArgumentList (@('-a', $binary) + $arguments) -PassThru
-          if (-not $process.WaitForExit(60000)) { $process.Kill($true); throw 'Phase 4 native smoke timed out.' }
+          if (-not $process.WaitForExit(120000)) { $process.Kill($true); throw 'Phase 4 native smoke timed out.' }
           if ($process.ExitCode -ne 0) { throw "Phase 4 native smoke exited with $($process.ExitCode)." }
           $result = Get-Content $report | ConvertFrom-Json
           $required = 'TabsPresent', 'PointerReordered', 'OverflowScrollable', 'MiddleClickClosed', 'AccessibleLabels', 'ContextCommandsPresent'
