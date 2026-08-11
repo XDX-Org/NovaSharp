@@ -38,20 +38,10 @@ internal static partial class CSharpTokenizer
         var result = new List<EditorLine>();
         var lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
         var inBlockComment = false;
-        var inEnum = false;
-        var enumDepth = 0;
-        var awaitingEnumName = false;
-        var awaitingEnumBody = false;
-        var awaitingDeclarationType = false;
-        var awaitingEventType = false;
-        var awaitingEventName = false;
         for (var lineIndex = 0; lineIndex < lines.Length; lineIndex++)
         {
             var line = lines[lineIndex];
             var spans = new List<ClassifiedSpan>();
-            var namespaceContext = false;
-            var inAttributeList = false;
-            var attributeArgumentDepth = 0;
             for (var i = 0; i < line.Length;)
             {
                 if (inBlockComment)
@@ -98,60 +88,10 @@ internal static partial class CSharpTokenizer
                     while (i < line.Length && (char.IsLetterOrDigit(line[i]) || line[i] == '_')) i++;
                     var word = line[start..i];
                     if (Keywords.Contains(word))
-                    {
                         spans.Add(new(start, i - start, TokenKind.Keyword));
-                        if (word == "enum") { awaitingEnumName = true; awaitingEnumBody = true; }
-                        if (word == "record") awaitingDeclarationType = true;
-                        if (word == "event") awaitingEventType = true;
-                        if (word is "using" or "namespace") namespaceContext = true;
-                    }
-                    else if (awaitingEnumName)
-                    {
-                        spans.Add(new(start, i - start, TokenKind.EnumType));
-                        awaitingEnumName = false;
-                    }
-                    else if (awaitingDeclarationType)
-                    {
-                        spans.Add(new(start, i - start, TokenKind.Type));
-                        awaitingDeclarationType = false;
-                    }
-                    else if (inAttributeList && attributeArgumentDepth == 0)
-                        spans.Add(new(start, i - start, TokenKind.Type));
-                    else if (inEnum) spans.Add(new(start, i - start, TokenKind.Field));
-                    else if (awaitingEventType)
-                    {
-                        spans.Add(new(start, i - start, TokenKind.Type));
-                        awaitingEventType = false;
-                        awaitingEventName = true;
-                    }
-                    else if (awaitingEventName)
-                    {
-                        spans.Add(new(start, i - start, TokenKind.Event));
-                        awaitingEventName = false;
-                    }
-                    else if (namespaceContext) spans.Add(new(start, i - start, TokenKind.Namespace));
-                    else if (NextNonWhitespace(line, i) == '(' && PreviousNonWhitespace(line, start) == '[')
-                        spans.Add(new(start, i - start, TokenKind.Type));
-                    else if (NextNonWhitespace(line, i) == '(') spans.Add(new(start, i - start, TokenKind.Method));
-                    else if (word[0] == '_') spans.Add(new(start, i - start, TokenKind.Field));
-                    else if (PreviousNonWhitespace(line, start) == '.') spans.Add(new(start, i - start, TokenKind.Property));
-                    else if (NextNonWhitespace(line, i) is ',' or '=' or ')')
-                        spans.Add(new(start, i - start, TokenKind.Parameter));
-                    else if (char.IsUpper(word[0])) spans.Add(new(start, i - start, TokenKind.Type));
                 }
                 else
                 {
-                    if (line[i] == '[' && PreviousNonWhitespace(line, i) is null or ']') inAttributeList = true;
-                    else if (inAttributeList && line[i] == '(') attributeArgumentDepth++;
-                    else if (inAttributeList && line[i] == ')' && attributeArgumentDepth > 0) attributeArgumentDepth--;
-                    else if (inAttributeList && line[i] == ']' && attributeArgumentDepth == 0) inAttributeList = false;
-                    if (line[i] is ';' or '=') namespaceContext = false;
-                    if (line[i] == '{')
-                    {
-                        if (awaitingEnumBody) { inEnum = true; enumDepth = 1; awaitingEnumBody = false; }
-                        else if (inEnum) enumDepth++;
-                    }
-                    else if (line[i] == '}' && inEnum && --enumDepth == 0) inEnum = false;
                     i++;
                 }
             }
@@ -238,18 +178,6 @@ internal static partial class CSharpTokenizer
         {
             if (length > 0) spans.Add(new(tokenStart, length, kind));
         }
-    }
-
-    private static char? NextNonWhitespace(string text, int position)
-    {
-        while (position < text.Length && char.IsWhiteSpace(text[position])) position++;
-        return position < text.Length ? text[position] : null;
-    }
-
-    private static char? PreviousNonWhitespace(string text, int position)
-    {
-        while (position > 0 && char.IsWhiteSpace(text[position - 1])) position--;
-        return position > 0 ? text[position - 1] : null;
     }
 
     internal static IReadOnlyList<EditorLine> Tokenize(string text, IReadOnlyList<SemanticSpan> semanticSpans)

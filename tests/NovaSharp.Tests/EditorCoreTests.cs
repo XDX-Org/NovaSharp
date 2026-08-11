@@ -86,58 +86,6 @@ public sealed class EditorCoreTests
     }
 
     [TestMethod]
-    public void LocalColouringDoesNotRequireLanguageServices()
-    {
-        var spans = CSharpTokenizer.Tokenize("private int _field; service.Value = service.Run(value);").Single().Spans;
-
-        Assert.IsTrue(spans.Any(span => span.Kind == TokenKind.Keyword));
-        Assert.IsTrue(spans.Any(span => span.Kind == TokenKind.Field));
-        Assert.IsTrue(spans.Any(span => span.Kind == TokenKind.Property));
-        Assert.IsTrue(spans.Any(span => span.Kind == TokenKind.Method));
-    }
-
-    [TestMethod]
-    public void EnumMembersUseMemberColourWithoutLanguageServices()
-    {
-        var line = CSharpTokenizer.Tokenize("public enum BuildOperation { Restore, Build, Run }").Single();
-        var types = line.Spans.Where(span => span.Kind == TokenKind.EnumType).ToArray();
-        var members = line.Spans.Where(span => span.Kind == TokenKind.Field).ToArray();
-
-        Assert.HasCount(1, types);
-        Assert.HasCount(3, members);
-    }
-
-    [TestMethod]
-    public void ClassRecordAndEnumNamesUseRiderDeclarationColours()
-    {
-        var lines = CSharpTokenizer.Tokenize("class Service\nrecord Request\nenum State { Ready }");
-
-        Assert.IsTrue(lines[0].Spans.Any(span => span.Kind == TokenKind.Type));
-        Assert.IsTrue(lines[1].Spans.Any(span => span.Kind == TokenKind.Type));
-        Assert.IsTrue(lines[2].Spans.Any(span => span.Kind == TokenKind.EnumType));
-    }
-
-    [TestMethod]
-    public void CapitalizedParameterNamesUseNeutralColour()
-    {
-        const string text = "record Request(string ProjectPath, BuildOperation Operation, string Configuration = null)";
-        var parameters = CSharpTokenizer.Tokenize(text).Single().Spans
-            .Where(span => span.Kind == TokenKind.Parameter)
-            .Select(span => text.Substring(span.Start, span.Length)).ToArray();
-
-        CollectionAssert.AreEqual(new[] { "ProjectPath", "Operation", "Configuration" }, parameters);
-    }
-
-    [TestMethod]
-    public void UsingDirectiveSegmentsUseNamespaceColour()
-    {
-        var spans = CSharpTokenizer.Tokenize("using System.Text.RegularExpressions;").Single().Spans;
-
-        Assert.HasCount(3, spans.Where(span => span.Kind == TokenKind.Namespace));
-        Assert.IsFalse(spans.Any(span => span.Kind == TokenKind.Property));
-    }
-
-    [TestMethod]
     public void AccessorsUseKeywordColour()
     {
         var spans = CSharpTokenizer.Tokenize("string Name { get; init; } event Action Changed { add { } remove { } }")
@@ -146,15 +94,6 @@ public sealed class EditorCoreTests
         var text = "string Name { get; init; } event Action Changed { add { } remove { } }";
         CollectionAssert.IsSubsetOf(new[] { "get", "init", "add", "remove" }, spans
             .Where(span => span.Kind == TokenKind.Keyword).Select(span => text.Substring(span.Start, span.Length)).ToArray());
-    }
-
-    [TestMethod]
-    public void EventsUseRiderEventColour()
-    {
-        const string text = "internal event Action? Changed;";
-        var span = CSharpTokenizer.Tokenize(text).Single().Spans.Single(item => item.Kind == TokenKind.Event);
-
-        Assert.AreEqual("Changed", text.Substring(span.Start, span.Length));
     }
 
     [TestMethod]
@@ -179,26 +118,6 @@ public sealed class EditorCoreTests
     }
 
     [TestMethod]
-    public void AttributeNamesUseTypeColour()
-    {
-        const string text = "[GeneratedRegex(\"a+\")]";
-        var span = CSharpTokenizer.Tokenize(text).Single().Spans.Single(item => item.Start == 1);
-
-        Assert.AreEqual(TokenKind.Type, span.Kind);
-    }
-
-    [TestMethod]
-    public void CommaSeparatedAttributeNamesAllUseTypeColour()
-    {
-        const string text = "[Parameter, EditorRequired] public string Value { get; set; }";
-        var attributes = CSharpTokenizer.Tokenize(text).Single().Spans
-            .Where(span => span.Kind == TokenKind.Type && span.Start < text.IndexOf(']'))
-            .Select(span => text.Substring(span.Start, span.Length)).ToArray();
-
-        CollectionAssert.AreEqual(new[] { "Parameter", "EditorRequired" }, attributes);
-    }
-
-    [TestMethod]
     public void RazorMarkupUsesDedicatedTagAttributeAndTransitionColours()
     {
         const string text = "<div class=\"code-editor @(WordWrap ? \\\"word-wrap\\\" : null)\" data-language=\"@LanguageInfo.LanguageId\" @ref=\"_root\">";
@@ -213,6 +132,18 @@ public sealed class EditorCoreTests
 
         void AssertSpan(string value, TokenKind kind) => Assert.IsTrue(spans.Any(span => span.Kind == kind
             && text.Substring(span.Start, span.Length) == value), $"Missing {kind} span for {value}.");
+    }
+
+    [TestMethod]
+    public void IdentifiersRequireSemanticClassification()
+    {
+        const string text = "class Refresh { void Run() { service.Value = _field; } }";
+        var local = CSharpTokenizer.Tokenize(text).Single().Spans;
+        var methodStart = text.IndexOf("Run", StringComparison.Ordinal);
+        var semantic = CSharpTokenizer.Tokenize(text, [new(methodStart, 3, "method name")]).Single().Spans;
+
+        Assert.IsFalse(local.Any(span => span.Kind is TokenKind.Type or TokenKind.Method or TokenKind.Property or TokenKind.Field));
+        Assert.AreEqual(TokenKind.Method, semantic.Single(span => span.Start == methodStart).Kind);
     }
 
     [TestMethod]
