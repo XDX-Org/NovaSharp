@@ -134,11 +134,17 @@
     private bool ShowSolution => _solutionView && ProjectSystem?.State.Path is not null;
     private string SelectedView => ShowSolution ? "solution" : "files";
 
-    protected override void OnParametersSet()
+    protected override async Task OnParametersSetAsync()
     {
         if (ProjectSystem?.State.Path == _presentedSolution) return;
         _presentedSolution = ProjectSystem?.State.Path;
         _solutionView = _presentedSolution is not null;
+        if (_presentedSolution is { } solutionPath)
+        {
+            var root = Path.GetDirectoryName(solutionPath)!;
+            if (_workspace.RootPath is null || !PathsEqual(_workspace.RootPath, root))
+                await OpenFolderCoreAsync(root);
+        }
     }
 
     private async Task ChangeViewAsync(ChangeEventArgs args)
@@ -223,6 +229,8 @@
         _workspace.Open(path); _children.Clear(); _expanded.Clear();
         await LoadAsync(_workspace.RootPath!); Rebuild(); await SaveStateAsync();
     }
+    private static bool PathsEqual(string left, string right) => string.Equals(Path.GetFullPath(left), Path.GetFullPath(right),
+        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 
     private async Task RestoreAsync()
     {
