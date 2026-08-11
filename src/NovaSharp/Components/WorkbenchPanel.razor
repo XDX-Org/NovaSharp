@@ -435,6 +435,8 @@
                     _buildConfigurationStore = BuildConfigurationStoreFor(storedRoot);
                 }
                 _persistedSolutionPath = state.SolutionPath;
+                if (state.SolutionPath is { } persistedSolution)
+                    _buildConfigurationStore = BuildConfigurationStoreFor(Path.GetDirectoryName(persistedSolution)!);
                 if (HasTabs(state.Root)) _lastNonEmptyLayout = state;
                 await _workspace.RestoreAsync(state);
                 _explorerOpen = state.ExplorerOpen;
@@ -451,7 +453,12 @@
         }
         var smokeSolution = Program.Phase15Solution ?? Program.Phase9Solution ?? Program.Phase8Solution
             ?? Program.Phase7Solution ?? Program.Phase6Solution;
-        if (smokeSolution is not null) { await _projectSystem.OpenAsync(smokeSolution); _persistedSolutionPath = smokeSolution; }
+        if (smokeSolution is not null)
+        {
+            _buildConfigurationStore = BuildConfigurationStoreFor(Path.GetDirectoryName(smokeSolution)!);
+            await _projectSystem.OpenAsync(smokeSolution);
+            _persistedSolutionPath = smokeSolution;
+        }
         if (restoredStartupProject is not null && StartupProjects.Any(project => PathsEqual(project, restoredStartupProject)))
             _startupProject = StartupProjects.First(project => PathsEqual(project, restoredStartupProject));
         if (StartupProject is { } startupProject)
@@ -929,16 +936,17 @@
         _availableFrameworks = BuildConfigurationDiscovery.Frameworks(project);
         var settings = Path.Combine(Path.GetDirectoryName(project)!, "Properties", "launchSettings.json");
         _availableProfiles = BuildConfigurationDiscovery.Profiles(settings);
-        _configuredConfiguration = _availableConfigurations.Contains(_buildConfiguration) ? _buildConfiguration : _availableConfigurations.First();
-        _configuredFramework = _availableFrameworks.Contains(_targetFramework ?? "") ? _targetFramework! : _availableFrameworks.FirstOrDefault() ?? "";
-        _configuredProfile = _availableProfiles.Any(profile => profile.Name == _launchProfile) ? _launchProfile! : "";
-        _configuredArguments = string.Join(' ', _runArguments);
-        _configuredWorkingDirectory = _runWorkingDirectory ?? Path.GetDirectoryName(project)!;
+        _configuredConfiguration = _availableConfigurations.First();
+        _configuredFramework = _availableFrameworks.FirstOrDefault() ?? "";
+        _configuredProfile = "";
+        _configuredArguments = "";
+        _configuredWorkingDirectory = Path.GetDirectoryName(project)!;
     }
     private async Task LoadSavedBuildConfiguratorAsync(string project)
     {
         if (await _buildConfigurationStore.LoadAsync(project) is not { } saved) return;
-        if (_availableConfigurations.Contains(saved.Configuration)) _configuredConfiguration = saved.Configuration;
+        if (_availableConfigurations.Contains(saved.Configuration, StringComparer.OrdinalIgnoreCase))
+            _configuredConfiguration = saved.Configuration;
         if (saved.TargetFramework is not null && _availableFrameworks.Contains(saved.TargetFramework)) _configuredFramework = saved.TargetFramework;
         if (saved.LaunchProfile is not null && _availableProfiles.Any(profile => profile.Name == saved.LaunchProfile)) _configuredProfile = saved.LaunchProfile;
         _configuredArguments = string.Join(' ', saved.Arguments.Select(argument => argument.Any(char.IsWhiteSpace) ? $"\"{argument}\"" : argument));
@@ -946,15 +954,24 @@
     }
     private async Task RestoreBuildConfigurationAsync(string project)
     {
+        SetBuildConfigurationDefaults(project);
         if (await _buildConfigurationStore.LoadAsync(project) is not { } saved) return;
         var configurations = BuildConfigurationDiscovery.Configurations(project);
         var frameworks = BuildConfigurationDiscovery.Frameworks(project);
         var profiles = BuildConfigurationDiscovery.Profiles(Path.Combine(Path.GetDirectoryName(project)!, "Properties", "launchSettings.json"));
-        if (configurations.Contains(saved.Configuration)) _buildConfiguration = saved.Configuration;
+        if (configurations.Contains(saved.Configuration, StringComparer.OrdinalIgnoreCase)) _buildConfiguration = saved.Configuration;
         if (saved.TargetFramework is null || frameworks.Contains(saved.TargetFramework)) _targetFramework = saved.TargetFramework;
         if (saved.LaunchProfile is null || profiles.Any(profile => profile.Name == saved.LaunchProfile)) _launchProfile = saved.LaunchProfile;
         _runArguments = saved.Arguments;
         if (Directory.Exists(saved.WorkingDirectory)) _runWorkingDirectory = saved.WorkingDirectory;
+    }
+    private void SetBuildConfigurationDefaults(string project)
+    {
+        _buildConfiguration = BuildConfigurationDiscovery.Configurations(project).First();
+        _targetFramework = BuildConfigurationDiscovery.Frameworks(project).FirstOrDefault();
+        _launchProfile = null;
+        _runArguments = [];
+        _runWorkingDirectory = Path.GetDirectoryName(project);
     }
     private async Task ApplyBuildConfigurator()
     {
@@ -1073,7 +1090,13 @@
             $"Terminate the live process in {session.Name}?", DialogButtons.YesNo, DialogIcon.Warning);
         if (result == DialogResult.Yes) await _terminal.CloseAsync(session.Id, force: true);
     }
-    private void SelectStartupProject(ChangeEventArgs args) => _startupProject = args.Value?.ToString();
+    private async Task SelectStartupProject(ChangeEventArgs args)
+    {
+        if (args.Value?.ToString() is not { } project || !File.Exists(project)) return;
+        _startupProject = project;
+        await RestoreBuildConfigurationAsync(project);
+        await SaveLayoutAsync();
+    }
     private async Task SendProcessInputAsync(string text) { if (!await _buildRun.SendInputAsync(text)) _status = "No running process accepts input."; }
     private async Task CopyOutputAsync() => await JS.InvokeVoidAsync("navigator.clipboard.writeText",
         string.Join(Environment.NewLine, _buildRun.Output.Entries.Select(entry => entry.Text)));
