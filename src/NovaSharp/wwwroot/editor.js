@@ -237,14 +237,16 @@ export function fitEditorPopup(root, selector) {
 }
 
 export function fitLanguagePopups(root) {
-    for (const popup of root.querySelectorAll('.language-popup')) {
-        fitPopup(root, popup);
-        const selected = popup.querySelector('.selected');
-        if (!selected) continue;
-        if (selected.offsetTop < popup.scrollTop) popup.scrollTop = selected.offsetTop;
-        else if (selected.offsetTop + selected.offsetHeight > popup.scrollTop + popup.clientHeight)
-            popup.scrollTop = selected.offsetTop + selected.offsetHeight - popup.clientHeight;
-    }
+    for (const popup of root.querySelectorAll('.language-popup')) fitPopup(root, popup);
+}
+
+export function scrollSelectedCompletionIntoView(root) {
+    const popup = root.querySelector('.completion-popup');
+    const selected = popup?.querySelector('.selected');
+    if (!selected) return;
+    if (selected.offsetTop < popup.scrollTop) popup.scrollTop = selected.offsetTop;
+    else if (selected.offsetTop + selected.offsetHeight > popup.scrollTop + popup.clientHeight)
+        popup.scrollTop = selected.offsetTop + selected.offsetHeight - popup.clientHeight;
 }
 
 function fitPopup(root, popup) {

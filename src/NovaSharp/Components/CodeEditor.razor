@@ -164,6 +164,7 @@
     private long _observedLanguageAnalysisRevision = -1;
     private int _selectedCompletion;
     private bool _outlineOpen;
+    private bool _scrollCompletionAfterRender;
     private bool _refreshLanguageAfterRender;
     private string _formatDiagnostic = "Not started";
     private double _popupX = 72, _popupY = 24;
@@ -262,7 +263,14 @@
             _ = RefreshDiagnosticsAsync();
         }
         else if (!firstRender && _module is not null)
+        {
             await _module.InvokeVoidAsync("fitLanguagePopups", _root);
+            if (_scrollCompletionAfterRender)
+            {
+                _scrollCompletionAfterRender = false;
+                await _module.InvokeVoidAsync("scrollSelectedCompletionIntoView", _root);
+            }
+        }
     }
 
     [JSInvokable]
@@ -625,6 +633,7 @@
     {
         if (_completion is not { Items.Count: > 0 }) return;
         _selectedCompletion = (_selectedCompletion + delta + _completion.Items.Count) % _completion.Items.Count;
+        _scrollCompletionAfterRender = true;
         _ = FocusCompletionAsync(_selectedCompletion);
     }
     private CompletionEntry? SelectedCompletion => _completion is { Items.Count: > 0 } completion
