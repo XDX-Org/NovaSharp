@@ -503,7 +503,7 @@ internal sealed class LspLanguageProvider : ILanguageProvider, IExtendedLanguage
             && provider.ValueKind is not JsonValueKind.False and not JsonValueKind.Null
         || server.IsMethodRegistered("textDocument/diagnostic");
     private static CompletionEntry CompletionEntry(string id, JsonElement item, string label, TextRange range) => new(id, label,
-        String(item, "filterText") ?? label, String(item, "sortText") ?? label, Kind(Int(item, "kind")), range,
+        String(item, "filterText") ?? label, String(item, "sortText") ?? label, CompletionKind(Int(item, "kind")), range,
         item.TryGetProperty("commitCharacters", out var chars) ? chars.EnumerateArray().SelectMany(value => value.GetString() ?? "").ToArray() : [],
         Int(item, "insertTextFormat") == 2, Markup(item.TryGetProperty("documentation", out var docs) ? docs : default).FirstOrDefault() ?? String(item, "detail"));
     private static TextRange CompletionRange(JsonElement item, string text, int position) => item.TryGetProperty("textEdit", out var edit)
@@ -617,6 +617,13 @@ internal sealed class LspLanguageProvider : ILanguageProvider, IExtendedLanguage
         }
     }
     private static string Kind(int kind) => kind switch { 2 => "Module", 5 => "Class", 6 => "Method", 7 => "Property", 8 => "Field", 10 => "Enum", 12 => "Function", 13 => "Variable", 14 => "Constant", 23 => "Struct", 11 => "Interface", _ => "Text" };
+    private static string CompletionKind(int kind) => kind switch
+    {
+        2 => "Method", 3 => "Function", 4 => "Constructor", 5 => "Field", 6 => "Variable", 7 => "Class",
+        8 => "Interface", 9 => "Module", 10 => "Property", 13 => "Enum", 14 => "Keyword", 15 => "Snippet",
+        20 => "EnumMember", 21 => "Constant", 22 => "Struct", 23 => "Event", 24 => "Operator",
+        25 => "TypeParameter", _ => "Text"
+    };
     internal static LspRange ParseRange(JsonElement value) => value.Deserialize<LspRange>(ProtocolJson)
         is { Start: not null, End: not null } range ? range : throw new InvalidDataException("The language server returned an invalid range.");
 }

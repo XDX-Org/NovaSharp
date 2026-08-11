@@ -410,6 +410,11 @@
         var response = await LanguageProvider.GetCompletionEditAsync(Request(ViewState.SelectionStart), item.Id,
             commitCharacter, default);
         if (response.SourceVersion != Document.Version || response.Value is not { } edit) return;
+        if (!item.IsSnippet && edit.NewPosition is null && item.Kind is "Method" or "Function" or "Constructor"
+            && !edit.NewText.Contains('(')
+            && (edit.Replacement.Start + edit.Replacement.Length >= Value.Length
+                || Value[edit.Replacement.Start + edit.Replacement.Length] != '('))
+            edit = edit with { NewText = edit.NewText + "()", NewPosition = edit.Replacement.Start + edit.NewText.Length + 1 };
         _completion = null;
         await _module.InvokeVoidAsync("applyEditorEdit", _root, edit.Replacement.Start, edit.Replacement.Length,
             edit.NewText, edit.NewPosition);
