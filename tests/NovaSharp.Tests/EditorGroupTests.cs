@@ -210,7 +210,10 @@ public sealed class EditorGroupTests
                 await workspace.CopyAsync(tab!, second.Id);
                 captured = workspace.CaptureState() with { SolutionPath = Path.Combine(root, "NovaSharp.slnx"),
                     ExplorerOpen = false, SearchOpen = true, ProblemsOpen = true, OutputOpen = true, TerminalOpen = true,
-                    StartupProject = Path.Combine(root, "NovaSharp.csproj"), WorkspacePath = root };
+                    StartupProject = Path.Combine(root, "NovaSharp.csproj"), WorkspacePath = root,
+                    BuildProjectPath = Path.Combine(root, "NovaSharp.csproj"), BuildConfiguration = "Release",
+                    TargetFramework = "net10.0", LaunchProfile = "Local", RunArguments = ["one"],
+                    RunWorkingDirectory = root };
                 await persistence.SaveAsync(captured);
             }
             using (var restored = new EditorGroupWorkspace())
@@ -230,6 +233,11 @@ public sealed class EditorGroupTests
             Assert.IsTrue(panels.OutputOpen);
             Assert.IsTrue(panels.TerminalOpen);
             Assert.AreEqual(captured.StartupProject, panels.StartupProject);
+            Assert.AreEqual("Release", panels.BuildConfiguration);
+            Assert.AreEqual("net10.0", panels.TargetFramework);
+            Assert.AreEqual("Local", panels.LaunchProfile);
+            CollectionAssert.AreEqual(new[] { "one" }, panels.RunArguments!.ToArray());
+            Assert.AreEqual(root, panels.RunWorkingDirectory);
 
             var legacy = new WorkbenchSessionState(1, file, [new(file, false, 1, 3, 12, 4)]);
             await File.WriteAllBytesAsync(session, System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(legacy));

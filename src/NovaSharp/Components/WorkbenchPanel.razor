@@ -137,7 +137,6 @@
                                    ProjectSystem="_projectSystem" LanguageProvider="_languageProvider"
                                    Diagnostics="_languageProvider.Diagnostics.Entries"
                                    LanguageAnalysisRevision="_languageAnalysisRevision"
-                                   LanguageServicesStarting="@(!_languageStartupComplete)"
                                    SuggestionsEnabled="_suggestions" SemanticHighlighting="Program.Configuration.Current.SemanticHighlighting"
                                    ExternalDragActive="_explorerFileDrag is not null"
                                    ActiveChanged="ActiveChangedAsync" ContentEdited="ContentEditedAsync"
@@ -352,9 +351,6 @@
     private int _navigationIndex = -1;
     private bool _restoringNavigation, _symbolSearchOpen, _searchOpen;
     private long _languageAnalysisRevision;
-    private bool _startLanguageServersAfterRestore;
-    private bool _languageStartupComplete;
-    private Task? _languageStartupTask;
     private bool _quickAccessOpen, _quickAccessCommands, _quickAccessBusy;
     private bool _projectReloading, _outputOpen, _terminalOpen, _debugOpen;
     private bool _showFind, _wordWrap, _externalChange, _explorerOpen = true, _problemsOpen, _suggestions = true;
@@ -392,6 +388,7 @@
     protected override async Task OnInitializedAsync()
     {
         string? restoredStartupProject = null;
+        WorkbenchLayoutState? restoredState = null;
         _wordWrap = Program.Configuration.Current.WordWrap;
         _suggestions = Program.Configuration.Current.AutoCompletion;
         var applicationData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NovaSharp");
@@ -436,6 +433,7 @@
                     _buildConfigurationStore = BuildConfigurationStoreFor(storedRoot);
                 }
                 _persistedSolutionPath = state.SolutionPath;
+                restoredState = state;
                 if (state.SolutionPath is { } persistedSolution)
                     _buildConfigurationStore = BuildConfigurationStoreFor(Path.GetDirectoryName(persistedSolution)!);
                 if (HasTabs(state.Root)) _lastNonEmptyLayout = state;
@@ -466,6 +464,7 @@
         {
             _startupProject = startupProject;
             await RestoreBuildConfigurationAsync(startupProject);
+            RestoreActiveBuildConfiguration(restoredState, startupProject);
         }
         if (Program.Phase11Workspace is not null) _terminalOpen = true;
         foreach (var recovery in await _recovery.LoadRecoveryAsync())
@@ -477,8 +476,10 @@
         if (Program.Phase2SmokeFile is null && Program.Phase3Workspace is null
             && Program.Phase4Workspace is null && Program.Phase5Workspace is null
             && Program.Phase11Workspace is null)
-            _startLanguageServersAfterRestore = true;
-        else _languageStartupComplete = true;
+        {
+            try { await StartLanguageServersAsync(); }
+            catch (Exception exception) { _status = $"Language service startup failed: {exception.Message}"; }
+        }
     }
 
     private async Task StartLanguageServersAsync()
@@ -518,8 +519,6 @@
         }
         await Task.WhenAll(_languageServers.Select(server => server.Manager.StartAsync()));
         await SyncLanguageDocumentsAsync();
-        _languageStartupComplete = true;
-        await InvokeAsync(StateHasChanged);
     }
 
     private async Task<bool> PreviewServerWorkspaceEditAsync(System.Text.Json.JsonElement edit,
@@ -610,11 +609,6 @@
     {
         if (!firstRender) return;
         _self = DotNetObjectReference.Create(this);
-        if (_startLanguageServersAfterRestore)
-        {
-            _startLanguageServersAfterRestore = false;
-            _languageStartupTask = CompleteDeferredLanguageStartupAsync();
-        }
         await RecoverWorkspaceSolutionAsync();
         await JS.InvokeVoidAsync("novaSharp.initEditorDragCleanup", _workbench, _self);
         await JS.InvokeVoidAsync("novaSharp.initPointerTabDrag", _workbench, _self);
@@ -631,17 +625,6 @@
         {
             await Task.Delay(100);
             await JS.InvokeVoidAsync("novaSharp.runPhase11Smoke", _workbench, _self);
-        }
-    }
-
-    private async Task CompleteDeferredLanguageStartupAsync()
-    {
-        try { await StartLanguageServersAsync(); }
-        catch (Exception exception) { _status = $"Language service startup failed: {exception.Message}"; }
-        finally
-        {
-            _languageStartupComplete = true;
-            await InvokeAsync(StateHasChanged);
         }
     }
 
@@ -704,8 +687,7 @@
             _startupProject = saved.StartupProject is { } savedProject
                 ? StartupProjects.FirstOrDefault(candidate => PathsEqual(candidate, savedProject)) : null;
         }
-        if (_languageStartupTask is not null) await _languageStartupTask;
-        if (_languageStartupComplete) await ReplaceLanguageServersAsync();
+        if (_languageServers.Count > 0) await ReplaceLanguageServersAsync();
         if (StartupProject is { } project)
         {
             _startupProject = project;
@@ -977,6 +959,21 @@
         if (saved.LaunchProfile is null || profiles.Any(profile => profile.Name == saved.LaunchProfile)) _launchProfile = saved.LaunchProfile;
         _runArguments = saved.Arguments;
         if (Directory.Exists(saved.WorkingDirectory)) _runWorkingDirectory = saved.WorkingDirectory;
+    }
+    private void RestoreActiveBuildConfiguration(WorkbenchLayoutState? state, string project)
+    {
+        if (state?.BuildProjectPath is not { } savedProject || !PathsEqual(savedProject, project)
+            || state.BuildConfiguration is not { } configuration
+            || !BuildConfigurationDiscovery.Configurations(project).Contains(configuration, StringComparer.OrdinalIgnoreCase)) return;
+        _buildConfiguration = configuration;
+        var frameworks = BuildConfigurationDiscovery.Frameworks(project);
+        _targetFramework = state.TargetFramework is null || frameworks.Contains(state.TargetFramework) ? state.TargetFramework : _targetFramework;
+        var profiles = BuildConfigurationDiscovery.Profiles(Path.Combine(Path.GetDirectoryName(project)!, "Properties", "launchSettings.json"));
+        _launchProfile = state.LaunchProfile is null || profiles.Any(profile => profile.Name == state.LaunchProfile)
+            ? state.LaunchProfile : _launchProfile;
+        _runArguments = state.RunArguments ?? [];
+        if (state.RunWorkingDirectory is { } workingDirectory && Directory.Exists(workingDirectory))
+            _runWorkingDirectory = workingDirectory;
     }
     private void SetBuildConfigurationDefaults(string project)
     {
@@ -1294,7 +1291,9 @@
     {
         var state = _workspace.CaptureState() with { SolutionPath = _projectSystem.State.Path ?? _persistedSolutionPath, ExplorerOpen = _explorerOpen,
             SearchOpen = _searchOpen, ProblemsOpen = _problemsOpen, OutputOpen = _outputOpen,
-            TerminalOpen = _terminalOpen, StartupProject = StartupProject, WorkspacePath = WorkspaceRoot };
+            TerminalOpen = _terminalOpen, StartupProject = StartupProject, WorkspacePath = WorkspaceRoot,
+            BuildProjectPath = StartupProject, BuildConfiguration = _buildConfiguration, TargetFramework = _targetFramework,
+            LaunchProfile = _launchProfile, RunArguments = _runArguments, RunWorkingDirectory = _runWorkingDirectory };
         if (HasTabs(state.Root)) _lastNonEmptyLayout = state;
         else if (allowEmpty) _lastNonEmptyLayout = null;
         else if (_lastNonEmptyLayout is { } previous)

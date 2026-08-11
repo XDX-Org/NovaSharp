@@ -423,4 +423,6 @@ internal sealed record LayoutNodeState(string Kind, Guid Id, SplitOrientation? O
 internal sealed record WorkbenchLayoutState(int SchemaVersion, LayoutNodeState? Root, Guid FocusedGroupId,
     string? SolutionPath = null, bool ExplorerOpen = true, bool SearchOpen = false,
     bool ProblemsOpen = false, bool OutputOpen = false, bool TerminalOpen = false, string? StartupProject = null,
-    string? WorkspacePath = null);
+    string? WorkspacePath = null, string? BuildProjectPath = null, string? BuildConfiguration = null,
+    string? TargetFramework = null, string? LaunchProfile = null, IReadOnlyList<string>? RunArguments = null,
+    string? RunWorkingDirectory = null);
