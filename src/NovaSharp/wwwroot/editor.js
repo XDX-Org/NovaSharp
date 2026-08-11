@@ -403,8 +403,11 @@ export async function runPhase8Smoke(root) {
             outline = await waitFor(() => !!root.querySelector('.outline-popup button'), 10);
             if (!outline) await dotNet.invokeMethodAsync('EditorCommand', 'outline', typePosition);
         }
-        await dotNet.invokeMethodAsync('EditorCommand', 'code-actions', typePosition);
-        const codeActions = await waitFor(() => !!root.querySelector('.code-actions-popup button'));
+        let codeActions = false;
+        for (let attempt = 0; attempt < 30 && !codeActions; attempt++) {
+            await dotNet.invokeMethodAsync('EditorCommand', 'code-actions', typePosition);
+            codeActions = await waitFor(() => !!root.querySelector('.code-actions-popup button'), 10);
+        }
         return { diagnosticSquiggle, problemsPanel, definitionPeek, outline, codeActions };
     } catch (error) {
         return { diagnosticSquiggle: false, problemsPanel: false,

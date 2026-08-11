@@ -330,7 +330,8 @@ internal sealed class LspLanguageProvider : ILanguageProvider, IExtendedLanguage
                 if (item.TryGetProperty("disabled", out _)) continue;
                 var resolved = item;
                 if (!resolved.TryGetProperty("edit", out _) && SupportsCodeActionResolve(server))
-                    resolved = await server.RequestAsync<JsonElement>("codeAction/resolve", item, cancellationToken);
+                    try { resolved = await server.RequestAsync<JsonElement>("codeAction/resolve", item, cancellationToken); }
+                    catch (StreamJsonRpc.RemoteInvocationException) { continue; }
                 if (resolved.TryGetProperty("edit", out var edit)
                     && await WorkspaceEditAsync(String(resolved, "title") ?? "Code action", edit, cancellationToken) is { } converted)
                     actions.Add(new(String(resolved, "title") ?? "Code action", String(resolved, "kind") ?? "", converted,
