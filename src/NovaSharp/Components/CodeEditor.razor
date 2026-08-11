@@ -23,7 +23,7 @@
             </Virtualize>
         }
     </div>
-    <textarea class="editor-input" name="@_editorInputName" aria-label="File contents" autocomplete="new-password" autocorrect="off"
+    <textarea class="editor-input" aria-label="File contents" autocomplete="off" autocorrect="off"
               autocapitalize="off" spellcheck="false" wrap="off" value="@Value"></textarea>
     <div class="diagnostic-overview" aria-hidden="true">
         @foreach (var diagnostic in _diagnostics)
@@ -63,7 +63,7 @@
             }
             @if (SelectedCompletion?.Detail is { } detail)
             {
-                <div class="language-detail"><MarkdownView Content="detail" /></div>
+                <div class="language-detail"><MarkdownView Content="@detail" /></div>
             }
         </div>
     }
@@ -95,7 +95,7 @@
                 }
                 else
                 {
-                    <div class="@(IsFirstSemanticSection(index) ? "hover-signature" : section.StartsWith("Project:", StringComparison.Ordinal) ? "hover-context" : "hover-description")"><MarkdownView Content="section" /></div>
+                    <div class="@(IsFirstSemanticSection(index) ? "hover-signature" : section.StartsWith("Project:", StringComparison.Ordinal) ? "hover-context" : "hover-description")"><MarkdownView Content="@section" /></div>
                 }
             }
         </div>
@@ -142,7 +142,6 @@
     private readonly LatestLanguageRequest _semanticRequest = new();
     private readonly LatestLanguageRequest _diagnosticRequest = new();
     private ElementReference _root;
-    private readonly string _editorInputName = $"novasharp-editor-{Guid.NewGuid():N}";
     private IJSObjectReference? _module;
     private DotNetObjectReference<CodeEditor>? _self;
     private CompletionResult? _completion;

@@ -1,7 +1,6 @@
 export function createEditor(root, wordWrap, dotNet, selectionStart, selectionEnd, scrollTop, scrollLeft) {
     const input = root.querySelector('.editor-input');
     const presentation = root.querySelector('.presentation');
-    input.autocomplete = 'new-password';
     input.wrap = wordWrap ? 'soft' : 'off';
     input.setSelectionRange(selectionStart, selectionEnd);
     input.scrollTop = scrollTop;
