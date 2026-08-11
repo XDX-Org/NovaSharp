@@ -758,6 +758,8 @@ window.novaSharp.runPhase6Smoke = async function (bridge) {
         const contextMenuPresent = ['Open', 'New file', 'New folder', 'Rename', 'Move', 'Delete']
             .every(label => menuText.includes(label));
         const dragSourcePresent = !!document.querySelector('.solution-explorer .tree-row[data-file-path]');
+        document.querySelector('.context-menu-dismiss')?.click();
+        await new Promise(resolve => setTimeout(resolve, 200));
         await bridge.invokeMethodAsync('CompletePhase6SmokeAsync', solutionTreePresent, projectNodes,
             projectFileEditable, contextMenuPresent, dragSourcePresent, null);
     } catch (error) {
