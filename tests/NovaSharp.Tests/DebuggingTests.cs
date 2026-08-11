@@ -129,7 +129,9 @@ public sealed class DebuggingTests
             return paths;
         }).FirstOrDefault(File.Exists) ?? "";
         Assert.IsTrue(File.Exists(adapter), $"Acquire the pinned debug adapter for {rid} before testing.");
-        var root = Path.Combine(Path.GetTempPath(), "novasharp-debug-" + Guid.NewGuid().ToString("N"));
+        // macOS exposes its temporary directory through /var -> /private/var. Keeping the fixture under the
+        // checkout gives the compiler, adapter, and DAP client one physical source identity.
+        var root = Path.Combine(Directory.GetCurrentDirectory(), "artifacts", "novasharp-debug-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         try
         {
