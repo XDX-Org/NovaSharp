@@ -422,4 +422,4 @@ internal sealed record LayoutNodeState(string Kind, Guid Id, SplitOrientation? O
     SessionViewState[]? Tabs = null, Guid? ActiveViewId = null);
 internal sealed record WorkbenchLayoutState(int SchemaVersion, LayoutNodeState? Root, Guid FocusedGroupId,
     string? SolutionPath = null, bool ExplorerOpen = true, bool SearchOpen = false,
-    bool ProblemsOpen = false, bool OutputOpen = false, bool TerminalOpen = false);
+    bool ProblemsOpen = false, bool OutputOpen = false, bool TerminalOpen = false, string? StartupProject = null);

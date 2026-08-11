@@ -189,7 +189,8 @@ public sealed class EditorGroupTests
                 var second = workspace.Split(first.Id, SplitDirection.Right)!;
                 await workspace.CopyAsync(tab!, second.Id);
                 captured = workspace.CaptureState() with { SolutionPath = Path.Combine(root, "NovaSharp.slnx"),
-                    ExplorerOpen = false, SearchOpen = true, ProblemsOpen = true, OutputOpen = true, TerminalOpen = true };
+                    ExplorerOpen = false, SearchOpen = true, ProblemsOpen = true, OutputOpen = true, TerminalOpen = true,
+                    StartupProject = Path.Combine(root, "NovaSharp.csproj") };
                 await persistence.SaveAsync(captured);
             }
             using (var restored = new EditorGroupWorkspace())
@@ -207,6 +208,7 @@ public sealed class EditorGroupTests
             Assert.IsTrue(panels.ProblemsOpen);
             Assert.IsTrue(panels.OutputOpen);
             Assert.IsTrue(panels.TerminalOpen);
+            Assert.AreEqual(captured.StartupProject, panels.StartupProject);
 
             var legacy = new WorkbenchSessionState(1, file, [new(file, false, 1, 3, 12, 4)]);
             await File.WriteAllBytesAsync(session, System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(legacy));

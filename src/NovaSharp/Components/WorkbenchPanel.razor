@@ -365,6 +365,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        string? restoredStartupProject = null;
         _wordWrap = Program.Configuration.Current.WordWrap;
         _suggestions = Program.Configuration.Current.AutoCompletion;
         var applicationData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NovaSharp");
@@ -401,6 +402,7 @@
                 _problemsOpen = state.ProblemsOpen;
                 _outputOpen = state.OutputOpen;
                 _terminalOpen = state.TerminalOpen;
+                restoredStartupProject = state.StartupProject;
                 if (state.SolutionPath is { } solutionPath && File.Exists(solutionPath))
                     await _projectSystem.OpenAsync(solutionPath);
                 await _restoreGuard.CompleteAsync();
@@ -412,6 +414,13 @@
         if (Program.Phase8Solution is not null) await _projectSystem.OpenAsync(Program.Phase8Solution);
         if (Program.Phase9Solution is not null) await _projectSystem.OpenAsync(Program.Phase9Solution);
         if (Program.Phase15Solution is not null) await _projectSystem.OpenAsync(Program.Phase15Solution);
+        if (restoredStartupProject is not null && StartupProjects.Any(project => PathsEqual(project, restoredStartupProject)))
+            _startupProject = StartupProjects.First(project => PathsEqual(project, restoredStartupProject));
+        if (StartupProject is { } startupProject)
+        {
+            _startupProject = startupProject;
+            await RestoreBuildConfigurationAsync(startupProject);
+        }
         if (Program.Phase11Workspace is not null) _terminalOpen = true;
         foreach (var recovery in await _recovery.LoadRecoveryAsync())
         {
@@ -753,16 +762,14 @@
         if (StartupProject is not { } project) return;
         _buildConfiguratorOpen = true;
         LoadBuildConfigurator(project);
-        if (await _buildConfigurationStore.LoadAsync(project) is { } saved)
-        {
-            if (_availableConfigurations.Contains(saved.Configuration)) _configuredConfiguration = saved.Configuration;
-            if (saved.TargetFramework is not null && _availableFrameworks.Contains(saved.TargetFramework)) _configuredFramework = saved.TargetFramework;
-            if (saved.LaunchProfile is not null && _availableProfiles.Any(profile => profile.Name == saved.LaunchProfile)) _configuredProfile = saved.LaunchProfile;
-            _configuredArguments = string.Join(' ', saved.Arguments.Select(argument => argument.Any(char.IsWhiteSpace) ? $"\"{argument}\"" : argument));
-            if (Directory.Exists(saved.WorkingDirectory)) _configuredWorkingDirectory = saved.WorkingDirectory;
-        }
+        await LoadSavedBuildConfiguratorAsync(project);
     }
-    private void ConfigureProjectChanged(ChangeEventArgs args) => LoadBuildConfigurator(args.Value?.ToString() ?? StartupProject!);
+    private async Task ConfigureProjectChanged(ChangeEventArgs args)
+    {
+        var project = args.Value?.ToString() ?? StartupProject!;
+        LoadBuildConfigurator(project);
+        await LoadSavedBuildConfiguratorAsync(project);
+    }
     private void LoadBuildConfigurator(string project)
     {
         _configuredProject = project;
@@ -776,18 +783,42 @@
         _configuredArguments = string.Join(' ', _runArguments);
         _configuredWorkingDirectory = _runWorkingDirectory ?? Path.GetDirectoryName(project)!;
     }
+    private async Task LoadSavedBuildConfiguratorAsync(string project)
+    {
+        if (await _buildConfigurationStore.LoadAsync(project) is not { } saved) return;
+        if (_availableConfigurations.Contains(saved.Configuration)) _configuredConfiguration = saved.Configuration;
+        if (saved.TargetFramework is not null && _availableFrameworks.Contains(saved.TargetFramework)) _configuredFramework = saved.TargetFramework;
+        if (saved.LaunchProfile is not null && _availableProfiles.Any(profile => profile.Name == saved.LaunchProfile)) _configuredProfile = saved.LaunchProfile;
+        _configuredArguments = string.Join(' ', saved.Arguments.Select(argument => argument.Any(char.IsWhiteSpace) ? $"\"{argument}\"" : argument));
+        if (Directory.Exists(saved.WorkingDirectory)) _configuredWorkingDirectory = saved.WorkingDirectory;
+    }
+    private async Task RestoreBuildConfigurationAsync(string project)
+    {
+        if (await _buildConfigurationStore.LoadAsync(project) is not { } saved) return;
+        var configurations = BuildConfigurationDiscovery.Configurations(project);
+        var frameworks = BuildConfigurationDiscovery.Frameworks(project);
+        var profiles = BuildConfigurationDiscovery.Profiles(Path.Combine(Path.GetDirectoryName(project)!, "Properties", "launchSettings.json"));
+        if (configurations.Contains(saved.Configuration)) _buildConfiguration = saved.Configuration;
+        if (saved.TargetFramework is null || frameworks.Contains(saved.TargetFramework)) _targetFramework = saved.TargetFramework;
+        if (saved.LaunchProfile is null || profiles.Any(profile => profile.Name == saved.LaunchProfile)) _launchProfile = saved.LaunchProfile;
+        _runArguments = saved.Arguments;
+        if (Directory.Exists(saved.WorkingDirectory)) _runWorkingDirectory = saved.WorkingDirectory;
+    }
     private async Task ApplyBuildConfigurator()
     {
         if (!Directory.Exists(_configuredWorkingDirectory)) { _status = "Working directory does not exist."; return; }
+        IReadOnlyList<string> arguments;
+        try { arguments = BuildConfigurationDiscovery.ParseArguments(_configuredArguments); }
+        catch (InvalidOperationException ex) { _status = ex.Message; return; }
         _startupProject = _configuredProject;
         _buildConfiguration = _configuredConfiguration;
         _targetFramework = string.IsNullOrEmpty(_configuredFramework) ? null : _configuredFramework;
         _launchProfile = string.IsNullOrEmpty(_configuredProfile) ? null : _configuredProfile;
-        try { _runArguments = BuildConfigurationDiscovery.ParseArguments(_configuredArguments); }
-        catch (InvalidOperationException ex) { _status = ex.Message; return; }
+        _runArguments = arguments;
         _runWorkingDirectory = Path.GetFullPath(_configuredWorkingDirectory);
         await _buildConfigurationStore.SaveAsync(new(1, Path.GetFullPath(_configuredProject), _buildConfiguration,
             _targetFramework, _launchProfile, _runArguments, _runWorkingDirectory));
+        await SaveLayoutAsync();
         _buildConfiguratorOpen = false;
     }
     private void CloseBuildConfigurator() => _buildConfiguratorOpen = false;
@@ -1039,7 +1070,7 @@
     private Task SaveLayoutAsync() => _persistence.SaveAsync(
         _workspace.CaptureState() with { SolutionPath = _projectSystem.State.Path, ExplorerOpen = _explorerOpen,
             SearchOpen = _searchOpen, ProblemsOpen = _problemsOpen, OutputOpen = _outputOpen,
-            TerminalOpen = _terminalOpen });
+            TerminalOpen = _terminalOpen, StartupProject = StartupProject });
     private void WorkspaceChanged() => _ = InvokeAsync(StateHasChanged);
     private void OnExternalChange() => _ = InvokeAsync(() => { _externalChange = true; StateHasChanged(); });
     private void UntrackActiveDocument() => _document.ExternalChangeDetected -= OnExternalChange;
