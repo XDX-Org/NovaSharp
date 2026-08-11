@@ -6,7 +6,7 @@ namespace NovaSharp;
 internal sealed record EditorSettings(int SchemaVersion = 1, bool WordWrap = false, int TabSize = 4,
     string[]? ExplorerIgnoredNames = null, bool AutoCompletion = true, bool SemanticHighlighting = true,
     string Theme = "Rider Dark", int Zoom = 100, bool ReducedMotion = false, bool HighContrast = false,
-    bool Ligatures = false);
+    bool Ligatures = false, string PopupPlacement = "Contextual");
 
 internal sealed class ConfigurationService(string userPath, string? workspacePath = null)
 {
@@ -18,6 +18,7 @@ internal sealed class ConfigurationService(string userPath, string? workspacePat
             ?? await ReadAsync(userPath, cancellationToken) ?? new();
         if (Current.SchemaVersion != 1 || Current.TabSize is < 1 or > 16
             || Current.Zoom is < 50 or > 200 || Current.Theme is not ("Rider Dark" or "Light")
+            || Current.PopupPlacement is not ("Contextual" or "TopLeft" or "TopRight" or "BottomLeft" or "BottomRight")
             || Current.ExplorerIgnoredNames?.Any(name => string.IsNullOrWhiteSpace(name)
                 || name is "." or ".." || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0) == true)
             Current = new();

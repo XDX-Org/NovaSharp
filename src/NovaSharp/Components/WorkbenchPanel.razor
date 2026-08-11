@@ -211,6 +211,7 @@
                 <label><input type="checkbox" @bind="_settingsReducedMotion" /> Reduced motion</label>
                 <label><input type="checkbox" @bind="_settingsHighContrast" /> High contrast</label>
                 <label><input type="checkbox" @bind="_settingsLigatures" /> Editor ligatures</label>
+                <label>Popup location<select @bind="_settingsPopupPlacement"><option value="Contextual">Follow caret or pointer</option><option value="TopLeft">Top left</option><option value="TopRight">Top right</option><option value="BottomLeft">Bottom left</option><option value="BottomRight">Bottom right</option></select></label>
                 <div class="modal-actions"><button type="submit">Save</button><button type="button" @onclick="CloseSettings">Cancel</button></div>
             </form>
         </div>
@@ -318,6 +319,7 @@
     private bool _buildConfiguratorOpen;
     private bool _settingsOpen, _settingsReducedMotion, _settingsHighContrast, _settingsLigatures;
     private string _settingsTheme = "Rider Dark";
+    private string _settingsPopupPlacement = "Contextual";
     private int _settingsZoom = 100;
     private string _configuredProject = "", _configuredConfiguration = "Debug", _configuredFramework = "", _configuredProfile = "", _configuredArguments = "", _configuredWorkingDirectory = "";
     private IReadOnlyList<string> _availableConfigurations = ["Debug", "Release"], _availableFrameworks = [];
@@ -352,7 +354,7 @@
         .Where(path => path is not null).Cast<string>().Distinct().Order().ToArray() ?? [];
     private string? StartupProject => _startupProject is not null && StartupProjects.Contains(_startupProject)
         ? _startupProject : StartupProjects.FirstOrDefault();
-    private string WorkbenchClass => $"workbench {(Program.Configuration.Current.Theme == "Light" ? "theme-light" : "theme-dark")}{(Program.Configuration.Current.HighContrast ? " high-contrast" : "")}{(Program.Configuration.Current.ReducedMotion ? " reduced-motion" : "")}{(Program.Configuration.Current.Ligatures ? " editor-ligatures" : "")}";
+    private string WorkbenchClass => $"workbench {(Program.Configuration.Current.Theme == "Light" ? "theme-light" : "theme-dark")}{(Program.Configuration.Current.HighContrast ? " high-contrast" : "")}{(Program.Configuration.Current.ReducedMotion ? " reduced-motion" : "")}{(Program.Configuration.Current.Ligatures ? " editor-ligatures" : "")} popup-placement-{Program.Configuration.Current.PopupPlacement.ToLowerInvariant()}";
 
     public WorkbenchPanel()
     {
@@ -863,13 +865,15 @@
         _settingsReducedMotion = settings.ReducedMotion;
         _settingsHighContrast = settings.HighContrast;
         _settingsLigatures = settings.Ligatures;
+        _settingsPopupPlacement = settings.PopupPlacement;
         _settingsOpen = true;
     }
     private async Task SaveSettingsAsync()
     {
         if (_settingsZoom is < 50 or > 200) { _status = "Zoom must be between 50% and 200%."; return; }
         await Program.Configuration.SaveUserAsync(Program.Configuration.Current with { Theme = _settingsTheme, Zoom = _settingsZoom,
-            ReducedMotion = _settingsReducedMotion, HighContrast = _settingsHighContrast, Ligatures = _settingsLigatures });
+            ReducedMotion = _settingsReducedMotion, HighContrast = _settingsHighContrast, Ligatures = _settingsLigatures,
+            PopupPlacement = _settingsPopupPlacement });
         Program.App.MainWindow.SetZoom(_settingsZoom);
         _settingsOpen = false;
     }
