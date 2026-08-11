@@ -195,7 +195,7 @@
                 <label>Target framework<select @bind="_configuredFramework">@foreach (var framework in _availableFrameworks) { <option>@framework</option> }</select></label>
                 <label>Launch profile<select @bind="_configuredProfile"><option value="">None</option>@foreach (var profile in _availableProfiles) { <option value="@profile.Name">@profile.Name</option> }</select></label>
                 <label>Arguments<input @bind="_configuredArguments" /></label>
-                <label>Working directory<input @bind="_configuredWorkingDirectory" /></label>
+                <label>Working directory<span class="path-picker"><input @bind="_configuredWorkingDirectory" /><button type="button" title="Select working directory" aria-label="Select working directory" @onclick="SelectWorkingDirectoryAsync"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 3.5h5l1.4 1.6h6.6v7.4h-13z" /></svg></button></span></label>
                 <p><strong>Preview:</strong> dotnet run --project @Path.GetFileName(_configuredProject) --configuration @_configuredConfiguration --framework @_configuredFramework</p>
                 <div class="modal-actions"><button type="submit">Apply</button><button type="button" @onclick="CloseBuildConfigurator">Cancel</button></div>
             </form>
@@ -820,6 +820,13 @@
             _targetFramework, _launchProfile, _runArguments, _runWorkingDirectory));
         await SaveLayoutAsync();
         _buildConfiguratorOpen = false;
+    }
+    private async Task SelectWorkingDirectoryAsync()
+    {
+        var initial = Directory.Exists(_configuredWorkingDirectory) ? _configuredWorkingDirectory
+            : Path.GetDirectoryName(_configuredProject);
+        if (await Program.App.MainWindow.ShowOpenFolderDialogAsync("Select working directory", initial, false)
+            is [var selected]) _configuredWorkingDirectory = selected;
     }
     private void CloseBuildConfigurator() => _buildConfiguratorOpen = false;
     private void OpenSettings()

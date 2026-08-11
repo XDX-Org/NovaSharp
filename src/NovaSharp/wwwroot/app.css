@@ -249,6 +249,10 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
 .modal-dialog p { margin: 0 0 20px; color: #9ca6b5; line-height: 1.45; }
 .build-configurator label { display: grid; gap: 4px; margin: 10px 0; color: #b9c2d0; }
 .build-configurator input, .build-configurator select { min-width: 0; height: 30px; }
+.path-picker { display: flex; min-width: 0; gap: 5px; }
+.path-picker input { min-width: 0; flex: 1; }
+.path-picker button { display: grid; width: 32px; flex: 0 0 32px; place-items: center; padding: 0; }
+.path-picker svg { width: 16px; height: 16px; fill: #c8d0dc; }
 .debug-panel { max-height: 180px; overflow: auto; padding: 8px 12px; border-top: 1px solid #343a46; background: #1d2027; }
 .debug-panel header { display: flex; align-items: center; gap: 7px; }
 .debug-panel header span { margin-right: auto; color: #9ca6b5; }
