@@ -409,7 +409,10 @@
             if (document is not null && document.Content != recovery.Content) document.Content = recovery.Content;
         }
         TrackActiveDocument();
-        _ = StartLanguageServersAsync();
+        if (Program.Phase2SmokeFile is null && Program.Phase3Workspace is null
+            && Program.Phase4Workspace is null && Program.Phase5Workspace is null
+            && Program.Phase11Workspace is null)
+            _ = StartLanguageServersAsync();
     }
 
     private async Task StartLanguageServersAsync()
