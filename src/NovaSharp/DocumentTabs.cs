@@ -5,17 +5,21 @@ namespace NovaSharp;
 internal sealed class DocumentRegistry : IDisposable
 {
     private readonly Dictionary<string, RegistryEntry> _documents = new(PathComparer);
+    private readonly object _gate = new();
     internal string? LastError { get; private set; }
-    internal int DocumentCount => _documents.Count;
+    internal int DocumentCount { get { lock (_gate) return _documents.Count; } }
 
     internal async Task<EditorDocumentState?> AcquireAsync(string path, bool restoreMissing = false)
     {
         var canonicalPath = Path.GetFullPath(path);
         LastError = null;
-        if (_documents.TryGetValue(canonicalPath, out var existing))
+        lock (_gate)
         {
-            existing.ReferenceCount++;
-            return existing.Document;
+            if (_documents.TryGetValue(canonicalPath, out var existing))
+            {
+                existing.ReferenceCount++;
+                return existing.Document;
+            }
         }
 
         var document = new EditorDocumentState();
@@ -27,23 +31,40 @@ internal sealed class DocumentRegistry : IDisposable
             document.Dispose();
             return null;
         }
-        _documents.Add(canonicalPath, new(document));
-        return document;
+        lock (_gate)
+        {
+            if (_documents.TryGetValue(canonicalPath, out var existing))
+            {
+                existing.ReferenceCount++;
+                document.Dispose();
+                return existing.Document;
+            }
+            _documents.Add(canonicalPath, new(document));
+            return document;
+        }
     }
 
     internal void Release(EditorDocumentState document)
     {
-        var pair = _documents.FirstOrDefault(candidate => ReferenceEquals(candidate.Value.Document, document));
-        if (pair.Value is null) throw new ArgumentException("The document is not owned by this registry.", nameof(document));
-        if (--pair.Value.ReferenceCount > 0) return;
-        _documents.Remove(pair.Key);
+        lock (_gate)
+        {
+            var pair = _documents.FirstOrDefault(candidate => ReferenceEquals(candidate.Value.Document, document));
+            if (pair.Value is null) throw new ArgumentException("The document is not owned by this registry.", nameof(document));
+            if (--pair.Value.ReferenceCount > 0) return;
+            _documents.Remove(pair.Key);
+        }
         document.Dispose();
     }
 
     public void Dispose()
     {
-        foreach (var entry in _documents.Values) entry.Document.Dispose();
-        _documents.Clear();
+        RegistryEntry[] entries;
+        lock (_gate)
+        {
+            entries = _documents.Values.ToArray();
+            _documents.Clear();
+        }
+        foreach (var entry in entries) entry.Document.Dispose();
     }
 
     private sealed class RegistryEntry(EditorDocumentState document)

@@ -138,6 +138,26 @@ public sealed class EditorGroupTests
     }
 
     [TestMethod]
+    public async Task RegistryCoalescesConcurrentDocumentAcquisition()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "NovaSharp.Tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var path = Path.Combine(root, "shared.cs");
+        await File.WriteAllTextAsync(path, "class Shared;");
+        try
+        {
+            using var registry = new DocumentRegistry();
+            var documents = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => registry.AcquireAsync(path)));
+
+            Assert.IsTrue(documents.All(document => ReferenceEquals(document, documents[0])));
+            Assert.AreEqual(1, registry.DocumentCount);
+            foreach (var document in documents) registry.Release(document!);
+            Assert.AreEqual(0, registry.DocumentCount);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [TestMethod]
     public async Task MoveTransfersViewAndCopySharesDocumentWithIndependentState()
     {
         var root = Path.Combine(Path.GetTempPath(), "NovaSharp.Tests", Guid.NewGuid().ToString("N"));
