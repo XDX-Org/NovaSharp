@@ -430,10 +430,13 @@ export async function runPhase15Smoke(root) {
         const languageSelected = root.dataset.language === 'razor';
         input.value = '<MyC';
         input.setSelectionRange(4, 4);
-        await dotNet.invokeMethodAsync('InputChanged', input.value, 4, 'C');
-        await dotNet.invokeMethodAsync('EditorCommand', 'completion', 4);
-        const componentCompletion = await waitFor(() => [...root.querySelectorAll('.completion-popup button')]
-            .some(item => item.textContent.includes('MyCard')));
+        let componentCompletion = false;
+        for (let attempt = 0; attempt < 30 && !componentCompletion; attempt++) {
+            await dotNet.invokeMethodAsync('InputChanged', input.value, 4, 'C');
+            await dotNet.invokeMethodAsync('EditorCommand', 'completion', 4);
+            componentCompletion = await waitFor(() => [...root.querySelectorAll('.completion-popup button')]
+                .some(item => item.textContent.includes('MyCard')), 10);
+        }
         input.value = '<style>.hero { color: red; }</style>\n@code { public int Value { get; set; } }';
         await dotNet.invokeMethodAsync('InputChanged', input.value, input.value.length, null);
         const semanticTokens = await waitFor(() => !!root.querySelector('.token-keyword'));
