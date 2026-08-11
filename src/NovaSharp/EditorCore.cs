@@ -180,9 +180,10 @@ internal static partial class CSharpTokenizer
         }
     }
 
-    internal static IReadOnlyList<EditorLine> Tokenize(string text, IReadOnlyList<SemanticSpan> semanticSpans)
+    internal static IReadOnlyList<EditorLine> Tokenize(string text, IReadOnlyList<SemanticSpan> semanticSpans,
+        bool includeLocalColouring = true)
     {
-        var lines = Tokenize(text).ToArray();
+        var lines = includeLocalColouring ? Tokenize(text).ToArray() : PlainLines(text);
         if (semanticSpans.Count == 0) return lines;
         var lineStart = 0;
         for (var index = 0; index < lines.Length; index++)
@@ -205,6 +206,9 @@ internal static partial class CSharpTokenizer
         }
         return lines;
     }
+
+    private static EditorLine[] PlainLines(string text) => text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n')
+        .Select((line, index) => new EditorLine(index + 1, line, [])).ToArray();
 
     private static IEnumerable<ClassifiedSpan> Exclude(ClassifiedSpan span, IReadOnlyList<ClassifiedSpan> exclusions)
     {
@@ -233,6 +237,16 @@ internal static partial class CSharpTokenizer
 
     private static TokenKind SemanticKind(string classification) => classification switch
     {
+        var value when value.Contains("comment", StringComparison.OrdinalIgnoreCase) => TokenKind.Comment,
+        var value when value.Contains("string", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("attributeValue", StringComparison.OrdinalIgnoreCase) => TokenKind.String,
+        var value when value.Contains("number", StringComparison.OrdinalIgnoreCase) => TokenKind.Number,
+        var value when value.Contains("keyword", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("directive", StringComparison.OrdinalIgnoreCase) => TokenKind.Keyword,
+        var value when value.Contains("transition", StringComparison.OrdinalIgnoreCase) => TokenKind.RazorTransition,
+        var value when value.Contains("attribute", StringComparison.OrdinalIgnoreCase) => TokenKind.HtmlAttribute,
+        var value when value.Contains("element", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("tagHelper", StringComparison.OrdinalIgnoreCase) => TokenKind.HtmlTag,
         var value when value.Contains("method", StringComparison.OrdinalIgnoreCase) => TokenKind.Method,
         var value when value.Contains("property", StringComparison.OrdinalIgnoreCase) => TokenKind.Property,
         var value when value.Contains("field", StringComparison.OrdinalIgnoreCase) => TokenKind.Field,

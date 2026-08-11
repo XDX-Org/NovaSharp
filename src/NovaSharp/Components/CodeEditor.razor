@@ -142,6 +142,7 @@
     private readonly LatestLanguageRequest _hoverRequest = new();
     private readonly LatestLanguageRequest _semanticRequest = new();
     private readonly LatestLanguageRequest _diagnosticRequest = new();
+    private const bool ReleaseLocalColouring = false;
     private ElementReference _root;
     private IJSObjectReference? _module;
     private DotNetObjectReference<CodeEditor>? _self;
@@ -179,8 +180,7 @@
     private LanguageProviderInfo LanguageInfo => Document.FilePath is { } path
         ? ExtendedProvider.GetInfo(path) : new("text", "Text", LanguageCapabilities.None, false, "Language services unavailable");
     private ICollection<EditorLine> Lines => (ICollection<EditorLine>)_lines;
-    private bool SemanticPending => !_semanticReady && SemanticHighlighting
-        && (ProjectLoading || Has(LanguageCapabilities.SemanticTokens));
+    private bool SemanticPending => !_semanticReady && SemanticHighlighting;
     private void QueuePresentation()
     {
         if (_semanticValue != Value)
@@ -207,7 +207,8 @@
         try
         {
             var presentation = await Task.Run(() =>
-                (Lines: CSharpTokenizer.Tokenize(value, semanticSpans).ToArray(), Starts: BuildLineStarts(value)), cancellationToken);
+                (Lines: CSharpTokenizer.Tokenize(value, semanticSpans, ReleaseLocalColouring).ToArray(),
+                    Starts: BuildLineStarts(value)), cancellationToken);
             var updated = presentation.Lines;
             cancellationToken.ThrowIfCancellationRequested();
             await InvokeAsync(() =>

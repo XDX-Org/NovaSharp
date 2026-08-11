@@ -85,6 +85,18 @@ public sealed class EditorCoreTests
     }
 
     [TestMethod]
+    public void ServerOnlyColouringDoesNotReleaseLocalTokens()
+    {
+        const string text = "public class Demo { void Run() { } }";
+        var methodStart = text.IndexOf("Run", StringComparison.Ordinal);
+        var spans = CSharpTokenizer.Tokenize(text, [new(methodStart, 3, "method")], includeLocalColouring: false)
+            .Single().Spans;
+
+        Assert.HasCount(1, spans);
+        Assert.AreEqual(new(methodStart, 3, TokenKind.Method), spans[0]);
+    }
+
+    [TestMethod]
     public void SemanticClassificationsPreserveInterpolatedStringColour()
     {
         const string text = ": IOException($\"'{Path.GetFileName(path)}' changed on disk.\");";
