@@ -35,10 +35,11 @@ Expose a deliberately small, stable subset of proven workbench capabilities to e
 
 ## Implementation status
 
-Implemented: atomic validated settings and layout storage; exact dirty-buffer recovery; automatic restoration safe
-mode; theme, zoom, reduced-motion, high-contrast, and ligature controls; bounded persisted breakpoint/run/panel state;
-redacted persistence diagnostics and independently resettable state. Full-workbench accessibility, lifecycle-growth,
-and named performance-budget evidence remain required before marking the phase complete.
+Complete. Atomic validated user/workspace settings and layout storage, editable keybindings, exact dirty-buffer
+recovery, automatic restoration safe mode, appearance/accessibility controls, bounded persisted breakpoint/run/panel
+state, redacted diagnostics, independent reset, and restoration/lifecycle budgets are implemented. Run
+[31503017795](https://github.com/XDX-Org/NovaSharp/actions/runs/31503017795) passes all four platform gates and the
+packaged Linux keyboard/accessibility workbench journey.
 
 ## Verification budgets
 

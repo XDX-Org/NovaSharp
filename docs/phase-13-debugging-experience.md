@@ -35,10 +35,11 @@ Harden persistence, configuration, recovery, accessibility, and performance acro
 
 ## Implementation status
 
-Implemented: continue, pause, step over/into/out, run to cursor, threads, bounded stacks/scopes/lazy variables,
-pause-epoch stale-response rejection, watch/repl evaluation contexts, exception filters, stop reasons, and
-keyboard-operable debugger controls. Optimized/async/multithread interaction and screen-reader release evidence
-remain required before marking the phase complete.
+Complete. Continue, pause, step over/into/out, run to cursor, threads, bounded stacks/scopes/lazy variables,
+pause-epoch stale-response rejection, separate watch/repl contexts, capability-gated exception filters, stop
+reasons, and keyboard/screen-reader semantics are implemented. Run
+[31503017795](https://github.com/XDX-Org/NovaSharp/actions/runs/31503017795) verifies the async, multithreaded,
+breakpoint, inspection, evaluation, exception, packaging, and full-workbench interaction gates.
 
 ## Verification budgets
 

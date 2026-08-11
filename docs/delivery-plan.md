@@ -23,7 +23,9 @@ Source control UI, remote development, collaboration, notebooks, AI completion, 
 | 11. Integrated terminal | Complete | Four-platform build/test/package and packaged Linux terminal gates pass in run 31310379518 |
 | 15. Razor, HTML, and CSS | Complete | 99 tests, four-platform build/test/package, and Linux Phase 2–15 interaction gates pass in run 31310379518 |
 | 15.2. Real language servers | Complete | 128 tests, four-platform Release build/test/package, and packaged Linux Phase 2–15 interaction gates pass in run 31484488987 |
-| 12–14 | In progress | Bounded DAP transport/session/inspection and durable recovery foundations pass focused tests; adapter packaging and workbench UX remain |
+| 12. Debug adapter foundation | Complete | Cross-platform adapter launch, source binding, inspection, ownership, packaging, and recovery pass in run 31503017795 |
+| 13. Debugging experience | Complete | Async/threaded source-breakpoint, evaluation, scope, exception, bounded inspection, and keyboard-operable UI coverage pass in run 31503017795 |
+| 14. Durable workbench | Complete | Validated atomic state, exact recovery, safe mode, scoped settings/keybindings, budgets, and packaged Linux workbench gates pass in run 31503017795 |
 | 16 | In progress | Versioned manifest, compatibility, permission/trust boundary, and sample manifest pass focused tests; isolated host remains |
 | 17 | In progress | Project/framework/configuration/profile discovery and exact effective-command resolution pass focused tests; configurator UI remains |
 | 18 | In progress | Preview identity, local qualification script, SPDX language-server inventory, privacy/support/limitations/release notes exist; signing, installers, update/rollback, provenance, and clean-image gates remain |

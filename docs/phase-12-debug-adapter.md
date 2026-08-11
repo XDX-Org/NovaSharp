@@ -41,7 +41,9 @@ Implemented: pinned netcoredbg packaging; bounded DAP transport; launch/attach o
 deterministic session and adapter-loss states; conditional, hit-count, log, function, and temporary run-to-cursor
 breakpoints; SHA-256 source identity and explicit longest-root source mapping; bounded request and shutdown behavior.
 
-Cross-platform completion remains evidence-gated by the macOS source-binding limitation in `known-limitations.md`.
+Complete. Run [31503017795](https://github.com/XDX-Org/NovaSharp/actions/runs/31503017795) verifies warning-free
+Release builds, packaging, launch, exact source binding, pause, stack, threads, scopes, evaluation, shutdown, and
+recovery on Windows x64, Linux x64, macOS arm64, and macOS x64.
 
 ## Verification budgets
 
