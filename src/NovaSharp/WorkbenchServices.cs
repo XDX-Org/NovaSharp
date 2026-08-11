@@ -5,7 +5,8 @@ namespace NovaSharp;
 
 internal sealed record EditorSettings(int SchemaVersion = 1, bool WordWrap = false, int TabSize = 4,
     string[]? ExplorerIgnoredNames = null, bool AutoCompletion = true, bool SemanticHighlighting = true,
-    string Theme = "Rider Dark", int Zoom = 100, bool ReducedMotion = false, bool HighContrast = false);
+    string Theme = "Rider Dark", int Zoom = 100, bool ReducedMotion = false, bool HighContrast = false,
+    bool Ligatures = false);
 
 internal sealed class ConfigurationService(string userPath, string? workspacePath = null)
 {
