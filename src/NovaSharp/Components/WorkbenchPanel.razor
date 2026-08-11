@@ -137,6 +137,7 @@
                                    ProjectSystem="_projectSystem" LanguageProvider="_languageProvider"
                                    Diagnostics="_languageProvider.Diagnostics.Entries"
                                    LanguageAnalysisRevision="_languageAnalysisRevision"
+                                   LanguageServicesStarting="@(!_languageStartupComplete)"
                                    SuggestionsEnabled="_suggestions" SemanticHighlighting="Program.Configuration.Current.SemanticHighlighting"
                                    ExternalDragActive="_explorerFileDrag is not null"
                                    ActiveChanged="ActiveChangedAsync" ContentEdited="ContentEditedAsync"
@@ -469,6 +470,7 @@
             && Program.Phase4Workspace is null && Program.Phase5Workspace is null
             && Program.Phase11Workspace is null)
             _startLanguageServersAfterRestore = true;
+        else _languageStartupComplete = true;
     }
 
     private async Task StartLanguageServersAsync()
