@@ -237,7 +237,9 @@ export function fitEditorPopup(root, selector) {
 }
 
 export function fitLanguagePopups(root) {
-    for (const popup of root.querySelectorAll('.language-popup')) fitPopup(root, popup);
+    for (const popup of root.querySelectorAll('.language-popup')) {
+        if (!pinPopup(root, popup)) fitPopup(root, popup);
+    }
 }
 
 export function scrollSelectedCompletionIntoView(root) {
@@ -257,6 +259,31 @@ function fitPopup(root, popup) {
     top = Math.max(margin, Math.min(top, root.clientHeight - popup.offsetHeight - margin));
     popup.style.left = `${left}px`;
     popup.style.top = `${top}px`;
+}
+
+function pinPopup(root, popup) {
+    if (!popup.matches('.completion-popup, .hover-popup')) return false;
+    const workbench = root.closest('.workbench');
+    const placement = ['topleft', 'topright', 'bottomleft', 'bottomright']
+        .find(value => workbench?.classList.contains(`popup-placement-${value}`));
+    if (!placement) {
+        for (const property of ['position', 'top', 'right', 'bottom', 'left', 'max-width', 'max-height'])
+            popup.style.removeProperty(property);
+        return false;
+    }
+    const area = workbench.querySelector('.editor-area');
+    const surface = area?.querySelector(':scope > .editor-split, :scope > .editor-group') ?? area;
+    if (!surface) return false;
+    const rect = surface.getBoundingClientRect();
+    const margin = 8;
+    popup.style.setProperty('position', 'fixed', 'important');
+    popup.style.setProperty('max-width', `${Math.max(260, rect.width - margin * 2)}px`, 'important');
+    popup.style.setProperty('max-height', `${Math.max(80, rect.height - margin * 2)}px`, 'important');
+    popup.style.setProperty('top', placement.startsWith('top') ? `${rect.top + margin}px` : 'auto', 'important');
+    popup.style.setProperty('bottom', placement.startsWith('bottom') ? `${innerHeight - rect.bottom + margin}px` : 'auto', 'important');
+    popup.style.setProperty('left', placement.endsWith('left') ? `${rect.left + margin}px` : 'auto', 'important');
+    popup.style.setProperty('right', placement.endsWith('right') ? `${innerWidth - rect.right + margin}px` : 'auto', 'important');
+    return true;
 }
 
 function toggleLineComment(input) {
