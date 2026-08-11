@@ -270,13 +270,26 @@ internal static partial class CSharpTokenizer
             semantic = NonOverlapping(semantic);
             if (semantic.Length > 0)
             {
-                var baseline = line.Spans.Where(span => !semantic.Any(item => item.Start < span.Start + span.Length
-                    && item.Start + item.Length > span.Start));
+                var baseline = line.Spans.SelectMany(span => Exclude(span, semantic));
                 lines[index] = line with { Spans = baseline.Concat(semantic).OrderBy(span => span.Start).ToArray() };
             }
             lineStart = lineEnd + NewLineLength(text, lineEnd);
         }
         return lines;
+    }
+
+    private static IEnumerable<ClassifiedSpan> Exclude(ClassifiedSpan span, IReadOnlyList<ClassifiedSpan> exclusions)
+    {
+        var position = span.Start;
+        var end = span.Start + span.Length;
+        foreach (var exclusion in exclusions.Where(item => item.Start < end && item.Start + item.Length > position))
+        {
+            if (exclusion.Start > position)
+                yield return new(position, exclusion.Start - position, span.Kind);
+            position = Math.Max(position, exclusion.Start + exclusion.Length);
+            if (position >= end) yield break;
+        }
+        if (position < end) yield return new(position, end - position, span.Kind);
     }
 
     private static ClassifiedSpan[] NonOverlapping(IEnumerable<ClassifiedSpan> spans)

@@ -73,6 +73,19 @@ public sealed class EditorCoreTests
     }
 
     [TestMethod]
+    public void SemanticClassificationsPreserveInterpolatedStringColour()
+    {
+        const string text = ": IOException($\"'{Path.GetFileName(path)}' changed on disk.\");";
+        var methodStart = text.IndexOf("GetFileName", StringComparison.Ordinal);
+        var spans = CSharpTokenizer.Tokenize(text, [new(methodStart, "GetFileName".Length, "method name")])
+            .Single().Spans;
+
+        Assert.AreEqual(TokenKind.Method, spans.Single(span => span.Start == methodStart).Kind);
+        Assert.IsTrue(spans.Any(span => span.Kind == TokenKind.String && span.Start < methodStart));
+        Assert.IsTrue(spans.Any(span => span.Kind == TokenKind.String && span.Start > methodStart));
+    }
+
+    [TestMethod]
     public void LocalColouringDoesNotRequireLanguageServices()
     {
         var spans = CSharpTokenizer.Tokenize("private int _field; service.Value = service.Run(value);").Single().Spans;
