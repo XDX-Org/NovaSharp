@@ -29,18 +29,6 @@ public sealed class EditorCoreTests
     }
 
     [TestMethod]
-    public async Task SemanticPresentationIsReusableOnlyForItsDocumentVersion()
-    {
-        var document = await DocumentAsync("class C { }");
-        document.AcceptSemanticPresentation(document.Content!, [new(6, 1, "class name")]);
-
-        Assert.AreEqual(document.Version, document.SemanticPresentation!.Value.Version);
-        document.Content += " ";
-        Assert.AreNotEqual(document.Version, document.SemanticPresentation!.Value.Version);
-        document.Dispose();
-    }
-
-    [TestMethod]
     public void SelectionTracksRevertedCompletionEdit()
     {
         const string completed = "class C { Task Run() { var result = Task.CompletedTask; return result; } }";
@@ -94,6 +82,16 @@ public sealed class EditorCoreTests
 
         Assert.HasCount(1, spans);
         Assert.AreEqual(new(methodStart, 3, TokenKind.Method), spans[0]);
+    }
+
+    [TestMethod]
+    public void MultilineBracesProduceConnectedGuides()
+    {
+        var lines = CSharpTokenizer.Tokenize("void Run()\n{\n    Work();\n}", [], includeLocalColouring: false);
+
+        Assert.AreEqual(BraceGuidePart.Start, lines[1].BraceGuides!.Single().Part);
+        Assert.AreEqual(BraceGuidePart.Middle, lines[2].BraceGuides!.Single().Part);
+        Assert.AreEqual(BraceGuidePart.End, lines[3].BraceGuides!.Single().Part);
     }
 
     [TestMethod]

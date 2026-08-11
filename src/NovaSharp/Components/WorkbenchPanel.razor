@@ -547,6 +547,7 @@
         {
             await coordinator.ReplayAsync();
             await AnalyzeOpenDocumentsAsync(kind);
+            await InvokeAsync(() => { _languageAnalysisRevision++; StateHasChanged(); });
         }
         catch (Exception exception) when (exception is OperationCanceledException or IOException
             or StreamJsonRpc.ConnectionLostException) { }
@@ -562,11 +563,6 @@
             await _languageProvider.GetDiagnosticsAsync(
                 new(snapshot.Path, null, snapshot.Version, snapshot.Text.Length), default);
         }
-        if (documents.Length > 0) await InvokeAsync(() =>
-        {
-            _languageAnalysisRevision++;
-            StateHasChanged();
-        });
     }
 
     private void LanguageServerCapabilitiesChanged() => _ = InvokeAsync(() =>
@@ -681,10 +677,11 @@
             SolutionPath: _persistedSolutionPath, WorkspacePath: root));
         _persistence = new(WorkspaceStatePath(root));
         _buildConfigurationStore = BuildConfigurationStoreFor(root);
+        WorkbenchLayoutState? savedWorkspace = null;
         if (File.Exists(WorkspaceStatePath(root)))
         {
-            var saved = await _persistence.LoadAsync();
-            _startupProject = saved.StartupProject is { } savedProject
+            savedWorkspace = await _persistence.LoadAsync();
+            _startupProject = (savedWorkspace.StartupProject ?? savedWorkspace.BuildProjectPath) is { } savedProject
                 ? StartupProjects.FirstOrDefault(candidate => PathsEqual(candidate, savedProject)) : null;
         }
         if (_languageServers.Count > 0) await ReplaceLanguageServersAsync();
@@ -692,6 +689,7 @@
         {
             _startupProject = project;
             await RestoreBuildConfigurationAsync(project);
+            RestoreActiveBuildConfiguration(savedWorkspace, project);
         }
         await SaveLayoutAsync();
     }

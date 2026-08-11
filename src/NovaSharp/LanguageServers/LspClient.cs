@@ -17,6 +17,7 @@ internal sealed class LspClient : IAsyncDisposable
     internal event Action? DiagnosticRefreshRequested;
     internal event Action<LspLogMessageParams>? MessageLogged;
     internal event Action? CapabilitiesChanged;
+    internal event Action? ProjectInitializationCompleted;
     internal bool IsRegistered(string method) { lock (_registrations) return _registrations.Values.Any(item => item.Method == method); }
     internal IReadOnlyList<LspRegistration> Registrations(string method)
     {
@@ -81,6 +82,9 @@ internal sealed class LspClient : IAsyncDisposable
             owner.DiagnosticRefreshRequested?.Invoke();
             return new { };
         }
+
+        [JsonRpcMethod("workspace/projectInitializationComplete")]
+        public void ProjectInitializationComplete() => owner.ProjectInitializationCompleted?.Invoke();
 
         [JsonRpcMethod("razor/updateHtml", UseSingleObjectParameterDeserialization = true)]
         public Task<object> UpdateHtml(JsonElement parameters, CancellationToken cancellationToken) =>

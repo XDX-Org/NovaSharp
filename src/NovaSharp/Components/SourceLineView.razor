@@ -1,4 +1,7 @@
-<div class="source-line" @key="Line.Number"><span class="line-number">@Line.Number</span><code>@RenderLine()</code></div>
+<div class="source-line" @key="Line.Number"><span class="line-number">@Line.Number</span><code>@foreach (var guide in Line.BraceGuides ?? [])
+    {
+        <span class="brace-guide brace-guide-@guide.Part.ToString().ToLowerInvariant()" style="@GuideStyle(guide)"></span>
+    }@RenderLine()</code></div>
 
 @code {
     [Parameter, EditorRequired] public EditorLine Line { get; set; }
@@ -32,4 +35,6 @@
     private int LocalStart(LanguageDiagnostic item) => item.StartLine == Line.Number - 1 ? item.StartColumn : 0;
     private int LocalEnd(LanguageDiagnostic item) => (item.EndLine < 0 ? item.StartLine : item.EndLine) == Line.Number - 1
         ? (item.EndColumn < 0 ? item.StartColumn + item.Range.Length : item.EndColumn) : Line.Text.Length;
+    private static string GuideStyle(BraceGuide guide) =>
+        $"left:calc(12px + {(guide.Column + .5).ToString(System.Globalization.CultureInfo.InvariantCulture)}ch)";
 }

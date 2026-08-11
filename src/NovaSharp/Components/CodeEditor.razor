@@ -159,7 +159,6 @@
     private CancellationTokenSource? _presentationCancellation;
     private CancellationTokenSource? _semanticRefreshCancellation;
     private CancellationTokenSource? _diagnosticRefreshCancellation;
-    private readonly CancellationTokenSource _languageStartupCancellation = new();
     private string? _linesValue;
     private string _semanticValue = string.Empty;
     private string? _languageReadyKey;
@@ -229,18 +228,15 @@
 
     protected override void OnParametersSet()
     {
-        if (!_semanticReady && Document.SemanticPresentation is { } cached
-            && cached.Version == Document.Version && cached.Text == Value)
+        var externallyChanged = _renderedValue is not null && Value != _renderedValue && Value != _locallyEditedValue;
+        if (externallyChanged)
         {
-            _semanticSpans = cached.Spans;
-            _semanticValue = cached.Text;
-            _semanticReady = true;
-            _semanticRevision++;
-        }
-        if (_renderedValue is not null && Value != _renderedValue && Value != _locallyEditedValue)
-        {
-            ViewState.ApplyTextChange(_renderedValue, Value);
+            ViewState.ApplyTextChange(_renderedValue!, Value);
             _synchronizeViewStateAfterRender = true;
+            _semanticRefreshCancellation?.Cancel();
+            _diagnosticRefreshCancellation?.Cancel();
+            _refreshLanguageAfterRender = true;
+            _hover = null;
         }
         _renderedValue = Value;
         _locallyEditedValue = null;
@@ -248,6 +244,7 @@
             _diagnostics = Diagnostics.Where(item => string.Equals(Path.GetFullPath(item.DocumentPath),
                 Path.GetFullPath(diagnosticPath), OperatingSystem.IsWindows()
                     ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)).ToArray();
+        if (externallyChanged) _diagnostics = [];
         QueuePresentation();
         var info = LanguageInfo;
         var readyKey = !ProjectLoading && Document.FilePath is { } path && info.IsAvailable
@@ -269,7 +266,6 @@
             _self = DotNetObjectReference.Create(this);
             await _module.InvokeVoidAsync("createEditor", _root, WordWrap, _self, ViewState.SelectionStart,
                 ViewState.SelectionEnd, ViewState.ScrollTop, ViewState.ScrollLeft);
-            _ = AwaitLanguageReadyAsync(_languageStartupCancellation.Token);
             if (Program.Phase15Solution is not null) _ = RunPhase15SmokeAsync();
             else if (Program.Phase8Solution is not null) _ = RunPhase8SmokeAsync();
             else if (Program.Phase7Solution is not null) _ = RunPhase7SmokeAsync();
@@ -285,7 +281,7 @@
             _ = RefreshSemanticAsync();
             _ = RefreshDiagnosticsAsync();
         }
-        else if (!firstRender && _module is not null)
+        if (!firstRender && _module is not null)
         {
             if (_synchronizeViewStateAfterRender)
             {
@@ -545,52 +541,29 @@
         var cancellationToken = _semanticRefreshCancellation.Token;
         var version = Document.Version;
         var value = Value;
-        try { await Task.Delay(100, cancellationToken); }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return; }
+        if (_semanticReady)
+        {
+            try { await Task.Delay(100, cancellationToken); }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return; }
+        }
         var spans = await _semanticRequest.RunAsync(
             token => LanguageProvider.GetSemanticSpansAsync(Request(value.Length), token), version, cancellationToken);
         if (cancellationToken.IsCancellationRequested || Document.Version != version || Value != value) return;
-        if (!_semanticReady && spans is not null)
-        {
-            try { await Task.Delay(250, cancellationToken); }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return; }
-            spans = await _semanticRequest.RunAsync(
-                token => LanguageProvider.GetSemanticSpansAsync(Request(value.Length), token), version, cancellationToken);
-            if (cancellationToken.IsCancellationRequested || Document.Version != version || Value != value) return;
-        }
         if (spans is not null)
-        {
-            var changed = _semanticValue != value || !_semanticSpans.SequenceEqual(spans);
-            _semanticSpans = spans;
-            _semanticValue = value;
-            _semanticReady = true;
-            Document.AcceptSemanticPresentation(value, spans);
-            if (changed)
-            {
-                _semanticRevision++;
-                await InvokeAsync(QueuePresentation);
-            }
-        }
+            await AcceptSemanticSpansAsync(value, spans);
         var symbols = await ExtendedProvider.GetDocumentSymbolsAsync(Request(Value.Length), cancellationToken);
         if (Document.Version == version) _symbols = symbols;
     }
 
-    private async Task AwaitLanguageReadyAsync(CancellationToken cancellationToken)
+    private async Task AcceptSemanticSpansAsync(string value, IReadOnlyList<SemanticSpan> spans)
     {
-        try
-        {
-            for (var attempt = 0; attempt < 60 && !cancellationToken.IsCancellationRequested; attempt++)
-            {
-                if (!ProjectLoading && Document.FilePath is not null && SemanticHighlighting
-                    && Has(LanguageCapabilities.SemanticTokens))
-                {
-                    await InvokeAsync(RefreshSemanticAsync);
-                    if (_semanticSpans.Count > 0) return;
-                }
-                await Task.Delay(500, cancellationToken);
-            }
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+        var changed = _semanticValue != value || !_semanticSpans.SequenceEqual(spans);
+        _semanticSpans = spans;
+        _semanticValue = value;
+        _semanticReady = true;
+        if (!changed) return;
+        _semanticRevision++;
+        await InvokeAsync(QueuePresentation);
     }
 
     private async Task RequestNavigationAsync(int caret, string command)
@@ -729,7 +702,6 @@
         _completionRequest.Dispose(); _signatureRequest.Dispose(); _hoverRequest.Dispose(); _semanticRequest.Dispose();
         _semanticRefreshCancellation?.Cancel(); _semanticRefreshCancellation?.Dispose();
         _diagnosticRefreshCancellation?.Cancel(); _diagnosticRefreshCancellation?.Dispose();
-        _languageStartupCancellation.Cancel(); _languageStartupCancellation.Dispose();
         _diagnosticRequest.Dispose();
         _presentationCancellation?.Cancel();
         _presentationCancellation?.Dispose();

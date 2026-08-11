@@ -13,8 +13,11 @@ internal readonly record struct TextEdit(int Start, int Length, string NewText)
 }
 
 public readonly record struct TextRange(int Start, int Length);
-public readonly record struct EditorLine(int Number, string Text, IReadOnlyList<ClassifiedSpan> Spans);
+public readonly record struct EditorLine(int Number, string Text, IReadOnlyList<ClassifiedSpan> Spans,
+    IReadOnlyList<BraceGuide>? BraceGuides = null);
 public readonly record struct ClassifiedSpan(int Start, int Length, TokenKind Kind);
+public readonly record struct BraceGuide(int Column, BraceGuidePart Part);
+public enum BraceGuidePart { Start, Middle, End }
 
 public enum TokenKind { Text, Keyword, String, Comment, Number, Type, EnumType, Parameter, Method, Property, Field, Event, Namespace,
     Variable, Constant, EnumMember, Interface, Struct, Class, Record, TypeParameter, Label, Operator, Regex, Decorator, Macro,
@@ -186,7 +189,6 @@ internal static partial class CSharpTokenizer
         bool includeLocalColouring = true)
     {
         var lines = includeLocalColouring ? Tokenize(text).ToArray() : PlainLines(text);
-        if (semanticSpans.Count == 0) return lines;
         var lineStart = 0;
         for (var index = 0; index < lines.Length; index++)
         {
@@ -205,6 +207,34 @@ internal static partial class CSharpTokenizer
                 lines[index] = line with { Spans = baseline.Concat(semantic).OrderBy(span => span.Start).ToArray() };
             }
             lineStart = lineEnd + NewLineLength(text, lineEnd);
+        }
+        return AddBraceGuides(lines);
+    }
+
+    private static EditorLine[] AddBraceGuides(EditorLine[] lines)
+    {
+        var pairs = new List<(int StartLine, int EndLine, int Column)>();
+        var open = new Stack<(int Line, int Column)>();
+        for (var lineIndex = 0; lineIndex < lines.Length; lineIndex++)
+        {
+            var line = lines[lineIndex];
+            for (var column = 0; column < line.Text.Length; column++)
+            {
+                if (line.Text[column] is not ('{' or '}') || line.Spans.Any(span =>
+                        span.Start <= column && span.Start + span.Length > column
+                        && span.Kind is TokenKind.String or TokenKind.Comment or TokenKind.Regex)) continue;
+                if (line.Text[column] == '{') open.Push((lineIndex, column));
+                else if (open.TryPop(out var start) && start.Line < lineIndex)
+                    pairs.Add((start.Line, lineIndex, start.Column));
+            }
+        }
+        for (var lineIndex = 0; lineIndex < lines.Length; lineIndex++)
+        {
+            var guides = pairs.Where(pair => lineIndex >= pair.StartLine && lineIndex <= pair.EndLine)
+                .Select(pair => new BraceGuide(pair.Column, lineIndex == pair.StartLine ? BraceGuidePart.Start
+                    : lineIndex == pair.EndLine ? BraceGuidePart.End : BraceGuidePart.Middle))
+                .OrderBy(guide => guide.Column).ToArray();
+            if (guides.Length > 0) lines[lineIndex] = lines[lineIndex] with { BraceGuides = guides };
         }
         return lines;
     }

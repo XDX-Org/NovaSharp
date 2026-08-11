@@ -65,6 +65,8 @@ internal sealed class LanguageServerManager : ILspDocumentSink, IAsyncDisposable
                 _client.DiagnosticsPublished += OnDiagnostics;
                 _client.DiagnosticRefreshRequested += OnDiagnosticRefresh;
                 _client.CapabilitiesChanged += () => CapabilitiesChanged?.Invoke();
+                var projectInitialization = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                _client.ProjectInitializationCompleted += () => projectInitialization.TrySetResult();
                 using var initializeTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 initializeTimeout.CancelAfter(TimeSpan.FromSeconds(5));
                 var capabilities = new
@@ -123,8 +125,9 @@ internal sealed class LanguageServerManager : ILspDocumentSink, IAsyncDisposable
                 var result = await _client.InitializeAsync(new(Environment.ProcessId, root.AbsoluteUri, capabilities,
                     new("NovaSharp"), [new(root.AbsoluteUri, Path.GetFileName(_workspace))]), initializeTimeout.Token);
                 Capabilities = result.Capabilities.Clone();
-                if (_definition.Kind == LanguageServerKind.RoslynRazor)
-                    await OpenRoslynWorkspaceAsync(initializeTimeout.Token);
+                if (_definition.Kind == LanguageServerKind.RoslynRazor
+                    && await OpenRoslynWorkspaceAsync(initializeTimeout.Token))
+                    await projectInitialization.Task.WaitAsync(cancellationToken);
                 SetStatus(LanguageServerState.Ready, result.ServerInfo?.Name, result.ServerInfo?.Version);
                 StartWatching();
                 Ready?.Invoke();
@@ -190,7 +193,7 @@ internal sealed class LanguageServerManager : ILspDocumentSink, IAsyncDisposable
     private void OnDiagnostics(LspPublishDiagnosticsParams parameters) => DiagnosticsPublished?.Invoke(parameters);
     private void OnDiagnosticRefresh() => DiagnosticRefreshRequested?.Invoke();
 
-    private async Task OpenRoslynWorkspaceAsync(CancellationToken cancellationToken)
+    private async Task<bool> OpenRoslynWorkspaceAsync(CancellationToken cancellationToken)
     {
         var solutions = Directory.EnumerateFiles(_workspace, "*.sln", SearchOption.TopDirectoryOnly)
             .Concat(Directory.EnumerateFiles(_workspace, "*.slnx", SearchOption.TopDirectoryOnly)).Take(2).ToArray();
@@ -198,13 +201,17 @@ internal sealed class LanguageServerManager : ILspDocumentSink, IAsyncDisposable
         {
             await _client!.NotifyAsync("solution/open",
                 new { solution = LspConverters.FileUri(solutions[0]).AbsoluteUri }, cancellationToken);
-            return;
+            return true;
         }
         var projects = Directory.EnumerateFiles(_workspace, "*.csproj", SearchOption.AllDirectories)
             .Where(path => !path.Split(Path.DirectorySeparatorChar).Any(segment => segment is "bin" or "obj"))
             .Take(200).Select(path => LspConverters.FileUri(path).AbsoluteUri).ToArray();
         if (projects.Length > 0)
+        {
             await _client!.NotifyAsync("project/open", new { projects }, cancellationToken);
+            return true;
+        }
+        return false;
     }
 
     private async Task CleanupAsync()
