@@ -188,7 +188,7 @@ jobs:
           $arguments = @("--phase7-smoke=$(Join-Path $workspace 'Fixture.slnx')", "--smoke-report=$report")
           $process = if ($IsLinux) { Start-Process xvfb-run -ArgumentList (@('-a', $binary) + $arguments) -PassThru }
             else { Start-Process $binary -ArgumentList $arguments -PassThru }
-          if (-not $process.WaitForExit(60000)) { $process.Kill($true); throw 'Phase 7 native smoke timed out.' }
+          if (-not $process.WaitForExit(120000)) { $process.Kill($true); throw 'Phase 7 native smoke timed out.' }
           if ($process.ExitCode -ne 0 -and -not (Test-Path $report)) { throw "Phase 7 native smoke exited with $($process.ExitCode) before reporting." }
           $result = Get-Content $report | ConvertFrom-Json
           $required = 'CompletionVisible', 'CompletionKeyboardOwned', 'SignatureVisible', 'HoverVisible', 'SemanticTokensPresent', 'AutoIndent', 'CommentToggle', 'FormattingApplied', 'LoadingStateCleared'

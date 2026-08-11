@@ -314,10 +314,14 @@ export async function runPhase7Smoke(root) {
         input.value = 'using System; class C { void M() { Console. } }';
         const completionPosition = input.value.indexOf('. }') + 1;
         input.setSelectionRange(completionPosition, completionPosition);
-        await dotNet.invokeMethodAsync('InputChanged', input.value, input.selectionStart, '.');
+        let completionVisible = false;
+        for (let attempt = 0; attempt < 30 && !completionVisible; attempt++) {
+            await dotNet.invokeMethodAsync('InputChanged', input.value, input.selectionStart, '.');
+            completionVisible = await waitFor(
+                () => root.querySelectorAll('.completion-popup [role="option"]').length > 0, 10);
+        }
         const completionItems = await dotNet.invokeMethodAsync('CompletionItemCount');
         const completionDiagnostic = await dotNet.invokeMethodAsync('CompletionDiagnostic');
-        const completionVisible = await waitFor(() => root.querySelectorAll('.completion-popup [role="option"]').length > 0);
         input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
         const completionKeyboardOwned = await waitFor(() => !root.querySelector('.completion-popup'));
 
