@@ -23,7 +23,8 @@
             </Virtualize>
         }
     </div>
-    <textarea class="editor-input" aria-label="File contents" spellcheck="false" wrap="off" value="@Value"></textarea>
+    <textarea class="editor-input" aria-label="File contents" autocomplete="off" autocorrect="off"
+              autocapitalize="off" spellcheck="false" wrap="off" value="@Value"></textarea>
     <div class="diagnostic-overview" aria-hidden="true">
         @foreach (var diagnostic in _diagnostics)
         {
