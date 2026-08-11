@@ -372,11 +372,24 @@
     private async Task RequestCompletionAsync(int caret, bool explicitInvocation)
     {
         var version = Document.Version;
-        _completion = await _completionRequest.RunAsync(
+        var completion = await _completionRequest.RunAsync(
             token => LanguageProvider.GetCompletionsAsync(Request(caret), explicitInvocation, token), version);
+        var prefix = CompletionPrefix(Value, caret);
+        _completion = completion is not null && prefix.Length > 0
+            ? new(completion.Items.Where(item => item.FilterText.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                || item.DisplayText.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)).ToArray())
+            : completion;
         _selectedCompletion = 0;
         await UpdateAnchorAsync(caret);
         await InvokeAsync(StateHasChanged);
+    }
+
+    private static string CompletionPrefix(string value, int caret)
+    {
+        caret = Math.Clamp(caret, 0, value.Length);
+        var start = caret;
+        while (start > 0 && (char.IsLetterOrDigit(value[start - 1]) || value[start - 1] == '_')) start--;
+        return value[start..caret];
     }
 
     private async Task FocusCompletionAsync(int index)
