@@ -20,6 +20,21 @@
     --syntax-member: #2aacb8;
     --syntax-event: #c77dbb;
     --syntax-namespace: #b589ff;
+    --syntax-variable: #bcbec4;
+    --syntax-constant: #ed94c0;
+    --syntax-enum-member: #2aacb8;
+    --syntax-interface: #d8b45a;
+    --syntax-struct: #b589ff;
+    --syntax-class: #b589ff;
+    --syntax-record: #b589ff;
+    --syntax-type-parameter: #d88cba;
+    --syntax-label: #c77dbb;
+    --syntax-operator: #bcbec4;
+    --syntax-decorator: #d8b45a;
+    --syntax-macro: #c77dbb;
+    --syntax-component: #8f75c9;
+    --syntax-component-attribute: #39cc8f;
+    --syntax-semantic: #75a7e8;
     --syntax-html-tag: #8f75c9;
     --syntax-html-attribute: #39cc8f;
     --syntax-razor-transition: #ed94c0;
@@ -379,6 +394,22 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
 .token-property, .token-field { color: var(--syntax-member); }
 .token-event { color: var(--syntax-event); }
 .token-namespace { color: var(--syntax-namespace); }
+.token-variable { color: var(--syntax-variable); }
+.token-constant { color: var(--syntax-constant); }
+.token-enummember { color: var(--syntax-enum-member); }
+.token-interface { color: var(--syntax-interface); }
+.token-struct { color: var(--syntax-struct); }
+.token-class { color: var(--syntax-class); }
+.token-record { color: var(--syntax-record); }
+.token-typeparameter { color: var(--syntax-type-parameter); }
+.token-label { color: var(--syntax-label); }
+.token-operator { color: var(--syntax-operator); }
+.token-regex { color: var(--syntax-string); }
+.token-decorator { color: var(--syntax-decorator); }
+.token-macro { color: var(--syntax-macro); }
+.token-component { color: var(--syntax-component); }
+.token-componentattribute { color: var(--syntax-component-attribute); }
+.token-semantic { color: var(--syntax-semantic); }
 .token-htmltag { color: var(--syntax-html-tag); }
 .token-htmlattribute { color: var(--syntax-html-attribute); }
 .token-razortransition { color: var(--syntax-razor-transition); }

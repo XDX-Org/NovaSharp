@@ -17,7 +17,9 @@ public readonly record struct EditorLine(int Number, string Text, IReadOnlyList<
 public readonly record struct ClassifiedSpan(int Start, int Length, TokenKind Kind);
 
 public enum TokenKind { Text, Keyword, String, Comment, Number, Type, EnumType, Parameter, Method, Property, Field, Event, Namespace,
-    HtmlTag, HtmlAttribute, RazorTransition, RegexEscape, RegexGroup, RegexCharacterClass, RegexQuantifier }
+    Variable, Constant, EnumMember, Interface, Struct, Class, Record, TypeParameter, Label, Operator, Regex, Decorator, Macro,
+    Component, ComponentAttribute, Semantic, HtmlTag, HtmlAttribute, RazorTransition, RegexEscape, RegexGroup,
+    RegexCharacterClass, RegexQuantifier }
 
 internal static partial class CSharpTokenizer
 {
@@ -244,23 +246,39 @@ internal static partial class CSharpTokenizer
         var value when value.Contains("keyword", StringComparison.OrdinalIgnoreCase)
             || value.Contains("directive", StringComparison.OrdinalIgnoreCase) => TokenKind.Keyword,
         var value when value.Contains("transition", StringComparison.OrdinalIgnoreCase) => TokenKind.RazorTransition,
+        var value when value.Contains("component", StringComparison.OrdinalIgnoreCase)
+            && value.Contains("attribute", StringComparison.OrdinalIgnoreCase) => TokenKind.ComponentAttribute,
+        var value when value.Contains("component", StringComparison.OrdinalIgnoreCase) => TokenKind.Component,
         var value when value.Contains("attribute", StringComparison.OrdinalIgnoreCase) => TokenKind.HtmlAttribute,
         var value when value.Contains("element", StringComparison.OrdinalIgnoreCase)
             || value.Contains("tagHelper", StringComparison.OrdinalIgnoreCase) => TokenKind.HtmlTag,
-        var value when value.Contains("method", StringComparison.OrdinalIgnoreCase) => TokenKind.Method,
+        var value when value.Contains("method", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("function", StringComparison.OrdinalIgnoreCase) => TokenKind.Method,
         var value when value.Contains("property", StringComparison.OrdinalIgnoreCase) => TokenKind.Property,
         var value when value.Contains("field", StringComparison.OrdinalIgnoreCase) => TokenKind.Field,
+        var value when value.Contains("constant", StringComparison.OrdinalIgnoreCase) => TokenKind.Constant,
+        var value when value.Contains("variable", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("local", StringComparison.OrdinalIgnoreCase) => TokenKind.Variable,
+        var value when value.Contains("typeParameter", StringComparison.OrdinalIgnoreCase) => TokenKind.TypeParameter,
         var value when value.Contains("parameter", StringComparison.OrdinalIgnoreCase) => TokenKind.Parameter,
         var value when value.Contains("enumMember", StringComparison.OrdinalIgnoreCase)
             || value.Contains("enum", StringComparison.OrdinalIgnoreCase)
                 && value.Contains("member", StringComparison.OrdinalIgnoreCase)
-            => TokenKind.Field,
+            => TokenKind.EnumMember,
         var value when value.Contains("event", StringComparison.OrdinalIgnoreCase) => TokenKind.Event,
         var value when value.Contains("namespace", StringComparison.OrdinalIgnoreCase) => TokenKind.Namespace,
-        var value when value.Contains("class", StringComparison.OrdinalIgnoreCase)
-            || value.Contains("struct", StringComparison.OrdinalIgnoreCase)
-            || value.Contains("interface", StringComparison.OrdinalIgnoreCase)
-            || value.Contains("type", StringComparison.OrdinalIgnoreCase) => TokenKind.Type,
+        var value when value.Contains("record", StringComparison.OrdinalIgnoreCase) => TokenKind.Record,
+        var value when value.Contains("interface", StringComparison.OrdinalIgnoreCase) => TokenKind.Interface,
+        var value when value.Contains("struct", StringComparison.OrdinalIgnoreCase) => TokenKind.Struct,
+        var value when value.Contains("class", StringComparison.OrdinalIgnoreCase) => TokenKind.Class,
+        var value when value.Contains("type", StringComparison.OrdinalIgnoreCase) => TokenKind.Type,
+        var value when value.Contains("label", StringComparison.OrdinalIgnoreCase) => TokenKind.Label,
+        var value when value.Contains("operator", StringComparison.OrdinalIgnoreCase) => TokenKind.Operator,
+        var value when value.Contains("regexp", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("regex", StringComparison.OrdinalIgnoreCase) => TokenKind.Regex,
+        var value when value.Contains("decorator", StringComparison.OrdinalIgnoreCase) => TokenKind.Decorator,
+        var value when value.Contains("macro", StringComparison.OrdinalIgnoreCase) => TokenKind.Macro,
+        var value when !value.Equals("text", StringComparison.OrdinalIgnoreCase) => TokenKind.Semantic,
         _ => TokenKind.Text
     };
 }

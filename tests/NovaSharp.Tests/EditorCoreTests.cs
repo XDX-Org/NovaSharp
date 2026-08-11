@@ -97,6 +97,27 @@ public sealed class EditorCoreTests
     }
 
     [TestMethod]
+    public void ServerColouringCoversStandardRazorAndUnknownClassifications()
+    {
+        const string text = "abcdefghijk";
+        var classifications = new[]
+        {
+            "variable", "constant", "enumMember", "interface", "struct", "class", "typeParameter",
+            "operator", "razorComponentElement", "razorComponentAttribute", "futureServerToken"
+        };
+        var expected = new[]
+        {
+            TokenKind.Variable, TokenKind.Constant, TokenKind.EnumMember, TokenKind.Interface, TokenKind.Struct,
+            TokenKind.Class, TokenKind.TypeParameter, TokenKind.Operator, TokenKind.Component,
+            TokenKind.ComponentAttribute, TokenKind.Semantic
+        };
+        var spans = CSharpTokenizer.Tokenize(text, classifications.Select((value, index) =>
+            new SemanticSpan(index, 1, value)).ToArray(), includeLocalColouring: false).Single().Spans;
+
+        CollectionAssert.AreEqual(expected, spans.Select(span => span.Kind).ToArray());
+    }
+
+    [TestMethod]
     public void SemanticClassificationsPreserveInterpolatedStringColour()
     {
         const string text = ": IOException($\"'{Path.GetFileName(path)}' changed on disk.\");";
