@@ -259,8 +259,8 @@
             _ = RefreshSemanticAsync();
             _ = RefreshDiagnosticsAsync();
         }
-        else if (!firstRender && _module is not null && _hover is not null)
-            await _module.InvokeVoidAsync("fitEditorPopup", _root, ".hover-popup");
+        else if (!firstRender && _module is not null)
+            await _module.InvokeVoidAsync("fitLanguagePopups", _root);
     }
 
     [JSInvokable]

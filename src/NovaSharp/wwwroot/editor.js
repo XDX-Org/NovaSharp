@@ -233,6 +233,21 @@ export function getEditorAnchor(root, position) {
 export function fitEditorPopup(root, selector) {
     const popup = root.querySelector(selector);
     if (!popup) return;
+    fitPopup(root, popup);
+}
+
+export function fitLanguagePopups(root) {
+    for (const popup of root.querySelectorAll('.language-popup')) {
+        fitPopup(root, popup);
+        const selected = popup.querySelector('.selected');
+        if (!selected) continue;
+        if (selected.offsetTop < popup.scrollTop) popup.scrollTop = selected.offsetTop;
+        else if (selected.offsetTop + selected.offsetHeight > popup.scrollTop + popup.clientHeight)
+            popup.scrollTop = selected.offsetTop + selected.offsetHeight - popup.clientHeight;
+    }
+}
+
+function fitPopup(root, popup) {
     const margin = 8;
     let left = Number.parseFloat(popup.style.left) || 0;
     let top = Number.parseFloat(popup.style.top) || 0;

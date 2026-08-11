@@ -388,7 +388,7 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
 .word-wrap .source-line { grid-template-columns: 54px minmax(0, 1fr); min-width: 0; width: 100%; height: auto; min-height: 20px; }
 .word-wrap .source-line code { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .language-state { position: absolute; right: 10px; bottom: 8px; padding: 3px 7px; border-radius: 3px; color: #d6b875; background: #292d35; font-size: var(--text-small); }
-.language-popup { position: absolute; z-index: 20; min-width: 260px; max-width: min(520px, calc(100% - 16px)); max-height: 260px; overflow: auto; border: 1px solid #596273; border-radius: 3px; color: #d8dee9; background: #252930; box-shadow: 0 5px 18px #111a; font: var(--text-code)/1.4 var(--font-code); }
+.language-popup { position: absolute; z-index: 20; min-width: min(260px, calc(100% - 16px)); max-width: min(520px, calc(100% - 16px)); max-height: min(260px, calc(100% - 16px)); overflow: auto; border: 1px solid #596273; border-radius: 3px; color: #d8dee9; background: #252930; box-shadow: 0 5px 18px #111a; font: var(--text-code)/1.4 var(--font-code); }
 .completion-popup button { display: flex; width: 100%; justify-content: space-between; gap: 16px; padding: 3px 7px; border: 0; border-radius: 0; color: inherit; background: transparent; text-align: left; }
 .completion-popup button.selected { background: #3b4d68; }
 .completion-popup small, .signature-popup small { color: #929cab; }
