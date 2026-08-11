@@ -608,17 +608,16 @@
     {
         if (!firstRender) return;
         _self = DotNetObjectReference.Create(this);
-        await JS.InvokeVoidAsync("novaSharp.initEditorDragCleanup", _workbench, _self);
-        await JS.InvokeVoidAsync("novaSharp.initPointerTabDrag", _workbench, _self);
-        await JS.InvokeVoidAsync("novaSharp.initExplorerFileDrag", _workbench, _self);
-        await JS.InvokeVoidAsync("novaSharp.initBottomPanelResize", _workbench);
         await RecoverWorkspaceSolutionAsync();
         if (_startLanguageServersAfterRestore)
         {
             _startLanguageServersAfterRestore = false;
-            await StartLanguageServersAsync();
-            _languageStartupComplete = true;
+            _ = CompleteDeferredLanguageStartupAsync();
         }
+        await JS.InvokeVoidAsync("novaSharp.initEditorDragCleanup", _workbench, _self);
+        await JS.InvokeVoidAsync("novaSharp.initPointerTabDrag", _workbench, _self);
+        await JS.InvokeVoidAsync("novaSharp.initExplorerFileDrag", _workbench, _self);
+        await JS.InvokeVoidAsync("novaSharp.initBottomPanelResize", _workbench);
         if (Program.Phase4Workspace is not null || Program.Phase5Workspace is not null)
             await JS.InvokeVoidAsync("novaSharp.startSmokePolling", _self,
                 Program.Phase4Workspace is not null, Program.Phase5Workspace is not null);
@@ -630,6 +629,17 @@
         {
             await Task.Delay(100);
             await JS.InvokeVoidAsync("novaSharp.runPhase11Smoke", _workbench, _self);
+        }
+    }
+
+    private async Task CompleteDeferredLanguageStartupAsync()
+    {
+        try { await StartLanguageServersAsync(); }
+        catch (Exception exception) { _status = $"Language service startup failed: {exception.Message}"; }
+        finally
+        {
+            _languageStartupComplete = true;
+            await InvokeAsync(StateHasChanged);
         }
     }
 
