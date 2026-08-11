@@ -354,7 +354,6 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
 .source-line { display: grid; grid-template-columns: 54px max-content; min-width: max-content; height: 20px; white-space: pre; }
 .source-line .line-number { position: sticky; left: 0; padding-right: 12px; color: #6f737a; background: #191a1c; text-align: right; user-select: none; }
 .source-line code { padding: 0 66px 0 12px; color: var(--syntax-text); font: inherit; }
-.code-editor.semantic-pending .source-line code, .code-editor.semantic-pending .source-line code span { color: var(--syntax-text); }
 .diagnostic { text-decoration-line: underline; text-decoration-style: wavy; text-decoration-thickness: 1px; text-underline-offset: 2px; }
 .diagnostic-error { text-decoration-color: #f06a6a; }
 .diagnostic-warning { text-decoration-color: #d9b56d; }
