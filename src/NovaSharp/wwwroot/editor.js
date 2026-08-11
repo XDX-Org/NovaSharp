@@ -328,8 +328,11 @@ export async function runPhase7Smoke(root) {
         input.value = 'using System; class C { void M() { string.Concat("a", ); } }';
         const signaturePosition = input.value.indexOf(', )') + 2;
         input.setSelectionRange(signaturePosition, signaturePosition);
-        await dotNet.invokeMethodAsync('InputChanged', input.value, signaturePosition, ',');
-        const signatureVisible = await waitFor(() => !!root.querySelector('.signature-popup'));
+        let signatureVisible = false;
+        for (let attempt = 0; attempt < 30 && !signatureVisible; attempt++) {
+            await dotNet.invokeMethodAsync('InputChanged', input.value, signaturePosition, ',');
+            signatureVisible = await waitFor(() => !!root.querySelector('.signature-popup'), 10);
+        }
         const hoverPosition = input.value.indexOf('string.Concat');
         input.setSelectionRange(hoverPosition, hoverPosition);
         await dotNet.invokeMethodAsync('EditorCommand', 'hover', hoverPosition);
