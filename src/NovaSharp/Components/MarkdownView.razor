@@ -1,5 +1,7 @@
-@foreach (var block in Blocks(Content))
+@{ var blocks = Blocks(Content).ToArray(); }
+@for (var index = 0; index < blocks.Length; index++)
 {
+    var block = blocks[index];
     @if (block.Kind == "code")
     {
         <pre><code class="@(block.Language is null ? null : $"language-{block.Language}")">@block.Text</code></pre>
@@ -10,7 +12,15 @@
     }
     else if (block.Kind == "list")
     {
-        <div class="markdown-list" style="padding-left:@(block.Indent * 12)px"><span aria-hidden="true">•</span><span>@block.Text</span></div>
+        <ul class="markdown-list">
+            @while (index < blocks.Length && blocks[index].Kind == "list")
+            {
+                block = blocks[index];
+                <li style="margin-left:@(block.Indent * 12)px">@block.Text</li>
+                index++;
+            }
+        </ul>
+        index--;
     }
     else
     {
@@ -34,8 +44,11 @@
                 if (string.IsNullOrWhiteSpace(line)) continue;
                 var trimmed = line.Trim();
                 var indent = Math.Max(0, line.Length - line.TrimStart().Length) / 2;
-                if (trimmed.Length > 1 && trimmed[0] is '-' or '*' or '+' or '○' or '◦')
-                    yield return ("list", null, trimmed[1..].TrimStart(), indent);
+                if (trimmed.Length > 0 && trimmed[0] is '-' or '*' or '+' or '○' or '◦')
+                {
+                    var item = trimmed[1..].TrimStart();
+                    if (item.Length > 0) yield return ("list", null, item, indent);
+                }
                 else if (trimmed.EndsWith(':') && !trimmed.Contains(' '))
                     yield return ("heading", null, trimmed[..^1], 0);
                 else yield return ("paragraph", null, trimmed, 0);
