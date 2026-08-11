@@ -95,7 +95,7 @@
                 }
                 else
                 {
-                    <div class="@(IsFirstSemanticSection(index) ? "hover-signature" : section.StartsWith("Project:", StringComparison.Ordinal) ? "hover-context" : "hover-description")"><MarkdownView Content="@section" /></div>
+                    <div class="@(IsFirstSemanticSection(index) && !section.Contains('\n') ? "hover-signature" : section.StartsWith("Project:", StringComparison.Ordinal) ? "hover-context" : "hover-description")"><MarkdownView Content="@section" /></div>
                 }
             }
         </div>

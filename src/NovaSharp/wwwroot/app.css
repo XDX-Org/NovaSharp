@@ -410,6 +410,12 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
 .hover-diagnostic-source { padding: 4px 10px 5px 13px; border-bottom: 1px solid #414854; color: #8995a6; background: #22262d; font-size: 10px; text-transform: lowercase; }
 .hover-signature { padding: 9px 11px; overflow-wrap: anywhere; color: #9cdcfe; background: #1d2026; font-weight: 600; }
 .hover-description { padding: 9px 11px; overflow-wrap: anywhere; color: #d3d8e0; border-top: 1px solid #3b414c; line-height: 1.5; }
+.hover-description .markdown-heading { margin: 10px 0 4px; color: #a9c7ef; font-weight: 650; }
+.hover-description .markdown-heading:first-child { margin-top: 0; }
+.hover-description .markdown-paragraph { margin: 3px 0 8px; color: #c8ced8; }
+.hover-description .markdown-list { display: flex; gap: 7px; margin: 2px 0; color: #bac3cf; }
+.hover-description .markdown-list > span:first-child { color: #6f9ed8; }
+.hover-description pre { margin: 4px 0 9px; border: 1px solid #303641; color: #9cdcfe; }
 .hover-context { padding: 7px 11px; color: #8fa6c9; border-top: 1px solid #3b414c; background: #22262d; font-size: var(--text-small); }
 .signature-popup span { margin-right: 8px; color: #929cab; }
 .signature-popup small { display: block; }

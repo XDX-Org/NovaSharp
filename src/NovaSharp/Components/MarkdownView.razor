@@ -1,40 +1,53 @@
 @foreach (var block in Blocks(Content))
 {
-    @if (block.Code)
+    @if (block.Kind == "code")
     {
         <pre><code class="@(block.Language is null ? null : $"language-{block.Language}")">@block.Text</code></pre>
     }
+    else if (block.Kind == "heading")
+    {
+        <div class="markdown-heading">@block.Text</div>
+    }
+    else if (block.Kind == "list")
+    {
+        <div class="markdown-list" style="padding-left:@(block.Indent * 12)px"><span aria-hidden="true">•</span><span>@block.Text</span></div>
+    }
     else
     {
-        <div>@block.Text</div>
+        <div class="markdown-paragraph">@block.Text</div>
     }
 }
 
 @code {
     [Parameter] public string Content { get; set; } = string.Empty;
 
-    private static IEnumerable<(bool Code, string? Language, string Text)> Blocks(string markdown)
+    private static IEnumerable<(string Kind, string? Language, string Text, int Indent)> Blocks(string markdown)
     {
         for (var count = 0; count < 2; count++) markdown = System.Net.WebUtility.HtmlDecode(markdown);
         markdown = System.Text.RegularExpressions.Regex.Replace(markdown, @"\\([\\`*_{}\[\]()#+\-.!])", "$1");
         var lines = markdown.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
-        var prose = new List<string>();
         for (var index = 0; index < lines.Length;)
         {
             if (!lines[index].TrimStart().StartsWith("```", StringComparison.Ordinal))
             {
-                prose.Add(lines[index++]);
+                var line = lines[index++];
+                if (string.IsNullOrWhiteSpace(line)) continue;
+                var trimmed = line.Trim();
+                var indent = Math.Max(0, line.Length - line.TrimStart().Length) / 2;
+                if (trimmed.Length > 1 && trimmed[0] is '-' or '*' or '+' or '○' or '◦')
+                    yield return ("list", null, trimmed[1..].TrimStart(), indent);
+                else if (trimmed.EndsWith(':') && !trimmed.Contains(' '))
+                    yield return ("heading", null, trimmed[..^1], 0);
+                else yield return ("paragraph", null, trimmed, 0);
                 continue;
             }
-            if (prose.Count > 0) { yield return (false, null, string.Join('\n', prose).Trim()); prose.Clear(); }
             var fence = lines[index++].TrimStart();
             var language = fence[3..].Trim() is { Length: > 0 } value ? value : null;
             var code = new List<string>();
             while (index < lines.Length && !lines[index].TrimStart().StartsWith("```", StringComparison.Ordinal))
                 code.Add(lines[index++]);
             if (index < lines.Length) index++;
-            yield return (true, language, string.Join('\n', code));
+            yield return ("code", language, string.Join('\n', code), 0);
         }
-        if (prose.Count > 0) yield return (false, null, string.Join('\n', prose).Trim());
     }
 }
