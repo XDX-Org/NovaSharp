@@ -753,7 +753,8 @@ window.novaSharp.runPhase6Smoke = async function (bridge) {
             .find(summary => summary.title?.toLowerCase().endsWith('.csproj'));
         const projectFileEditable = !!project;
         project?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 120, clientY: 100 }));
-        await new Promise(resolve => setTimeout(resolve, 200));
+        for (let attempt = 0; attempt < 20 && !document.querySelector('.explorer-context-menu'); attempt++)
+            await new Promise(resolve => setTimeout(resolve, 100));
         const menuText = document.querySelector('.explorer-context-menu')?.textContent ?? '';
         const contextMenuPresent = ['Open', 'New file', 'New folder', 'Rename', 'Move', 'Delete']
             .every(label => menuText.includes(label));
