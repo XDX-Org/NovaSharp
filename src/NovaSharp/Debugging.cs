@@ -245,7 +245,7 @@ public sealed class DebugAdapterSession : IAsyncDisposable
             session.Coordinator.Transition(DebugSessionState.Configuring);
             var launched = protocol.RequestAsync("launch", new { name = "NovaSharp", type = "coreclr", request = "launch",
                 program, cwd = workingDirectory, args = configuration.Arguments,
-                env = configuration.Environment, stopAtEntry = configuration.StopAtEntry }, TimeSpan.FromSeconds(10), cancellationToken);
+                env = configuration.Environment, stopAtEntry = configuration.StopAtEntry, justMyCode = false }, TimeSpan.FromSeconds(10), cancellationToken);
             await session._initialized.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
             if (configuration.Breakpoints is { Count: > 0 })
                 await session.SetBreakpointsAsync(configuration.Breakpoints, cancellationToken);
