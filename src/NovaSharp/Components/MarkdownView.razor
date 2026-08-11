@@ -15,8 +15,8 @@
 
     private static IEnumerable<(bool Code, string? Language, string Text)> Blocks(string markdown)
     {
-        markdown = System.Net.WebUtility.HtmlDecode(markdown).Replace("\\.", ".", StringComparison.Ordinal)
-            .Replace("\\(", "(", StringComparison.Ordinal).Replace("\\)", ")", StringComparison.Ordinal);
+        for (var count = 0; count < 2; count++) markdown = System.Net.WebUtility.HtmlDecode(markdown);
+        markdown = System.Text.RegularExpressions.Regex.Replace(markdown, @"\\([\\`*_{}\[\]()#+\-.!])", "$1");
         var lines = markdown.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
         var prose = new List<string>();
         for (var index = 0; index < lines.Length;)

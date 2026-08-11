@@ -385,7 +385,8 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
 .language-detail pre:first-child, .hover-popup pre:first-child { margin-top: 0; }
 .signature-popup { padding: 7px 9px; white-space: pre-wrap; }
 .hover-popup { width: max-content; min-width: min(320px, calc(100% - 16px)); max-width: calc(100% - 16px); max-height: min(420px, calc(100% - 16px)); padding: 0; overflow: auto; overscroll-behavior: contain; pointer-events: auto; white-space: pre-wrap; font-size: 12px; line-height: 1.4; }
-.hover-diagnostic { display: grid; max-width: 560px; grid-template-columns: auto minmax(180px, 1fr); gap: 9px; padding: 7px 10px; border-left: 3px solid #75a7e8; background: #252d39; }
+.hover-diagnostic { display: grid; width: 100%; box-sizing: border-box; grid-template-columns: auto minmax(180px, 1fr); gap: 9px; padding: 7px 10px; border-left: 3px solid #75a7e8; background: #252d39; }
+.hover-popup > div { width: 100%; box-sizing: border-box; }
 .hover-diagnostic strong { display: inline-flex; align-items: baseline; gap: 5px; color: #9fc5f8; font-weight: 600; white-space: nowrap; }
 .hover-diagnostic strong code { color: inherit; font: inherit; font-size: 10px; opacity: .8; }
 .hover-diagnostic span { color: #e0e5ec; overflow-wrap: anywhere; }
