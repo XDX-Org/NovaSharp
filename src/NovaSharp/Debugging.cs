@@ -13,7 +13,8 @@ internal sealed record DebugBreakpoint(string SourcePath, int Line, string? Cond
     string? LogMessage = null, DebugBreakpointState State = DebugBreakpointState.Pending, int? BoundLine = null, string? Message = null);
 internal sealed record DebugLaunchConfiguration(string Program, string WorkingDirectory, IReadOnlyList<string> Arguments,
     IReadOnlyDictionary<string, string>? Environment = null, bool StopAtEntry = false,
-    IReadOnlyList<DebugBreakpoint>? Breakpoints = null, IReadOnlyDictionary<string, string>? SourceMap = null);
+    IReadOnlyList<DebugBreakpoint>? Breakpoints = null, IReadOnlyDictionary<string, string>? SourceMap = null,
+    IReadOnlyList<DebugExceptionFilter>? ExceptionFilters = null);
 internal sealed record DebugCapabilities(bool SupportsFunctionBreakpoints, bool SupportsConditionalBreakpoints,
     bool SupportsHitConditionalBreakpoints, bool SupportsLogPoints, bool SupportsExceptionOptions,
     bool SupportsRestartRequest, bool SupportsStepBack);
@@ -249,6 +250,8 @@ public sealed class DebugAdapterSession : IAsyncDisposable
             await session._initialized.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
             if (configuration.Breakpoints is { Count: > 0 })
                 await session.SetBreakpointsAsync(configuration.Breakpoints, cancellationToken);
+            if (configuration.ExceptionFilters is { } exceptionFilters)
+                await session.SetExceptionBreakpointsAsync(exceptionFilters, cancellationToken);
             await protocol.RequestAsync("configurationDone", null, TimeSpan.FromSeconds(5), cancellationToken);
             await launched;
             if (session.Coordinator.State == DebugSessionState.Configuring) session.Coordinator.Transition(DebugSessionState.Running);
