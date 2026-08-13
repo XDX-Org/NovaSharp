@@ -74,7 +74,7 @@
                         <span class="startup-project-detail">@_targetFramework</span>
                     }
                 </div>
-                <button title="Open Build Configurator" aria-label="Build Configurator" @onclick="OpenBuildConfigurator">Configure…</button>
+                <button @ref="_buildConfiguratorButton" title="Open Build Configurator" aria-label="Build Configurator" @onclick="OpenBuildConfigurator">Configure…</button>
                 <div class="build-actions">
                     <button title="Build startup project (Ctrl+Shift+B)" aria-label="Build startup project" @onclick="() => StartBuildAsync(BuildOperation.Build)">Build</button>
                     <button class="run-action" title="Run without debugging (Ctrl+F5)" aria-label="Run startup project" @onclick="() => StartBuildAsync(BuildOperation.Run)">Run</button>
@@ -165,15 +165,17 @@
     @if (_buildConfiguratorOpen)
     {
         <div class="modal-backdrop" @onclick="CloseBuildConfigurator">
-            <form class="modal-dialog build-configurator" role="dialog" aria-modal="true" aria-labelledby="build-configurator-title" @onclick:stopPropagation @onsubmit="ApplyBuildConfigurator">
+            <form class="modal-dialog build-configurator" role="dialog" aria-modal="true" aria-labelledby="build-configurator-title" @onclick:stopPropagation @onsubmit="ApplyBuildConfigurator" @onkeydown="HandleBuildConfiguratorKey">
                 <h2 id="build-configurator-title">Build Configurator</h2>
-                <label>Startup project<select value="@_configuredProject" @onchange="ConfigureProjectChanged">@foreach (var project in StartupProjects) { <option value="@project">@Path.GetFileNameWithoutExtension(project)</option> }</select></label>
-                <label>Configuration<select @bind="_configuredConfiguration">@foreach (var configuration in _availableConfigurations) { <option>@configuration</option> }</select></label>
+                <label>Startup project<select value="@_configuredProject" @onchange="ConfigureProjectChanged" autofocus>@foreach (var project in StartupProjects) { <option value="@project">@Path.GetFileNameWithoutExtension(project)</option> }</select></label>
+                <label>Configuration<select value="@_configuredConfiguration" @onchange="ConfigureConfigurationChanged">@foreach (var configuration in _availableConfigurations) { <option>@configuration</option> }</select></label>
                 <label>Target framework<select @bind="_configuredFramework">@foreach (var framework in _availableFrameworks) { <option>@framework</option> }</select></label>
-                <label>Launch profile<select @bind="_configuredProfile"><option value="">None</option>@foreach (var profile in _availableProfiles) { <option value="@profile.Name">@profile.Name</option> }</select></label>
+                <label>Launch profile<select value="@_configuredProfile" @onchange="ConfigureProfileChanged"><option value="">None</option>@foreach (var profile in _availableProfiles) { <option value="@profile.Name">@profile.Name</option> }</select></label>
                 <label>Arguments<input @bind="_configuredArguments" /></label>
                 <label>Working directory<span class="path-picker"><input @bind="_configuredWorkingDirectory" /><button type="button" title="Select working directory" aria-label="Select working directory" @onclick="SelectWorkingDirectoryAsync"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 3.5h5l1.4 1.6h6.6v7.4h-13z" /></svg></button></span></label>
-                <p><strong>Preview:</strong> dotnet run --project @Path.GetFileName(_configuredProject) --configuration @_configuredConfiguration --framework @_configuredFramework</p>
+                <label>Environment variables <small>One non-secret NAME=value entry per line</small><textarea @bind="_configuredEnvironment"></textarea></label>
+                @if (_buildConfiguratorError is not null) { <p class="validation-error" role="alert">@_buildConfiguratorError</p> }
+                <div class="effective-command"><strong>Preview</strong><code>@BuildConfiguratorPreview</code></div>
                 <div class="modal-actions"><button type="submit">Apply</button><button type="button" @onclick="CloseBuildConfigurator">Cancel</button></div>
             </form>
         </div>
@@ -295,6 +297,7 @@
     private WorkspaceExplorer? _explorer;
     private SearchPanel? _searchPanel;
     private ElementReference _workbench;
+    private ElementReference _buildConfiguratorButton;
     private DotNetObjectReference<WorkbenchPanel>? _self;
     private string? _status;
     private string? _explorerFileDrag;
@@ -306,6 +309,7 @@
     private string _buildConfiguration = "Debug";
     private string? _targetFramework, _launchProfile, _runWorkingDirectory;
     private IReadOnlyList<string> _runArguments = [];
+    private IReadOnlyDictionary<string, string> _runEnvironment = new Dictionary<string, string>();
     private bool _buildConfiguratorOpen;
     private bool _settingsOpen, _settingsReducedMotion, _settingsHighContrast, _settingsLigatures, _settingsWordWrap,
         _settingsBraceGuides;
@@ -314,7 +318,8 @@
     private string _settingsPopupPlacement = "Contextual";
     private Dictionary<string, string> _settingsKeybindings = [];
     private int _settingsZoom = 100;
-    private string _configuredProject = "", _configuredConfiguration = "Debug", _configuredFramework = "", _configuredProfile = "", _configuredArguments = "", _configuredWorkingDirectory = "";
+    private string _configuredProject = "", _configuredConfiguration = "Debug", _configuredFramework = "", _configuredProfile = "", _configuredArguments = "", _configuredWorkingDirectory = "", _configuredEnvironment = "";
+    private string? _buildConfiguratorError, _configuredProjectFingerprint, _configuredLaunchSettingsFingerprint;
     private IReadOnlyList<string> _availableConfigurations = ["Debug", "Release"], _availableFrameworks = [];
     private IReadOnlyList<LaunchProfile> _availableProfiles = [];
     private string? _startupProject;
@@ -881,51 +886,101 @@
         if (StartupProject is not { } project) { _status = "Open a project or solution first."; return; }
         _outputOpen = true;
         await SaveLayoutAsync();
+        EffectiveBuildCommand? effective = null;
+        if (operation == BuildOperation.Run)
+        {
+            try { effective = ResolveActiveBuild(project); }
+            catch (Exception ex) { _status = $"Run configuration is stale: {ex.Message}"; return; }
+        }
         var request = new BuildRequest(project, operation, _buildConfiguration, _targetFramework, _launchProfile,
-            operation == BuildOperation.Run ? _runArguments : null, WorkingDirectory: _runWorkingDirectory);
+            effective?.ApplicationArguments, effective?.Environment, effective?.WorkingDirectory ?? _runWorkingDirectory);
         var completed = await _buildRun.ExecuteAsync(request);
         _status = $"{operation}: {completed.State}";
     }
     private async Task OpenBuildConfigurator()
     {
         if (StartupProject is not { } project) return;
-        _buildConfiguratorOpen = true;
-        LoadBuildConfigurator(project);
-        await LoadSavedBuildConfiguratorAsync(project);
+        try
+        {
+            LoadBuildConfigurator(project);
+            await LoadSavedBuildConfiguratorAsync(project);
+            _buildConfiguratorOpen = true;
+        }
+        catch (Exception ex) { _status = $"Build configuration unavailable: {ex.Message}"; }
     }
     private async Task ConfigureProjectChanged(ChangeEventArgs args)
     {
         var project = args.Value?.ToString() ?? StartupProject!;
-        LoadBuildConfigurator(project);
-        await LoadSavedBuildConfiguratorAsync(project);
+        try { LoadBuildConfigurator(project); await LoadSavedBuildConfiguratorAsync(project); }
+        catch (Exception ex) { _buildConfiguratorError = ex.Message; }
+    }
+    private void ConfigureConfigurationChanged(ChangeEventArgs args)
+    {
+        try
+        {
+            _configuredConfiguration = args.Value?.ToString() ?? "Debug";
+            _availableFrameworks = BuildConfigurationDiscovery.Discover(_configuredProject).Frameworks(_configuredConfiguration);
+            _configuredFramework = _availableFrameworks.FirstOrDefault() ?? "";
+            _buildConfiguratorError = null;
+        }
+        catch (Exception ex) { _buildConfiguratorError = ex.Message; }
+    }
+    private void ConfigureProfileChanged(ChangeEventArgs args)
+    {
+        _configuredProfile = args.Value?.ToString() ?? "";
+        var profile = _availableProfiles.FirstOrDefault(item => item.Name == _configuredProfile);
+        _configuredArguments = profile?.CommandLineArgs ?? "";
+        if (!string.IsNullOrWhiteSpace(profile?.WorkingDirectory))
+            _configuredWorkingDirectory = Path.GetFullPath(profile.WorkingDirectory, Path.GetDirectoryName(_configuredProject)!);
     }
     private void LoadBuildConfigurator(string project)
     {
         _configuredProject = project;
-        _availableConfigurations = BuildConfigurationDiscovery.Configurations(project);
-        _availableFrameworks = BuildConfigurationDiscovery.Frameworks(project);
+        var choices = BuildConfigurationDiscovery.Discover(project);
+        _availableConfigurations = choices.Configurations;
+        _configuredConfiguration = _availableConfigurations.First();
+        _availableFrameworks = choices.Frameworks(_configuredConfiguration);
         var settings = Path.Combine(Path.GetDirectoryName(project)!, "Properties", "launchSettings.json");
         _availableProfiles = BuildConfigurationDiscovery.Profiles(settings);
-        _configuredConfiguration = _availableConfigurations.First();
         _configuredFramework = _availableFrameworks.FirstOrDefault() ?? "";
         _configuredProfile = "";
         _configuredArguments = "";
         _configuredWorkingDirectory = Path.GetDirectoryName(project)!;
+        _configuredEnvironment = "";
+        _buildConfiguratorError = null;
+        _configuredProjectFingerprint = BuildConfigurationDiscovery.Fingerprint(project);
+        _configuredLaunchSettingsFingerprint = BuildConfigurationDiscovery.Fingerprint(settings);
     }
     private async Task LoadSavedBuildConfiguratorAsync(string project)
     {
         if (await _buildConfigurationStore.LoadAsync(project) is not { } saved) return;
+        if (saved.ProjectFingerprint is not null && saved.ProjectFingerprint != _configuredProjectFingerprint
+            || saved.LaunchSettingsFingerprint is not null && saved.LaunchSettingsFingerprint != _configuredLaunchSettingsFingerprint)
+        {
+            _buildConfiguratorError = "Saved choices are stale because project or launch settings changed.";
+            return;
+        }
         if (_availableConfigurations.Contains(saved.Configuration, StringComparer.OrdinalIgnoreCase))
             _configuredConfiguration = saved.Configuration;
+        _availableFrameworks = BuildConfigurationDiscovery.Discover(project).Frameworks(_configuredConfiguration);
         if (saved.TargetFramework is not null && _availableFrameworks.Contains(saved.TargetFramework)) _configuredFramework = saved.TargetFramework;
         if (saved.LaunchProfile is not null && _availableProfiles.Any(profile => profile.Name == saved.LaunchProfile)) _configuredProfile = saved.LaunchProfile;
         _configuredArguments = string.Join(' ', saved.Arguments.Select(argument => argument.Any(char.IsWhiteSpace) ? $"\"{argument}\"" : argument));
+        _configuredEnvironment = string.Join(Environment.NewLine, (saved.Environment ?? new Dictionary<string, string>())
+            .OrderBy(item => item.Key).Select(item => $"{item.Key}={item.Value}"));
         if (Directory.Exists(saved.WorkingDirectory)) _configuredWorkingDirectory = saved.WorkingDirectory;
     }
     private async Task RestoreBuildConfigurationAsync(string project)
     {
         SetBuildConfigurationDefaults(project);
         if (await _buildConfigurationStore.LoadAsync(project) is not { } saved) return;
+        var settings = Path.Combine(Path.GetDirectoryName(project)!, "Properties", "launchSettings.json");
+        if (saved.ProjectFingerprint is not null && saved.ProjectFingerprint != BuildConfigurationDiscovery.Fingerprint(project)
+            || saved.LaunchSettingsFingerprint is not null && saved.LaunchSettingsFingerprint != BuildConfigurationDiscovery.Fingerprint(settings))
+        {
+            _status = "Saved build choices were ignored because project or launch settings changed.";
+            return;
+        }
         var configurations = BuildConfigurationDiscovery.Configurations(project);
         var frameworks = BuildConfigurationDiscovery.Frameworks(project);
         var profiles = BuildConfigurationDiscovery.Profiles(Path.Combine(Path.GetDirectoryName(project)!, "Properties", "launchSettings.json"));
@@ -933,6 +988,7 @@
         if (saved.TargetFramework is null || frameworks.Contains(saved.TargetFramework)) _targetFramework = saved.TargetFramework;
         if (saved.LaunchProfile is null || profiles.Any(profile => profile.Name == saved.LaunchProfile)) _launchProfile = saved.LaunchProfile;
         _runArguments = saved.Arguments;
+        _runEnvironment = saved.Environment ?? new Dictionary<string, string>();
         if (Directory.Exists(saved.WorkingDirectory)) _runWorkingDirectory = saved.WorkingDirectory;
     }
     private void RestoreActiveBuildConfiguration(WorkbenchLayoutState? state, string project)
@@ -956,24 +1012,37 @@
         _targetFramework = BuildConfigurationDiscovery.Frameworks(project).FirstOrDefault();
         _launchProfile = null;
         _runArguments = [];
+        _runEnvironment = new Dictionary<string, string>();
         _runWorkingDirectory = Path.GetDirectoryName(project);
     }
     private async Task ApplyBuildConfigurator()
     {
-        if (!Directory.Exists(_configuredWorkingDirectory)) { _status = "Working directory does not exist."; return; }
-        IReadOnlyList<string> arguments;
-        try { arguments = BuildConfigurationDiscovery.ParseArguments(_configuredArguments); }
-        catch (InvalidOperationException ex) { _status = ex.Message; return; }
+        EffectiveBuildCommand effective;
+        try
+        {
+            var settings = Path.Combine(Path.GetDirectoryName(_configuredProject)!, "Properties", "launchSettings.json");
+            if (_configuredProjectFingerprint != BuildConfigurationDiscovery.Fingerprint(_configuredProject)
+                || _configuredLaunchSettingsFingerprint != BuildConfigurationDiscovery.Fingerprint(settings))
+                throw new InvalidOperationException("Project or launch settings changed. Reopen the configurator to refresh choices.");
+            effective = ResolveConfiguredBuild();
+        }
+        catch (Exception ex) { _buildConfiguratorError = ex.Message; return; }
         _startupProject = _configuredProject;
         _buildConfiguration = _configuredConfiguration;
         _targetFramework = string.IsNullOrEmpty(_configuredFramework) ? null : _configuredFramework;
         _launchProfile = string.IsNullOrEmpty(_configuredProfile) ? null : _configuredProfile;
-        _runArguments = arguments;
-        _runWorkingDirectory = Path.GetFullPath(_configuredWorkingDirectory);
-        await _buildConfigurationStore.SaveAsync(new(1, Path.GetFullPath(_configuredProject), _buildConfiguration,
-            _targetFramework, _launchProfile, _runArguments, _runWorkingDirectory));
-        await SaveLayoutAsync();
-        _buildConfiguratorOpen = false;
+        _runArguments = effective.ApplicationArguments;
+        _runEnvironment = BuildConfigurationDiscovery.ParseEnvironment(_configuredEnvironment);
+        _runWorkingDirectory = effective.WorkingDirectory;
+        try
+        {
+            await _buildConfigurationStore.SaveAsync(new(1, Path.GetFullPath(_configuredProject), _buildConfiguration,
+                _targetFramework, _launchProfile, _runArguments, _runWorkingDirectory, _runEnvironment,
+                _configuredProjectFingerprint, _configuredLaunchSettingsFingerprint));
+            await SaveLayoutAsync();
+        }
+        catch (Exception ex) { _buildConfiguratorError = $"Could not save build configuration: {ex.Message}"; return; }
+        CloseBuildConfigurator();
     }
     private async Task SelectWorkingDirectoryAsync()
     {
@@ -982,7 +1051,46 @@
         if (await Program.App.MainWindow.ShowOpenFolderDialogAsync("Select working directory", initial, false)
             is [var selected]) _configuredWorkingDirectory = selected;
     }
-    private void CloseBuildConfigurator() => _buildConfiguratorOpen = false;
+    private void CloseBuildConfigurator()
+    {
+        _buildConfiguratorOpen = false;
+        _ = JS.InvokeVoidAsync("novaSharp.focusElement", _buildConfiguratorButton);
+    }
+    private void HandleBuildConfiguratorKey(KeyboardEventArgs args)
+    {
+        if (args.Key == "Escape") CloseBuildConfigurator();
+    }
+    private EffectiveBuildCommand ResolveConfiguredBuild()
+    {
+        var arguments = BuildConfigurationDiscovery.ParseArguments(_configuredArguments);
+        var environment = BuildConfigurationDiscovery.ParseEnvironment(_configuredEnvironment);
+        var options = new BuildConfigurationOptions(_configuredProject, _configuredConfiguration, _configuredFramework,
+            string.IsNullOrEmpty(_configuredProfile) ? null : _configuredProfile, arguments,
+            _configuredWorkingDirectory, environment);
+        return BuildConfigurationDiscovery.Resolve(options, _availableProfiles);
+    }
+    private EffectiveBuildCommand ResolveActiveBuild(string project)
+    {
+        var profiles = BuildConfigurationDiscovery.Profiles(Path.Combine(Path.GetDirectoryName(project)!, "Properties", "launchSettings.json"));
+        var framework = _targetFramework ?? BuildConfigurationDiscovery.Discover(project).Frameworks(_buildConfiguration).FirstOrDefault()
+            ?? throw new InvalidOperationException("No target framework is available.");
+        return BuildConfigurationDiscovery.Resolve(new(project, _buildConfiguration, framework, _launchProfile,
+            _runArguments, _runWorkingDirectory ?? Path.GetDirectoryName(project)!, _runEnvironment), profiles);
+    }
+    private string BuildConfiguratorPreview
+    {
+        get
+        {
+            try
+            {
+                var effective = ResolveConfiguredBuild();
+                var environment = effective.Environment.Count == 0 ? "" : Environment.NewLine + string.Join(Environment.NewLine,
+                    effective.Environment.OrderBy(item => item.Key).Select(item => BuildConfigurationDiscovery.Redact($"{item.Key}={item.Value}")));
+                return $"(cwd: {effective.WorkingDirectory}) {effective.Preview}{environment}";
+            }
+            catch (Exception ex) { return $"Unavailable: {ex.Message}"; }
+        }
+    }
     private void OpenSettings()
     {
         _openMenu = null;
@@ -1027,6 +1135,9 @@
     {
         if (StartupProject is not { } project) return;
         if (_debugSession is not null) await StopDebugAsync();
+        EffectiveBuildCommand effective;
+        try { effective = ResolveActiveBuild(project); }
+        catch (Exception ex) { _status = $"Debug configuration is stale: {ex.Message}"; return; }
         var built = await _buildRun.ExecuteAsync(new(project, BuildOperation.Build, _buildConfiguration, _targetFramework));
         if (built.State != BuildTaskState.Succeeded) { _status = "Build failed; debugging was not started."; return; }
         var framework = _targetFramework ?? BuildConfigurationDiscovery.Frameworks(project).FirstOrDefault();
@@ -1035,7 +1146,8 @@
             Path.GetFileNameWithoutExtension(project) + ".dll");
         try
         {
-            _debugSession = await DebugAdapterSession.LaunchAsync(new(program, _runWorkingDirectory ?? Path.GetDirectoryName(project)!, _runArguments));
+            _debugSession = await DebugAdapterSession.LaunchAsync(new(program, effective.WorkingDirectory,
+                effective.ApplicationArguments, effective.Environment));
             _debugSession.Coordinator.StateChanged += DebugStateChanged;
             _debugOpen = true;
         }

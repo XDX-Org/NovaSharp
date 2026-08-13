@@ -209,7 +209,7 @@ internal sealed partial class BuildRunService : IAsyncDisposable
                 group.DistinctBy(item => (item.Id, item.Range, item.Message, item.ProjectName)).ToArray());
     }
 
-    private static IReadOnlyList<string> CreateArguments(BuildRequest request)
+    internal static IReadOnlyList<string> CreateArguments(BuildRequest request)
     {
         var args = new List<string>();
         switch (request.Operation)

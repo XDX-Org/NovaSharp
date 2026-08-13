@@ -300,6 +300,8 @@ window.novaSharp.prepareQuickAccessInput = function (input) {
     input.focus();
 };
 
+window.novaSharp.focusElement = element => setTimeout(() => element?.focus(), 0);
+
 window.novaSharp.initPointerTabDrag = function (workbench, dotNet) {
     if (!workbench || workbench.dataset.pointerTabDragReady) return;
     workbench.dataset.pointerTabDragReady = 'true';

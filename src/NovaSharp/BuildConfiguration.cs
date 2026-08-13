@@ -1,5 +1,5 @@
 using System.Text.Json;
-using System.Xml.Linq;
+using System.Diagnostics;
 
 namespace NovaSharp;
 
@@ -9,7 +9,7 @@ internal sealed record BuildConfigurationOptions(string ProjectPath, string Conf
     string? LaunchProfile, IReadOnlyList<string> Arguments, string WorkingDirectory,
     IReadOnlyDictionary<string, string> Environment);
 internal sealed record EffectiveBuildCommand(string Executable, IReadOnlyList<string> Arguments, string WorkingDirectory,
-    IReadOnlyDictionary<string, string> Environment)
+    IReadOnlyDictionary<string, string> Environment, IReadOnlyList<string> ApplicationArguments)
 {
     internal string Preview => string.Join(' ', new[] { Executable }.Concat(Arguments.Select(Quote)));
     private static string Quote(string value) => value.Any(char.IsWhiteSpace) ? $"\"{value.Replace("\"", "\\\"")}\"" : value;
@@ -17,21 +17,59 @@ internal sealed record EffectiveBuildCommand(string Executable, IReadOnlyList<st
 
 internal static class BuildConfigurationDiscovery
 {
-    internal static IReadOnlyList<string> Frameworks(string projectPath)
+    internal sealed record Choices(IReadOnlyList<string> Configurations,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> FrameworksByConfiguration)
     {
-        var project = XDocument.Load(projectPath, LoadOptions.None);
-        var values = project.Descendants().Where(element => element.Name.LocalName is "TargetFramework" or "TargetFrameworks")
-            .SelectMany(element => element.Value.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-            .Where(value => value.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-        return values;
+        internal IReadOnlyList<string> Frameworks(string configuration) =>
+            FrameworksByConfiguration.GetValueOrDefault(configuration) ?? [];
     }
 
-    internal static IReadOnlyList<string> Configurations(string projectPath)
+    internal static Choices Discover(string projectPath)
     {
-        var project = XDocument.Load(projectPath, LoadOptions.None);
-        var configured = project.Descendants().FirstOrDefault(element => element.Name.LocalName == "Configurations")?.Value
-            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? [];
-        return configured.Length == 0 ? ["Debug", "Release"] : configured.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        projectPath = Path.GetFullPath(projectPath);
+        if (!File.Exists(projectPath)) throw new FileNotFoundException("Project does not exist.", projectPath);
+        var initial = QueryProperties(projectPath, null);
+        var configurations = Split(initial.GetValueOrDefault("Configurations"));
+        if (configurations.Count == 0) configurations = ["Debug", "Release"];
+        var frameworks = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var configuration in configurations)
+        {
+            var evaluated = QueryProperties(projectPath, configuration);
+            var values = Split(evaluated.GetValueOrDefault("TargetFrameworks"));
+            if (values.Count == 0) values = Split(evaluated.GetValueOrDefault("TargetFramework"));
+            frameworks[configuration] = values;
+        }
+        return new(configurations, frameworks);
+    }
+
+    internal static IReadOnlyList<string> Frameworks(string projectPath)
+        => Discover(projectPath).FrameworksByConfiguration.Values.SelectMany(value => value)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+
+    internal static IReadOnlyList<string> Configurations(string projectPath)
+        => Discover(projectPath).Configurations;
+
+    private static IReadOnlyList<string> Split(string? value) => string.IsNullOrWhiteSpace(value) ? []
+        : value.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+
+    private static IReadOnlyDictionary<string, string> QueryProperties(string projectPath, string? configuration)
+    {
+        var start = new ProcessStartInfo("dotnet") { UseShellExecute = false, RedirectStandardOutput = true,
+            RedirectStandardError = true, CreateNoWindow = true, WorkingDirectory = Path.GetDirectoryName(projectPath)! };
+        foreach (var argument in new[] { "msbuild", projectPath, "-nologo",
+                     "-getProperty:Configurations,TargetFrameworks,TargetFramework" }) start.ArgumentList.Add(argument);
+        if (configuration is not null) start.ArgumentList.Add($"-property:Configuration={configuration}");
+        using var process = Process.Start(start) ?? throw new InvalidOperationException("Could not start MSBuild evaluation.");
+        var outputTask = process.StandardOutput.ReadToEndAsync();
+        var errorTask = process.StandardError.ReadToEndAsync();
+        if (!process.WaitForExit(15_000)) { process.Kill(true); throw new TimeoutException("MSBuild evaluation timed out."); }
+        var output = outputTask.GetAwaiter().GetResult();
+        var error = errorTask.GetAwaiter().GetResult();
+        if (process.ExitCode != 0) throw new InvalidOperationException(string.IsNullOrWhiteSpace(error) ? "MSBuild evaluation failed." : error.Trim());
+        using var document = JsonDocument.Parse(output);
+        return document.RootElement.GetProperty("Properties").EnumerateObject()
+            .ToDictionary(property => property.Name, property => property.Value.GetString() ?? "", StringComparer.OrdinalIgnoreCase);
     }
 
     internal static IReadOnlyList<LaunchProfile> Profiles(string launchSettingsPath)
@@ -54,20 +92,25 @@ internal static class BuildConfigurationDiscovery
     {
         var project = Path.GetFullPath(options.ProjectPath);
         if (!File.Exists(project)) throw new FileNotFoundException("Project does not exist.", project);
-        var frameworks = Frameworks(project);
+        var choices = Discover(project);
+        var frameworks = choices.Frameworks(options.Configuration);
         if (!frameworks.Contains(options.TargetFramework, StringComparer.OrdinalIgnoreCase)) throw new InvalidOperationException("Target framework is not evaluated for this project.");
-        if (!Configurations(project).Contains(options.Configuration, StringComparer.OrdinalIgnoreCase)) throw new InvalidOperationException("Configuration is not valid for this project.");
+        if (!choices.Configurations.Contains(options.Configuration, StringComparer.OrdinalIgnoreCase)) throw new InvalidOperationException("Configuration is not valid for this project.");
         var workingDirectory = Path.GetFullPath(options.WorkingDirectory);
         if (!Directory.Exists(workingDirectory)) throw new DirectoryNotFoundException("Working directory does not exist.");
         var profile = options.LaunchProfile is null ? null : profiles.SingleOrDefault(item => item.Name == options.LaunchProfile)
             ?? throw new InvalidOperationException("Launch profile is not available.");
+        if (profile is not null && !string.Equals(profile.CommandName, "Project", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"Launch profile '{profile.Name}' uses unsupported command '{profile.CommandName}'.");
         var arguments = new List<string> { "run", "--project", project, "--configuration", options.Configuration,
-            "--framework", options.TargetFramework, "--no-launch-profile" };
+            "--framework", options.TargetFramework };
+        if (profile is null) arguments.Add("--no-launch-profile");
+        else arguments.AddRange(["--launch-profile", profile.Name]);
         var applicationArguments = options.Arguments.Count > 0 ? options.Arguments : ParseArguments(profile?.CommandLineArgs);
         if (applicationArguments.Count > 0) { arguments.Add("--"); arguments.AddRange(applicationArguments); }
         var environment = new Dictionary<string, string>(profile?.Environment ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase);
         foreach (var item in options.Environment) environment[item.Key] = item.Value;
-        return new("dotnet", arguments, workingDirectory, environment);
+        return new("dotnet", arguments, workingDirectory, environment, applicationArguments);
     }
 
     internal static string Redact(string value) => value.Contains('=') && IsSecret(value[..value.IndexOf('=')])
@@ -93,13 +136,33 @@ internal static class BuildConfigurationDiscovery
         if (current.Length > 0) result.Add(current.ToString());
         return result;
     }
+    internal static IReadOnlyDictionary<string, string> ParseEnvironment(string? value)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var line in (value ?? "").Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var separator = line.IndexOf('=');
+            if (separator < 1) throw new InvalidOperationException("Environment entries must use NAME=value.");
+            var name = line[..separator].Trim();
+            if (IsSecret(name)) throw new InvalidOperationException($"{name} looks secret and cannot be persisted here.");
+            if (!(char.IsLetter(name[0]) || name[0] == '_')
+                || name.Any(character => !(char.IsLetterOrDigit(character) || character == '_')))
+                throw new InvalidOperationException($"{name} is not a valid environment-variable name.");
+            result[name] = line[(separator + 1)..];
+        }
+        return result;
+    }
+    internal static string Fingerprint(string path) => File.Exists(path)
+        ? Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(path))) : "missing";
     private static bool IsSecret(string name) => name.Contains("password", StringComparison.OrdinalIgnoreCase)
         || name.Contains("token", StringComparison.OrdinalIgnoreCase) || name.Contains("secret", StringComparison.OrdinalIgnoreCase)
         || name.Contains("api_key", StringComparison.OrdinalIgnoreCase) || name.Contains("apikey", StringComparison.OrdinalIgnoreCase);
 }
 
 internal sealed record PersistedBuildConfiguration(int SchemaVersion, string ProjectPath, string Configuration,
-    string? TargetFramework, string? LaunchProfile, IReadOnlyList<string> Arguments, string WorkingDirectory);
+    string? TargetFramework, string? LaunchProfile, IReadOnlyList<string> Arguments, string WorkingDirectory,
+    IReadOnlyDictionary<string, string>? Environment = null, string? ProjectFingerprint = null,
+    string? LaunchSettingsFingerprint = null);
 
 internal sealed class BuildConfigurationStore(string directory)
 {
@@ -133,7 +196,13 @@ internal sealed class BuildConfigurationStore(string directory)
     private static void Validate(PersistedBuildConfiguration value)
     {
         if (value.SchemaVersion != 1 || !Path.IsPathFullyQualified(value.ProjectPath) || !Path.IsPathFullyQualified(value.WorkingDirectory)
-            || string.IsNullOrWhiteSpace(value.Configuration) || value.Arguments.Count > 256 || value.Arguments.Any(argument => argument.Length > 8192))
+            || string.IsNullOrWhiteSpace(value.Configuration) || value.Arguments.Count > 256 || value.Arguments.Any(argument => argument.Length > 8192)
+            || value.Environment is { Count: > 128 } || value.Environment?.Any(item => item.Key.Length > 256
+                || item.Value.Length > 8192 || LooksSecret(item.Key)) == true)
             throw new InvalidDataException("Invalid persisted build configuration.");
     }
+
+    private static bool LooksSecret(string name) => name.Contains("password", StringComparison.OrdinalIgnoreCase)
+        || name.Contains("token", StringComparison.OrdinalIgnoreCase) || name.Contains("secret", StringComparison.OrdinalIgnoreCase)
+        || name.Contains("api_key", StringComparison.OrdinalIgnoreCase) || name.Contains("apikey", StringComparison.OrdinalIgnoreCase);
 }

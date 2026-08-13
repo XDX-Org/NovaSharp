@@ -29,6 +29,23 @@ Provide one project-aware place to configure build and run behavior without crow
 - Build and run use the exact effective settings shown by the configurator.
 - Keyboard navigation, screen-reader labels, persistence, redaction, and cross-platform path behavior pass.
 
+## Completion audit
+
+The initial configurator UI is present, but Phase 17 remains in progress until all items below are verified:
+
+- [x] Use evaluated MSBuild properties, including imports and conditions, for valid configuration/framework combinations.
+- [x] Generate one validated effective command shared by preview and execution.
+- [x] Include arguments, launch profile, working directory, environment, quoting, and redaction in that preview.
+- [x] Add non-secret environment-variable editing and persistence; reject likely secrets.
+- [x] Recover from missing SDKs, malformed project/profile files, stale evaluation, conflicts, and invalid directories.
+- [x] Preserve launch-settings content and detect changes rather than overwriting stale data.
+- [x] Support Escape, initial/focus restoration, accessible validation announcements, and complete keyboard operation.
+- [x] Cover conditional multi-target projects, profile preservation, failure recovery, persistence, redaction, exact execution, and cross-platform paths with tests.
+
+Implementation is complete locally. Phase status remains in progress until the supported-platform build, package, and interaction matrix records release evidence.
+
+Local evidence: warning-free Release qualification and 140 Release tests pass; the Debug suite passes 162 tests.
+
 ## Next phase
 
 Package and qualify the complete preview product.
