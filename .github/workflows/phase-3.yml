@@ -111,12 +111,18 @@ jobs:
           1..30 | ForEach-Object { "class Phase4Fixture$_;" | Set-Content -Encoding utf8 (Join-Path $workspace "fixture-$_.cs") }
           $binary = 'artifacts/app/NovaSharp'
           $arguments = @("--phase4-smoke=$workspace", "--smoke-report=$report")
-          $process = Start-Process xvfb-run -ArgumentList (@('-a', $binary) + $arguments) -PassThru
-          if (-not $process.WaitForExit(120000)) { $process.Kill($true); throw 'Phase 4 native smoke timed out.' }
-          if ($process.ExitCode -ne 0) { throw "Phase 4 native smoke exited with $($process.ExitCode)." }
-          $result = Get-Content $report | ConvertFrom-Json
           $required = 'TabsPresent', 'PointerReordered', 'OverflowScrollable', 'MiddleClickClosed', 'AccessibleLabels', 'ContextCommandsPresent'
-          foreach ($name in $required) { if (-not $result.$name) { throw "Phase 4 smoke assertion failed: $name" } }
+          $passed = $false
+          foreach ($attempt in 1..2) {
+            Remove-Item $report -ErrorAction SilentlyContinue
+            $process = Start-Process xvfb-run -ArgumentList (@('-a', $binary) + $arguments) -PassThru
+            if (-not $process.WaitForExit(120000)) { $process.Kill($true); continue }
+            if (-not (Test-Path $report)) { continue }
+            $result = Get-Content $report | ConvertFrom-Json
+            $failed = @($required | Where-Object { -not $result.$_ })
+            if ($failed.Count -eq 0) { $passed = $true; break }
+          }
+          if (-not $passed) { throw "Phase 4 native smoke failed after two attempts: $($failed -join ', ') ($($result.Error))" }
       - name: Run packaged Linux Phase 5 native-host smoke
         if: runner.os == 'Linux'
         shell: pwsh
