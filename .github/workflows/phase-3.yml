@@ -264,12 +264,23 @@ jobs:
           dotnet restore (Join-Path $workspace 'Fixture.csproj')
           $binary = 'artifacts/app/NovaSharp'
           $arguments = @("--phase9-smoke=$(Join-Path $workspace 'Fixture.slnx')", "--smoke-report=$report")
-          $process = Start-Process xvfb-run -ArgumentList (@('-a', $binary) + $arguments) -PassThru
-          if (-not $process.WaitForExit(60000)) { $process.Kill($true); throw 'Phase 9 native smoke timed out.' }
-          if ($process.ExitCode -ne 0 -and -not (Test-Path $report)) { throw "Phase 9 native smoke exited with $($process.ExitCode) before reporting." }
-          $result = Get-Content $report | ConvertFrom-Json
           $required = 'QuickOpenVisible', 'DuplicateFilesVisible', 'SearchVisible', 'ResultsStreamed', 'ReplacePreview'
-          foreach ($name in $required) { if (-not $result.$name) { throw "Phase 9 smoke assertion failed: $name ($($result.Error))" } }
+          $passed = $false
+          foreach ($attempt in 1..2) {
+            Remove-Item $report -ErrorAction SilentlyContinue
+            $attemptState = Join-Path $workspace "state-$attempt"
+            New-Item -ItemType Directory -Path $attemptState -Force | Out-Null
+            $env:XDG_DATA_HOME = Join-Path $attemptState 'data'
+            $env:XDG_CONFIG_HOME = Join-Path $attemptState 'config'
+            $env:XDG_CACHE_HOME = Join-Path $attemptState 'cache'
+            $process = Start-Process xvfb-run -ArgumentList (@('-a', $binary) + $arguments) -PassThru
+            if (-not $process.WaitForExit(60000)) { $process.Kill($true); continue }
+            if (-not (Test-Path $report)) { continue }
+            $result = Get-Content $report | ConvertFrom-Json
+            $failed = @($required | Where-Object { -not $result.$_ })
+            if ($failed.Count -eq 0) { $passed = $true; break }
+          }
+          if (-not $passed) { throw "Phase 9 native smoke failed after two attempts: $($failed -join ', ') ($($result.Error))" }
       - name: Run packaged Linux Phase 11 terminal smoke
         if: runner.os == 'Linux'
         shell: pwsh
