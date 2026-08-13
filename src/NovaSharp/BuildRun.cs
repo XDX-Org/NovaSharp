@@ -57,9 +57,11 @@ internal sealed class OutputChannel(int maxEntries = 10_000, int maxBytes = 4 * 
 
 internal sealed partial class BuildRunService : IAsyncDisposable
 {
-    private static readonly string[] InheritedEnvironment =
+    internal static readonly string[] InheritedEnvironment =
         ["PATH", "DOTNET_ROOT", "DOTNET_HOST_PATH", "NUGET_PACKAGES", "HOME", "USERPROFILE", "TMP", "TEMP", "TMPDIR",
-            "SystemRoot", "windir", "APPDATA", "LOCALAPPDATA", "ProgramData", "ProgramFiles", "ProgramFiles(x86)"];
+            "SystemRoot", "windir", "APPDATA", "LOCALAPPDATA", "ProgramData", "ProgramFiles", "ProgramFiles(x86)",
+            "DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY", "XDG_RUNTIME_DIR", "XDG_SESSION_TYPE", "DBUS_SESSION_BUS_ADDRESS",
+            "GDK_BACKEND", "GTK_THEME", "DESKTOP_STARTUP_ID"];
     private readonly SemaphoreSlim _operationGate = new(1, 1);
     private readonly object _processGate = new();
     private readonly LanguageDiagnosticStore _diagnostics;
@@ -153,8 +155,7 @@ internal sealed partial class BuildRunService : IAsyncDisposable
         };
         foreach (var argument in arguments) startInfo.ArgumentList.Add(argument);
         startInfo.Environment.Clear();
-        foreach (var name in InheritedEnvironment)
-            if (Environment.GetEnvironmentVariable(name) is { } value) startInfo.Environment[name] = value;
+        foreach (var pair in CreateInheritedEnvironment()) startInfo.Environment[pair.Key] = pair.Value;
         if (request.Environment is not null)
             foreach (var pair in request.Environment) startInfo.Environment[pair.Key] = pair.Value;
 
@@ -186,6 +187,11 @@ internal sealed partial class BuildRunService : IAsyncDisposable
             lock (_processGate) { if (ReferenceEquals(_activeProcess, process)) { _activeProcess = null; _activeCancellation = null; } }
         }
     }
+
+    internal static Dictionary<string, string> CreateInheritedEnvironment() => InheritedEnvironment
+        .Select(name => (Name: name, Value: Environment.GetEnvironmentVariable(name)))
+        .Where(item => item.Value is not null)
+        .ToDictionary(item => item.Name, item => item.Value!, StringComparer.OrdinalIgnoreCase);
 
     private async Task ReadLinesAsync(StreamReader reader, OutputStream stream, BuildRequest request,
         List<LanguageDiagnostic> diagnostics)

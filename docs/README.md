@@ -22,6 +22,7 @@ NovaSharp is being built in small, runnable phases. Each phase must leave the ap
 14. [Durable workbench](phase-14-durable-workbench.md) — settings, layouts, accessibility, recovery, and performance hardening.
 16. [Extension architecture](phase-16-extensions.md) — a versioned, permission-aware extension host and SDK.
 17. [Build configurator](phase-17-build-configurator.md) — project-aware frameworks, launch profiles, arguments, and environment settings.
+17.5. [Debugger refinement](phase-17-5-debugger-refinement.md) — editor breakpoints, binding feedback, debugger-panel refinement, and end-to-end managed debugging.
 18. [Preview release](phase-18-preview-release.md) — packaging, signing, updates, support policy, and release qualification.
 
 The sequence is the planned delivery order, not a promise that every phase has equal size. Phase numbers remain stable identifiers when priorities change. See:

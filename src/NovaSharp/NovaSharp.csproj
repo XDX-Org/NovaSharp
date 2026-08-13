@@ -27,6 +27,10 @@
       <_Parameter1>LanguageServerDevelopmentAssetRoot</_Parameter1>
       <_Parameter2>$(MSBuildProjectDirectory)/LanguageServers/Assets</_Parameter2>
     </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>DebugAdapterDevelopmentAssetRoot</_Parameter1>
+      <_Parameter2>$(MSBuildProjectDirectory)/DebugAdapters/Assets</_Parameter2>
+    </AssemblyAttribute>
   </ItemGroup>
 
   <ItemGroup>

@@ -209,7 +209,7 @@ public sealed class EditorGroupTests
                 var second = workspace.Split(first.Id, SplitDirection.Right)!;
                 await workspace.CopyAsync(tab!, second.Id);
                 captured = workspace.CaptureState() with { SolutionPath = Path.Combine(root, "NovaSharp.slnx"),
-                    ExplorerOpen = false, SearchOpen = true, ProblemsOpen = true, OutputOpen = true, TerminalOpen = true,
+                    ExplorerOpen = false, SearchOpen = true, ProblemsOpen = true, OutputOpen = true, TerminalOpen = true, DebugOpen = true,
                     StartupProject = Path.Combine(root, "NovaSharp.csproj"), WorkspacePath = root,
                     BuildProjectPath = Path.Combine(root, "NovaSharp.csproj"), BuildConfiguration = "Release",
                     TargetFramework = "net10.0", LaunchProfile = "Local", RunArguments = ["one"],
@@ -232,6 +232,7 @@ public sealed class EditorGroupTests
             Assert.IsTrue(panels.ProblemsOpen);
             Assert.IsTrue(panels.OutputOpen);
             Assert.IsTrue(panels.TerminalOpen);
+            Assert.IsTrue(panels.DebugOpen);
             Assert.AreEqual(captured.StartupProject, panels.StartupProject);
             Assert.AreEqual("Release", panels.BuildConfiguration);
             Assert.AreEqual("net10.0", panels.TargetFramework);

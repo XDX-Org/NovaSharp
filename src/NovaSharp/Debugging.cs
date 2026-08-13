@@ -187,12 +187,22 @@ internal sealed class DebugSessionCoordinator
 
 internal static class DebugAdapterCatalog
 {
-    internal static string Resolve(string? baseDirectory = null)
+    internal static string Resolve(string? baseDirectory = null, string? developmentAssetRoot = null)
     {
         baseDirectory ??= AppContext.BaseDirectory;
         var executable = OperatingSystem.IsWindows() ? "netcoredbg.exe" : "netcoredbg";
         var packaged = Path.Combine(baseDirectory, "DebugAdapters", "netcoredbg", executable);
         if (File.Exists(packaged)) return packaged;
+        developmentAssetRoot ??= typeof(DebugAdapterCatalog).Assembly
+            .GetCustomAttributes(typeof(System.Reflection.AssemblyMetadataAttribute), false)
+            .OfType<System.Reflection.AssemblyMetadataAttribute>()
+            .FirstOrDefault(attribute => attribute.Key == "DebugAdapterDevelopmentAssetRoot")?.Value;
+        if (developmentAssetRoot is not null)
+        {
+            var development = Path.Combine(developmentAssetRoot,
+                System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier, "netcoredbg", executable);
+            if (File.Exists(development)) return development;
+        }
         throw new FileNotFoundException("The packaged managed debug adapter is unavailable.", packaged);
     }
 }
@@ -244,9 +254,11 @@ public sealed class DebugAdapterSession : IAsyncDisposable
                 supportsVariableType = true, supportsRunInTerminalRequest = false }, TimeSpan.FromSeconds(5), cancellationToken);
             session.Capabilities = ParseCapabilities(capabilities);
             session.Coordinator.Transition(DebugSessionState.Configuring);
+            var targetEnvironment = BuildRunService.CreateInheritedEnvironment();
+            foreach (var item in configuration.Environment ?? new Dictionary<string, string>()) targetEnvironment[item.Key] = item.Value;
             var launched = protocol.RequestAsync("launch", new { name = "NovaSharp", type = "coreclr", request = "launch",
                 program, cwd = workingDirectory, args = configuration.Arguments,
-                env = configuration.Environment, stopAtEntry = configuration.StopAtEntry, justMyCode = false }, TimeSpan.FromSeconds(10), cancellationToken);
+                env = targetEnvironment, stopAtEntry = configuration.StopAtEntry, justMyCode = false }, TimeSpan.FromSeconds(10), cancellationToken);
             await session._initialized.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
             if (configuration.Breakpoints is { Count: > 0 })
                 await session.SetBreakpointsAsync(configuration.Breakpoints, cancellationToken);

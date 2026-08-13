@@ -47,6 +47,7 @@
                 {
                 <div class="menu-popup" role="menu" @onclick:stopPropagation>
                     <button role="menuitem" @onclick="ToggleExplorerAsync">Explorer</button>
+                    <button role="menuitem" @onclick="ToggleDebugger">Debugger</button>
                     <button role="menuitem" @onclick="ToggleTerminalAsync">Terminal <kbd>Ctrl+`</kbd></button>
                     <button role="menuitem" @onclick="OpenWorkspaceSymbols">Workspace symbols <kbd>Ctrl+T</kbd></button>
                     <button role="menuitem" @onclick="OpenSettings">Settings</button>
@@ -79,7 +80,8 @@
                     <button title="Build startup project (Ctrl+Shift+B)" aria-label="Build startup project" @onclick="() => StartBuildAsync(BuildOperation.Build)">Build</button>
                     <button class="run-action" title="Run without debugging (Ctrl+F5)" aria-label="Run startup project" @onclick="() => StartBuildAsync(BuildOperation.Run)">Run</button>
                     <button title="Start debugging (F5)" aria-label="Start debugging" @onclick="StartDebugAsync">Debug</button>
-                    <button class="stop-action" title="Stop build or run" aria-label="Stop build or run" disabled="@(_buildRun.ActiveTask is null)" @onclick="StopBuild">■</button>
+                    <button class="stop-action" title="Stop active operation" aria-label="Stop active operation"
+                            disabled="@(_buildRun.ActiveTask is null && _debugSession is null)" @onclick="StopExecutionAsync">■</button>
                 </div>
             </div>
         }
@@ -145,6 +147,8 @@
                     title="Output" aria-pressed="@_outputOpen"><span aria-hidden="true">›_</span></button>
             <button class="@(_terminalOpen ? "active" : null)" @onclick="ToggleTerminalAsync" aria-label="Terminal"
                     title="Terminal" aria-pressed="@_terminalOpen"><span aria-hidden="true">⌘</span></button>
+            <button class="@(_debugOpen ? "active" : null)" @onclick="ToggleDebugger" aria-label="Debugger"
+                    title="Debugger" aria-pressed="@_debugOpen"><span class="activity-debug" aria-hidden="true">▷</span></button>
         </nav>
     </div>
     <footer class="statusbar">
@@ -428,6 +432,7 @@
                 _problemsOpen = state.ProblemsOpen;
                 _outputOpen = state.OutputOpen;
                 _terminalOpen = state.TerminalOpen;
+                _debugOpen = state.DebugOpen;
                 restoredStartupProject = state.StartupProject;
                 if (state.SolutionPath is { } solutionPath && File.Exists(solutionPath))
                     await _projectSystem.OpenAsync(solutionPath);
@@ -876,8 +881,10 @@
             _ => StartBuildAsync(BuildOperation.Build)));
         _commands.Register(new("workbench.action.run", "Run Without Debugging", "Ctrl+F5", () => StartupProject is not null,
             _ => StartBuildAsync(BuildOperation.Run)));
-        _commands.Register(new("workbench.action.stop", "Stop Build or Run", null, () => _buildRun.ActiveTask is not null,
-            _ => { StopBuild(); return Task.CompletedTask; }));
+        _commands.Register(new("workbench.action.debug", "Start Debugging", "F5", () => StartupProject is not null,
+            _ => StartDebugAsync()));
+        _commands.Register(new("workbench.action.stop", "Stop Active Operation", null,
+            () => _buildRun.ActiveTask is not null || _debugSession is not null, _ => StopExecutionAsync()));
     }
 
     private async Task StartBuildAsync(BuildOperation operation)
@@ -1130,7 +1137,11 @@
     private void CloseSettings() => _settingsOpen = false;
     private string SettingKeybinding(CommandDescriptor command) => _settingsKeybindings.GetValueOrDefault(command.Id, command.Keybinding ?? "");
     private void SetKeybinding(string commandId, string value) => _settingsKeybindings[commandId] = value;
-    private void StopBuild() => _buildRun.Stop();
+    private async Task StopExecutionAsync()
+    {
+        _buildRun.Stop();
+        if (_debugSession is not null) await StopDebugAsync();
+    }
     private async Task StartDebugAsync()
     {
         if (StartupProject is not { } project) return;
@@ -1142,14 +1153,15 @@
         if (built.State != BuildTaskState.Succeeded) { _status = "Build failed; debugging was not started."; return; }
         var framework = _targetFramework ?? BuildConfigurationDiscovery.Frameworks(project).FirstOrDefault();
         if (framework is null) { _status = "No target framework is available for debugging."; return; }
-        var program = Path.Combine(Path.GetDirectoryName(project)!, "bin", _buildConfiguration, framework,
-            Path.GetFileNameWithoutExtension(project) + ".dll");
         try
         {
+            var program = BuildConfigurationDiscovery.TargetPath(project, _buildConfiguration, framework);
+            if (!File.Exists(program)) throw new FileNotFoundException("The built debug target was not found.", program);
             _debugSession = await DebugAdapterSession.LaunchAsync(new(program, effective.WorkingDirectory,
                 effective.ApplicationArguments, effective.Environment));
             _debugSession.Coordinator.StateChanged += DebugStateChanged;
             _debugOpen = true;
+            _status = $"Debugging {Path.GetFileName(program)}";
         }
         catch (Exception ex) { _status = ex.Message; }
     }
@@ -1175,6 +1187,7 @@
     }
     private void DebugStateChanged(DebugSessionState state) => _ = InvokeAsync(StateHasChanged);
     private void ToggleOutput() { _openMenu = null; _outputOpen = !_outputOpen; _ = SaveLayoutAsync(); }
+    private void ToggleDebugger() { _openMenu = null; _debugOpen = !_debugOpen; _ = SaveLayoutAsync(); }
     private void ToggleTerminal() { _openMenu = null; _terminalOpen = !_terminalOpen; _ = SaveLayoutAsync(); }
     private async Task ToggleTerminalAsync()
     {
@@ -1378,7 +1391,7 @@
     {
         var state = _workspace.CaptureState() with { SolutionPath = _projectSystem.State.Path ?? _persistedSolutionPath, ExplorerOpen = _explorerOpen,
             SearchOpen = _searchOpen, ProblemsOpen = _problemsOpen, OutputOpen = _outputOpen,
-            TerminalOpen = _terminalOpen, StartupProject = StartupProject, WorkspacePath = WorkspaceRoot,
+            TerminalOpen = _terminalOpen, DebugOpen = _debugOpen, StartupProject = StartupProject, WorkspacePath = WorkspaceRoot,
             BuildProjectPath = StartupProject, BuildConfiguration = _buildConfiguration, TargetFramework = _targetFramework,
             LaunchProfile = _launchProfile, RunArguments = _runArguments, RunWorkingDirectory = _runWorkingDirectory };
         if (HasTabs(state.Root)) _lastNonEmptyLayout = state;

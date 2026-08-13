@@ -48,4 +48,4 @@ Local evidence: warning-free Release qualification and 140 Release tests pass; t
 
 ## Next phase
 
-Package and qualify the complete preview product.
+Refine the debugger into a complete editor-driven workflow before preview qualification.

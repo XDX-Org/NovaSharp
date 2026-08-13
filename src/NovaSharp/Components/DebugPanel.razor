@@ -1,24 +1,25 @@
 @if (Open)
 {
-    <section class="debug-panel" aria-label="Debugger">
+    <section class="debug-panel" data-bottom-panel="debugger" aria-label="Debugger">
+        <div class="bottom-panel-resizer" role="separator" tabindex="0" aria-orientation="horizontal" aria-label="Resize Debugger panel"></div>
         <header>
             <strong>Debugger</strong>
             <span aria-live="polite">@State</span>
             @if (Session?.StopReason is { } reason) { <span aria-live="polite">@reason</span> }
-            <button @onclick="Continue" disabled="@(State != DebugSessionState.Paused)">Continue</button>
-            <button @onclick="Pause" disabled="@(State != DebugSessionState.Running)">Pause</button>
-            <button @onclick='() => Step("next")' disabled="@(State != DebugSessionState.Paused)">Step over</button>
-            <button @onclick='() => Step("stepIn")' disabled="@(State != DebugSessionState.Paused)">Step into</button>
-            <button @onclick='() => Step("stepOut")' disabled="@(State != DebugSessionState.Paused)">Step out</button>
-            <button @onclick="RunToCursor" disabled="@(State != DebugSessionState.Paused)">Run to cursor</button>
-            <button @onclick="Restart" disabled="@(Session is null)">Restart</button>
-            <button @onclick="Stop" disabled="@(Session is null)">Stop</button>
-            <button @onclick="Refresh" disabled="@(State != DebugSessionState.Paused)">Refresh</button>
+            <div class="debug-actions">
+                <button @onclick="Continue" disabled="@(State != DebugSessionState.Paused)">Continue</button>
+                <button @onclick="Pause" disabled="@(State != DebugSessionState.Running)">Pause</button>
+                <button @onclick='() => Step("next")' disabled="@(State != DebugSessionState.Paused)">Step over</button>
+                <button @onclick='() => Step("stepIn")' disabled="@(State != DebugSessionState.Paused)">Step into</button>
+                <button @onclick='() => Step("stepOut")' disabled="@(State != DebugSessionState.Paused)">Step out</button>
+                <button @onclick="RunToCursor" disabled="@(State != DebugSessionState.Paused)">Run to cursor</button>
+                <button @onclick="Restart" disabled="@(Session is null)">Restart</button>
+                <button @onclick="Stop" disabled="@(Session is null)">Stop</button>
+                <button @onclick="Refresh" disabled="@(State != DebugSessionState.Paused)">Refresh</button>
+            </div>
         </header>
-        @if (_threads.Count > 0)
-        {
-            <ul aria-label="Threads">@foreach (var thread in _threads) { <li><button @onclick="() => SelectThread(thread)">@thread.Name</button></li> }</ul>
-        }
+        <div class="debug-content">
+        @if (_threads.Count > 0) { <ul aria-label="Threads">@foreach (var thread in _threads) { <li><button @onclick="() => SelectThread(thread)">@thread.Name</button></li> }</ul> }
         @if (Session?.Breakpoints.Count > 0)
         {
             <ul aria-label="Breakpoints">@foreach (var breakpoint in Session.Breakpoints) { <li>@Path.GetFileName(breakpoint.SourcePath):@breakpoint.Line — @breakpoint.State</li> }</ul>
@@ -49,6 +50,7 @@
             <button type="submit" disabled="@(State != DebugSessionState.Paused)">Evaluate</button>
             @if (_consoleEvaluation is not null) { <output aria-live="polite">@_consoleEvaluation.Result</output> }
         </form>
+        </div>
     </section>
 }
 

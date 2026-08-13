@@ -28,6 +28,7 @@ Source control UI, remote development, collaboration, notebooks, AI completion, 
 | 14. Durable workbench | Complete | Validated atomic state, exact recovery, safe mode, scoped settings/keybindings, budgets, and packaged Linux workbench gates pass in run 31503017795 |
 | 16 | In progress | Versioned manifest, compatibility, permission/trust boundary, and sample manifest pass focused tests; isolated host remains |
 | 17 | In progress | Project/framework/configuration/profile discovery and exact effective-command resolution pass focused tests; configurator UI remains |
+| 17.5. Debugger refinement | Planned | Editor breakpoint creation, live binding, diagnostics, refined debugger UI, and packaged end-to-end debugging remain |
 | 18 | In progress | Preview identity, local qualification script, SPDX language-server inventory, privacy/support/limitations/release notes exist; signing, installers, update/rollback, provenance, and clean-image gates remain |
 
 Status values are `planned`, `in progress`, `blocked`, and `complete`. Update this table only from test or release evidence; documentation or partial UI alone does not complete a phase.
@@ -108,4 +109,4 @@ Resolve these before the named phase starts:
 
 ## Preview definition
 
-Preview is reached only when phases 1–18 are complete, the supported platform matrix is green, clean install/update/uninstall paths pass, persisted-state migration and crash recovery pass, security and license reviews have no release blockers, and known limitations are published.
+Preview is reached only when phases 1–18, including phase 17.5, are complete, the supported platform matrix is green, clean install/update/uninstall paths pass, persisted-state migration and crash recovery pass, security and license reviews have no release blockers, and known limitations are published.

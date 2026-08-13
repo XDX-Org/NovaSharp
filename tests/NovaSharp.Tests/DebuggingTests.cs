@@ -111,7 +111,19 @@ public sealed class DebuggingTests
         File.WriteAllText(executable, "fixture");
         try { Assert.AreEqual(executable, DebugAdapterCatalog.Resolve(root)); }
         finally { Directory.Delete(root, true); }
-        Assert.Throws<FileNotFoundException>(() => DebugAdapterCatalog.Resolve(root));
+        Assert.Throws<FileNotFoundException>(() => DebugAdapterCatalog.Resolve(root, Path.Combine(root, "missing")));
+    }
+
+    [TestMethod]
+    public void DevelopmentAdapterIsUsedWithoutRuntimeIdentifierBuild()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "novasharp-adapter-" + Guid.NewGuid().ToString("N"));
+        var executable = Path.Combine(root, System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier,
+            "netcoredbg", OperatingSystem.IsWindows() ? "netcoredbg.exe" : "netcoredbg");
+        Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
+        File.WriteAllText(executable, "fixture");
+        try { Assert.AreEqual(executable, DebugAdapterCatalog.Resolve(Path.Combine(root, "output"), root)); }
+        finally { Directory.Delete(root, true); }
     }
 
     [TestMethod, Timeout(30000)]

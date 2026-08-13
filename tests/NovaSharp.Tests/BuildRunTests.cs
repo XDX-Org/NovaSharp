@@ -6,6 +6,16 @@ namespace NovaSharp.Tests;
 public sealed class BuildRunTests
 {
     [TestMethod]
+    public void GuiSessionEnvironmentIsInherited()
+    {
+        CollectionAssert.Contains(BuildRunService.InheritedEnvironment, "DISPLAY");
+        CollectionAssert.Contains(BuildRunService.InheritedEnvironment, "WAYLAND_DISPLAY");
+        CollectionAssert.Contains(BuildRunService.InheritedEnvironment, "XAUTHORITY");
+        CollectionAssert.Contains(BuildRunService.InheritedEnvironment, "XDG_RUNTIME_DIR");
+        CollectionAssert.Contains(BuildRunService.InheritedEnvironment, "DBUS_SESSION_BUS_ADDRESS");
+    }
+
+    [TestMethod]
     public void OutputIsBoundedAndKeepsLocations()
     {
         var output = new OutputChannel(maxEntries: 2, maxBytes: 100);

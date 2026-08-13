@@ -68,6 +68,15 @@ public sealed class BuildConfigurationTests
     }
 
     [TestMethod]
+    public void DebugTargetUsesEvaluatedAssemblyName()
+    {
+        using var fixture = new BuildConfigurationFixture();
+        File.WriteAllText(fixture.Project, "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><AssemblyName>Different.Name</AssemblyName></PropertyGroup></Project>");
+        var target = BuildConfigurationDiscovery.TargetPath(fixture.Project, "Debug", "net10.0");
+        Assert.AreEqual("Different.Name.dll", Path.GetFileName(target));
+    }
+
+    [TestMethod]
     public void InvalidOrStaleSelectionsFailWithoutChangingFiles()
     {
         using var fixture = new BuildConfigurationFixture();

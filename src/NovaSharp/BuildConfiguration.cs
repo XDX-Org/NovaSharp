@@ -63,13 +63,21 @@ internal static class BuildConfigurationDiscovery
         : value.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
 
-    private static IReadOnlyDictionary<string, string> QueryProperties(string projectPath, string? configuration)
+    internal static string TargetPath(string projectPath, string configuration, string targetFramework)
+    {
+        var value = QueryProperties(projectPath, configuration, targetFramework, "TargetPath").GetValueOrDefault("TargetPath");
+        if (string.IsNullOrWhiteSpace(value)) throw new InvalidOperationException("MSBuild did not provide a debug target path.");
+        return Path.GetFullPath(value, Path.GetDirectoryName(Path.GetFullPath(projectPath))!);
+    }
+
+    private static IReadOnlyDictionary<string, string> QueryProperties(string projectPath, string? configuration,
+        string? targetFramework = null, string properties = "Configurations,TargetFrameworks,TargetFramework")
     {
         var start = new ProcessStartInfo("dotnet") { UseShellExecute = false, RedirectStandardOutput = true,
             RedirectStandardError = true, CreateNoWindow = true, WorkingDirectory = Path.GetDirectoryName(projectPath)! };
-        foreach (var argument in new[] { "msbuild", projectPath, "-nologo",
-                     "-getProperty:Configurations,TargetFrameworks,TargetFramework" }) start.ArgumentList.Add(argument);
+        foreach (var argument in new[] { "msbuild", projectPath, "-nologo", $"-getProperty:{properties}" }) start.ArgumentList.Add(argument);
         if (configuration is not null) start.ArgumentList.Add($"-property:Configuration={configuration}");
+        if (targetFramework is not null) start.ArgumentList.Add($"-property:TargetFramework={targetFramework}");
         using var process = Process.Start(start) ?? throw new InvalidOperationException("Could not start MSBuild evaluation.");
         var outputTask = process.StandardOutput.ReadToEndAsync();
         var errorTask = process.StandardError.ReadToEndAsync();
@@ -79,7 +87,12 @@ internal static class BuildConfigurationDiscovery
         if (process.ExitCode != 0) throw new InvalidOperationException(string.IsNullOrWhiteSpace(error) ? output.Trim() : error.Trim());
         var jsonStart = output.IndexOf('{');
         var jsonEnd = output.LastIndexOf('}');
-        if (jsonStart < 0 || jsonEnd < jsonStart) throw new InvalidOperationException("MSBuild evaluation returned no property data.");
+        if (jsonStart < 0 || jsonEnd < jsonStart)
+        {
+            if (!properties.Contains(','))
+                return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { [properties] = output.Trim() };
+            throw new InvalidOperationException("MSBuild evaluation returned no property data.");
+        }
         using var document = JsonDocument.Parse(output[jsonStart..(jsonEnd + 1)]);
         return document.RootElement.GetProperty("Properties").EnumerateObject()
             .ToDictionary(property => property.Name, property => property.Value.GetString() ?? "", StringComparer.OrdinalIgnoreCase);

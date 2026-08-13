@@ -41,6 +41,9 @@ reasons, and keyboard/screen-reader semantics are implemented. Run
 [31503017795](https://github.com/XDX-Org/NovaSharp/actions/runs/31503017795) verifies the async, multithreaded,
 breakpoint, inspection, evaluation, exception, packaging, and full-workbench interaction gates.
 
+Editor breakpoint creation, live binding feedback, and final user-workflow refinement are tracked separately in
+[Phase 17.5](phase-17-5-debugger-refinement.md); they are required before preview release.
+
 ## Verification budgets
 
 On the managed console fixture, evaluation and stack refresh must each complete within five seconds. Inspection
