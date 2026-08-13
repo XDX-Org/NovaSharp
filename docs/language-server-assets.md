@@ -25,7 +25,7 @@ Run from the repository root:
 tools/acquire-language-servers.sh linux-x64
 ```
 
-Supported release RIDs are `win-x64`, `linux-x64`, `osx-x64`, and `osx-arm64`. The tool:
+Supported release RIDs are `win-x64`, `linux-x64`, `linux-arm64`, `osx-x64`, and `osx-arm64`. The tool:
 
 1. Downloads the exact platform package and Node archive.
 2. Rejects either artifact unless its SHA-256 matches the manifest.

@@ -28,6 +28,7 @@ node_version=$(jq -r .node.version "$manifest")
 node_expected=$(jq -r ".node.sha256[\"$rid\"]" "$manifest")
 case "$rid" in
   linux-x64) node_platform=linux-x64; archive="node-v$node_version-$node_platform.tar.xz" ;;
+  linux-arm64) node_platform=linux-arm64; archive="node-v$node_version-$node_platform.tar.xz" ;;
   osx-x64) node_platform=darwin-x64; archive="node-v$node_version-$node_platform.tar.gz" ;;
   osx-arm64) node_platform=darwin-arm64; archive="node-v$node_version-$node_platform.tar.gz" ;;
   win-x64) node_platform=win-x64; archive="node-v$node_version-$node_platform.zip" ;;
@@ -46,7 +47,7 @@ cp -R "$work/node/node-v$node_version-$node_platform/." "$output/node/"
 
 web="$repo/src/NovaSharp/LanguageServers/Web"
 cp "$web/server.cjs" "$web/package.json" "$web/package-lock.json" "$output/"
-if [[ "$rid" == win-x64 ]]; then
+if [[ "$rid" == win-* ]]; then
   (cd "$output" && "$output/node/npm.cmd" ci --omit=dev --ignore-scripts --no-audit --no-fund)
 else
   (cd "$output" && PATH="$output/node/bin:$PATH" npm ci --omit=dev --ignore-scripts --no-audit --no-fund)

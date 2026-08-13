@@ -30,7 +30,7 @@ Make managed debugging usable from the editor without requiring protocol-level o
 - Breakpoints added, removed, enabled, or disabled during a session synchronize without restarting it.
 - Breakpoints track line edits and survive workspace restoration and debugger restart.
 - Invalid targets, missing adapters, adapter stderr, binding failures, and target exits are visible and actionable.
-- Windows x64, Linux x64, macOS x64, and macOS arm64 packaged interaction tests cover launch, breakpoint hit, inspection, stepping, restart, and cleanup.
+- Windows x64, Linux x64/arm64, macOS x64, and macOS arm64 packaged interaction tests cover launch, breakpoint hit, inspection, stepping, restart, and cleanup.
 
 ## Completion audit
 
