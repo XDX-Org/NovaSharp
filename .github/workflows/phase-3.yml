@@ -115,6 +115,11 @@ jobs:
           $passed = $false
           foreach ($attempt in 1..2) {
             Remove-Item $report -ErrorAction SilentlyContinue
+            $attemptState = Join-Path $workspace "state-$attempt"
+            New-Item -ItemType Directory -Path $attemptState -Force | Out-Null
+            $env:XDG_DATA_HOME = Join-Path $attemptState 'data'
+            $env:XDG_CONFIG_HOME = Join-Path $attemptState 'config'
+            $env:XDG_CACHE_HOME = Join-Path $attemptState 'cache'
             $process = Start-Process xvfb-run -ArgumentList (@('-a', $binary) + $arguments) -PassThru
             if (-not $process.WaitForExit(120000)) { $process.Kill($true); continue }
             if (-not (Test-Path $report)) { continue }
@@ -170,6 +175,11 @@ jobs:
           $passed = $false
           foreach ($attempt in 1..2) {
             Remove-Item $report -ErrorAction SilentlyContinue
+            $attemptState = Join-Path $workspace "state-$attempt"
+            New-Item -ItemType Directory -Path $attemptState -Force | Out-Null
+            $env:XDG_DATA_HOME = Join-Path $attemptState 'data'
+            $env:XDG_CONFIG_HOME = Join-Path $attemptState 'config'
+            $env:XDG_CACHE_HOME = Join-Path $attemptState 'cache'
             $process = Start-Process xvfb-run -ArgumentList (@('-a', $binary) + $arguments) -PassThru
             if (-not $process.WaitForExit(60000)) { $process.Kill($true); continue }
             if (-not (Test-Path $report)) { continue }
@@ -277,6 +287,11 @@ jobs:
           $passed = $false
           foreach ($attempt in 1..2) {
             Remove-Item $report -ErrorAction SilentlyContinue
+            $attemptState = Join-Path $workspace "state-$attempt"
+            New-Item -ItemType Directory -Path $attemptState -Force | Out-Null
+            $env:XDG_DATA_HOME = Join-Path $attemptState 'data'
+            $env:XDG_CONFIG_HOME = Join-Path $attemptState 'config'
+            $env:XDG_CACHE_HOME = Join-Path $attemptState 'cache'
             $process = Start-Process xvfb-run -ArgumentList (@('-a', $binary) + $arguments) -PassThru
             if (-not $process.WaitForExit(60000)) { $process.Kill($true); continue }
             if (-not (Test-Path $report)) { continue }
