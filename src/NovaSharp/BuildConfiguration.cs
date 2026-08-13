@@ -17,6 +17,9 @@ internal sealed record EffectiveBuildCommand(string Executable, IReadOnlyList<st
 
 internal static class BuildConfigurationDiscovery
 {
+    private static readonly object CacheGate = new();
+    private static readonly Dictionary<string, (string Fingerprint, Choices Value)> ChoiceCache =
+        new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
     internal sealed record Choices(IReadOnlyList<string> Configurations,
         IReadOnlyDictionary<string, IReadOnlyList<string>> FrameworksByConfiguration)
     {
@@ -28,18 +31,25 @@ internal static class BuildConfigurationDiscovery
     {
         projectPath = Path.GetFullPath(projectPath);
         if (!File.Exists(projectPath)) throw new FileNotFoundException("Project does not exist.", projectPath);
+        var fingerprint = Fingerprint(projectPath);
+        lock (CacheGate)
+            if (ChoiceCache.TryGetValue(projectPath, out var cached) && cached.Fingerprint == fingerprint) return cached.Value;
         var initial = QueryProperties(projectPath, null);
         var configurations = Split(initial.GetValueOrDefault("Configurations"));
         if (configurations.Count == 0) configurations = ["Debug", "Release"];
+        var evaluations = configurations.Select(configuration => Task.Run(() =>
+            (Configuration: configuration, Properties: QueryProperties(projectPath, configuration)))).ToArray();
+        Task.WhenAll(evaluations).GetAwaiter().GetResult();
         var frameworks = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
-        foreach (var configuration in configurations)
+        foreach (var evaluation in evaluations.Select(task => task.Result))
         {
-            var evaluated = QueryProperties(projectPath, configuration);
-            var values = Split(evaluated.GetValueOrDefault("TargetFrameworks"));
-            if (values.Count == 0) values = Split(evaluated.GetValueOrDefault("TargetFramework"));
-            frameworks[configuration] = values;
+            var values = Split(evaluation.Properties.GetValueOrDefault("TargetFrameworks"));
+            if (values.Count == 0) values = Split(evaluation.Properties.GetValueOrDefault("TargetFramework"));
+            frameworks[evaluation.Configuration] = values;
         }
-        return new(configurations, frameworks);
+        var result = new Choices(configurations, frameworks);
+        lock (CacheGate) ChoiceCache[projectPath] = (fingerprint, result);
+        return result;
     }
 
     internal static IReadOnlyList<string> Frameworks(string projectPath)
@@ -66,8 +76,11 @@ internal static class BuildConfigurationDiscovery
         if (!process.WaitForExit(15_000)) { process.Kill(true); throw new TimeoutException("MSBuild evaluation timed out."); }
         var output = outputTask.GetAwaiter().GetResult();
         var error = errorTask.GetAwaiter().GetResult();
-        if (process.ExitCode != 0) throw new InvalidOperationException(string.IsNullOrWhiteSpace(error) ? "MSBuild evaluation failed." : error.Trim());
-        using var document = JsonDocument.Parse(output);
+        if (process.ExitCode != 0) throw new InvalidOperationException(string.IsNullOrWhiteSpace(error) ? output.Trim() : error.Trim());
+        var jsonStart = output.IndexOf('{');
+        var jsonEnd = output.LastIndexOf('}');
+        if (jsonStart < 0 || jsonEnd < jsonStart) throw new InvalidOperationException("MSBuild evaluation returned no property data.");
+        using var document = JsonDocument.Parse(output[jsonStart..(jsonEnd + 1)]);
         return document.RootElement.GetProperty("Properties").EnumerateObject()
             .ToDictionary(property => property.Name, property => property.Value.GetString() ?? "", StringComparer.OrdinalIgnoreCase);
     }
