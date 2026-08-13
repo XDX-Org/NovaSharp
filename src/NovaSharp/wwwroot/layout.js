@@ -826,7 +826,12 @@ window.novaSharp.runPhase9Smoke = async function (workbench, bridge) {
         const resultCount = await bridge.invokeMethodAsync('RunPhase9SearchSmokeAsync', 'needle');
         const resultsStreamed = await waitFor(() => workbench.querySelectorAll('.search-results button').length >= 2);
         if (!resultsStreamed) throw new Error(`Search returned ${resultCount} results but did not render them.`);
-        workbench.querySelector('.search-actions button:last-child')?.click();
+        const replaceButtonReady = await waitFor(() => {
+            const button = workbench.querySelector('.search-actions button:last-child');
+            return button && !button.disabled;
+        });
+        if (!replaceButtonReady) throw new Error('Replace action did not become ready.');
+        workbench.querySelector('.search-actions button:last-child').click();
         const replacePreview = await waitFor(() => !!workbench.querySelector('.edit-preview'));
         await bridge.invokeMethodAsync('CompletePhase9SmokeAsync', quickOpenVisible, duplicateFilesVisible,
             searchVisible, resultsStreamed, replacePreview, null);

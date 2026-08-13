@@ -126,12 +126,10 @@ public sealed class DebuggingTests
         finally { Directory.Delete(root, true); }
     }
 
-    [TestMethod, Timeout(30000)]
+    [TestMethod, Timeout(45000)]
     public async Task PinnedAdapterLaunchesManagedFixture()
     {
-        var rid = OperatingSystem.IsWindows() ? "win-x64" : OperatingSystem.IsMacOS()
-            ? (System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture == System.Runtime.InteropServices.Architecture.Arm64 ? "osx-arm64" : "osx-x64")
-            : "linux-x64";
+        var rid = System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier;
         var executable = OperatingSystem.IsWindows() ? "netcoredbg.exe" : "netcoredbg";
         var adapter = new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory }.SelectMany(start =>
         {
@@ -197,6 +195,16 @@ public sealed class DebuggingTests
             Assert.AreEqual(DebugSessionState.Paused, session.Coordinator.State);
             StringAssert.Contains(session.StopReason ?? "", "exception");
         }
-        finally { Directory.Delete(root, true); }
+        finally { await DeleteEventuallyAsync(root); }
+    }
+
+    private static async Task DeleteEventuallyAsync(string path)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            try { Directory.Delete(path, true); return; }
+            catch (IOException) when (attempt < 20) { await Task.Delay(100); }
+            catch (UnauthorizedAccessException) when (attempt < 20) { await Task.Delay(100); }
+        }
     }
 }

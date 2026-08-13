@@ -264,7 +264,7 @@ public sealed class DebugAdapterSession : IAsyncDisposable
                 await session.SetBreakpointsAsync(configuration.Breakpoints, cancellationToken);
             if (configuration.ExceptionFilters is { } exceptionFilters)
                 await session.SetExceptionBreakpointsAsync(exceptionFilters, cancellationToken);
-            await protocol.RequestAsync("configurationDone", null, TimeSpan.FromSeconds(5), cancellationToken);
+            await protocol.RequestAsync("configurationDone", null, TimeSpan.FromSeconds(10), cancellationToken);
             await launched;
             if (session.Coordinator.State == DebugSessionState.Configuring) session.Coordinator.Transition(DebugSessionState.Running);
             return session;
