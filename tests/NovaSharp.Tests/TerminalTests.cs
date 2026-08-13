@@ -27,6 +27,8 @@ public sealed class TerminalTests
         await session.StartAsync(40, 10);
         Assert.AreEqual(TerminalSessionState.Running, session.State, session.Error);
         session.Resize(100, 30);
+        Assert.AreEqual(100, session.Columns);
+        Assert.AreEqual(30, session.Rows);
         var command = OperatingSystem.IsWindows()
             ? "[Console]::OutputEncoding = [Text.UTF8Encoding]::new(); Write-Output '✓ unicode'\r\n"
             : "printf '\\342\\234\\223 unicode\\n'; exit 7\r";

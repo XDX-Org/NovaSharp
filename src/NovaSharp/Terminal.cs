@@ -62,6 +62,8 @@ public sealed class TerminalSession : IAsyncDisposable
     internal string Name { get; set; }
     internal TerminalProfile Profile { get; }
     internal string WorkingDirectory { get; }
+    internal int Columns { get; private set; }
+    internal int Rows { get; private set; }
     internal TerminalSessionState State { get; private set; } = TerminalSessionState.Starting;
     internal int? ExitCode { get; private set; }
     internal string? Error { get; private set; }
@@ -73,13 +75,14 @@ public sealed class TerminalSession : IAsyncDisposable
     {
         try
         {
+            Columns = Math.Max(2, columns); Rows = Math.Max(1, rows);
             var environment = Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>()
                 .ToDictionary(entry => (string)entry.Key, entry => entry.Value?.ToString() ?? "");
             environment["TERM"] = "xterm-256color";
             _connection = await PtyProvider.SpawnAsync(new PtyOptions
             {
                 Name = Name, App = Profile.Executable, CommandLine = Profile.Arguments.ToArray(),
-                Cwd = WorkingDirectory, Cols = Math.Max(2, columns), Rows = Math.Max(1, rows), Environment = environment
+                Cwd = WorkingDirectory, Cols = Columns, Rows = Rows, Environment = environment
             }, cancellationToken);
             _connection.ProcessExited += ProcessExited;
             State = TerminalSessionState.Running;
@@ -107,8 +110,8 @@ public sealed class TerminalSession : IAsyncDisposable
 
     internal void Resize(int columns, int rows)
     {
-        if (_connection is not null && State == TerminalSessionState.Running)
-            _connection.Resize(Math.Max(2, columns), Math.Max(1, rows));
+        Columns = Math.Max(2, columns); Rows = Math.Max(1, rows);
+        if (_connection is not null && State == TerminalSessionState.Running) _connection.Resize(Columns, Rows);
     }
 
     internal void Stop()

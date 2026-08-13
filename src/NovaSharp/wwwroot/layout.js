@@ -848,8 +848,8 @@ window.novaSharp.runPhase11Smoke = async function (workbench, bridge) {
         const ready = await waitFor(() => !!workbench.querySelector('.terminal-host'));
         const host = workbench.querySelector('.terminal-host');
         const terminalPresent = ready && !!host;
-        const resizeValid = terminalPresent && host.clientWidth > 0 && host.clientHeight > 0;
         const inputRoundTrip = terminalPresent && await bridge.invokeMethodAsync('RunPhase11TerminalSmokeAsync');
+        const resizeValid = terminalPresent && await bridge.invokeMethodAsync('IsPhase11TerminalResizeValid');
         const processExited = inputRoundTrip;
         await bridge.invokeMethodAsync('CompletePhase11SmokeAsync', terminalPresent, inputRoundTrip,
             resizeValid, processExited, null);

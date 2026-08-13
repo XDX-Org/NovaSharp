@@ -1592,6 +1592,9 @@
     }
 
     [JSInvokable]
+    public bool IsPhase11TerminalResizeValid() => _terminal.ActiveSession is { Columns: >= 2, Rows: >= 1 };
+
+    [JSInvokable]
     public Task CompletePhase11SmokeAsync(bool terminalPresent, bool inputRoundTrip, bool resizeValid,
         bool processExited, string? error = null) =>
         Program.CompletePhase11SmokeAsync(new(terminalPresent, inputRoundTrip, resizeValid, processExited, error));

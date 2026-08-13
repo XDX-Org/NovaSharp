@@ -80,69 +80,72 @@ internal static class Program
             result.RenderedRows
         };
         await File.WriteAllTextAsync(SmokeReport, JsonSerializer.Serialize(report));
-        App.MainWindow.Close();
+        await CloseSmokeWindowAsync();
     }
 
     internal static async Task CompletePhase3SmokeAsync(Phase3SmokeResult result)
     {
         if (SmokeReport is null) return;
-        await File.WriteAllTextAsync(SmokeReport, JsonSerializer.Serialize(result));
-        App.MainWindow.Close();
+        await WriteSmokeAndCloseAsync(result);
     }
 
     internal static async Task CompletePhase4SmokeAsync(Phase4SmokeResult result)
     {
         if (SmokeReport is null) return;
-        await File.WriteAllTextAsync(SmokeReport, JsonSerializer.Serialize(result));
-        App.MainWindow.Close();
+        await WriteSmokeAndCloseAsync(result);
     }
 
     internal static async Task CompletePhase5SmokeAsync(Phase5SmokeResult result)
     {
         if (SmokeReport is null) return;
-        await File.WriteAllTextAsync(SmokeReport, JsonSerializer.Serialize(result));
-        App.MainWindow.Close();
+        await WriteSmokeAndCloseAsync(result);
     }
 
     internal static async Task CompletePhase6SmokeAsync(Phase6SmokeResult result)
     {
         if (SmokeReport is null) return;
-        await File.WriteAllTextAsync(SmokeReport, JsonSerializer.Serialize(result));
-        App.MainWindow.Close();
+        await WriteSmokeAndCloseAsync(result);
     }
 
     internal static async Task CompletePhase7SmokeAsync(Phase7SmokeResult result)
     {
         if (SmokeReport is null) return;
-        await File.WriteAllTextAsync(SmokeReport, JsonSerializer.Serialize(result));
-        App.MainWindow.Close();
+        await WriteSmokeAndCloseAsync(result);
     }
 
     internal static async Task CompletePhase8SmokeAsync(Phase8SmokeResult result)
     {
         if (SmokeReport is null) return;
-        await File.WriteAllTextAsync(SmokeReport, JsonSerializer.Serialize(result));
-        App.MainWindow.Close();
+        await WriteSmokeAndCloseAsync(result);
     }
 
     internal static async Task CompletePhase9SmokeAsync(Phase9SmokeResult result)
     {
         if (SmokeReport is null) return;
-        await File.WriteAllTextAsync(SmokeReport, JsonSerializer.Serialize(result));
-        App.MainWindow.Close();
+        await WriteSmokeAndCloseAsync(result);
     }
 
     internal static async Task CompletePhase11SmokeAsync(Phase11SmokeResult result)
     {
         if (SmokeReport is null) return;
-        await File.WriteAllTextAsync(SmokeReport, JsonSerializer.Serialize(result));
-        App.MainWindow.Close();
+        await WriteSmokeAndCloseAsync(result);
     }
 
     internal static async Task CompletePhase15SmokeAsync(Phase15SmokeResult result)
     {
         if (SmokeReport is null) return;
-        await File.WriteAllTextAsync(SmokeReport, JsonSerializer.Serialize(result));
+        await WriteSmokeAndCloseAsync(result);
+    }
+
+    private static async Task WriteSmokeAndCloseAsync<T>(T result)
+    {
+        await File.WriteAllTextAsync(SmokeReport!, JsonSerializer.Serialize(result));
+        await CloseSmokeWindowAsync();
+    }
+
+    private static async Task CloseSmokeWindowAsync()
+    {
+        await Task.Delay(250);
         App.MainWindow.Close();
     }
 
