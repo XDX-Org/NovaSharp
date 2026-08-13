@@ -41,7 +41,7 @@ internal static class Program
                 : (Phase9Solution ?? Phase8Solution ?? Phase7Solution) is not { } languageSolution ? null
                 : Path.Combine(Path.GetDirectoryName(languageSolution)!, "Program.cs"));
         SmokeReport = ReadOption(args, "--smoke-report");
-        var builder = PhotinoExBlazorAppBuilder.CreateDefault(args);
+        var builder = PhotinoExBlazorAppBuilder.CreateDefault("com.xdxorg.nova", args: args);
         var settingsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NovaSharp", "settings.json");
         Configuration = new(settingsPath);
         Configuration.LoadAsync().GetAwaiter().GetResult();

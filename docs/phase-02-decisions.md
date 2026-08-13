@@ -30,6 +30,6 @@ Measured budgets use a release build, a 100,000-line C# fixture, and a 4-core/8 
 
 Automated unit coverage verifies document state, Unicode edits, encoding and line endings, atomic configuration and document writes, conflict rejection, watcher debouncing, search/replace, tokenization, command enablement, cancellation, and bounded logging. The `Phase 2 verification` workflow builds, tests, and publishes every supported target. Its Linux Xvfb route also launches the packaged native host and verifies browser input, selection replacement, bracket and Tab edits, IME commit grouping, bounded DOM rows, and document loading. Hosted Windows and macOS runners have no interactive desktop session, so their native launch, system-clipboard shortcuts, and unsaved-close dialog remain manual release checks.
 
-`MSB3277` is suppressed through phase 3 because PhotinoXDX `0.1.0-preview.6` exposes its Windows-only WebView2 WPF reference on non-Windows builds. Remove the suppression when upgrading PhotinoXDX; all other warnings remain errors in the verification workflow.
+PhotinoXDX `0.1.0-preview.7` isolates native web resources by application identity; NovaSharp registers `com.xdxorg.nova`. All build warnings remain errors in verification.
 
 Phase 2 completed on 2026-08-01. The four-platform build, test, and package matrix plus Linux native-host smoke passed in [verification run 30720398651](https://github.com/XDX-Org/NovaSharp/actions/runs/30720398651); the remaining native checks were confirmed by the maintainer.

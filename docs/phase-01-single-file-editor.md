@@ -26,7 +26,7 @@ NovaSharp/
     └── wwwroot/
 ```
 
-NovaSharp consumes `PhotinoXDX.Blazor` version `0.1.0-preview.6` from NuGet, so a local PhotinoXDX checkout is not required.
+NovaSharp consumes `PhotinoXDX.Blazor` version `0.1.0-preview.7` from NuGet, so a local PhotinoXDX checkout is not required.
 
 ## Run
 
