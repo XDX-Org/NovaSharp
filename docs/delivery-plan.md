@@ -27,7 +27,7 @@ Source control UI, remote development, collaboration, notebooks, AI completion, 
 | 13. Debugging experience | Complete | Async/threaded source-breakpoint, evaluation, scope, exception, bounded inspection, and keyboard-operable UI coverage pass in run 31503017795 |
 | 14. Durable workbench | Complete | Validated atomic state, exact recovery, safe mode, scoped settings/keybindings, budgets, and packaged Linux workbench gates pass in run 31503017795 |
 | 16 | In progress | Versioned manifest, compatibility, permission/trust boundary, and sample manifest pass focused tests; isolated host remains |
-| 17 | In progress | Project/framework/configuration/profile discovery and exact effective-command resolution pass focused tests; configurator UI remains |
+| 17. Build configurator | Complete | Evaluated configuration, exact execution, persistence, accessibility, 143 tests, five-platform build/package, and Linux x64/arm64 interaction gates pass in run 31726942957 |
 | 17.5. Debugger refinement | Planned | Editor breakpoint creation, live binding, diagnostics, refined debugger UI, and packaged end-to-end debugging remain |
 | 18 | In progress | Preview identity, local qualification script, SPDX language-server inventory, privacy/support/limitations/release notes exist; signing, installers, update/rollback, provenance, and clean-image gates remain |
 

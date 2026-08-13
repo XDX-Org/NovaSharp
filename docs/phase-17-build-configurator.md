@@ -31,7 +31,7 @@ Provide one project-aware place to configure build and run behavior without crow
 
 ## Completion audit
 
-The initial configurator UI is present, but Phase 17 remains in progress until all items below are verified:
+All implementation and verification items are complete:
 
 - [x] Use evaluated MSBuild properties, including imports and conditions, for valid configuration/framework combinations.
 - [x] Generate one validated effective command shared by preview and execution.
@@ -42,9 +42,11 @@ The initial configurator UI is present, but Phase 17 remains in progress until a
 - [x] Support Escape, initial/focus restoration, accessible validation announcements, and complete keyboard operation.
 - [x] Cover conditional multi-target projects, profile preservation, failure recovery, persistence, redaction, exact execution, and cross-platform paths with tests.
 
-Implementation is complete locally. Phase status remains in progress until the supported-platform build, package, and interaction matrix records release evidence.
+## Status
 
-Local evidence: warning-free Release qualification and 140 Release tests pass; the Debug suite passes 162 tests.
+Complete. [Run 31726942957](https://github.com/XDX-Org/NovaSharp/actions/runs/31726942957) passes 143 Release tests,
+warning-free builds and packages on Windows x64, Linux x64, Linux arm64, macOS x64, and macOS arm64, plus the
+packaged Linux x64/arm64 interaction gates.
 
 ## Next phase
 
