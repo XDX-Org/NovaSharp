@@ -34,6 +34,11 @@
                 LanguageId(Document.FilePath), Value, Document.Version, Options(), ViewState.SelectionStart, ViewState.SelectionEnd,
                 ViewState.ScrollTop, ViewState.ScrollLeft, _self);
             _created = true;
+            if (Program.Phase2SmokeFile is not null)
+            {
+                var result = await _module.InvokeAsync<EditorSmokeResult>("runSmokeChecks", _root);
+                await Program.CompleteSmokeAsync(result);
+            }
         }
         if (_created)
             await _module!.InvokeVoidAsync("updateEditor", _root, Value, Document.Version, Options(), Markers(),

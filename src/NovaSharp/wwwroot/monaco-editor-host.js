@@ -8,7 +8,8 @@ function loadMonaco() {
             window.MonacoEnvironment = { getWorkerUrl: () => `data:text/javascript;charset=utf-8,${encodeURIComponent(
                 "self.MonacoEnvironment={baseUrl:'monaco/'};importScripts('monaco/vs/base/worker/workerMain.js');")}` };
             window.require.config({ paths: { vs: 'monaco/vs' } });
-            window.require(['vs/editor/editor.main'], () => resolve(window.monaco), reject);
+            window.require(['vs/editor/editor.main', 'vs/basic-languages/monaco.contribution'],
+                () => resolve(window.monaco), reject);
         };
         if (window.require?.config) { finish(); return; }
         const script = document.createElement('script');
@@ -193,6 +194,40 @@ export function getEditorAnchor(root, position) {
     const current = state(root);
     const location = current.editor.getScrolledVisiblePosition(current.entry.model.getPositionAt(position));
     return location ? [location.left, location.top + location.height] : [72, 24];
+}
+
+export async function runSmokeChecks(root) {
+    const current = state(root);
+    const editor = current.editor;
+    const model = current.entry.model;
+    const original = model.getValue();
+    await new Promise(resolve => setTimeout(resolve, 250));
+    const firstLength = Math.min(1, original.length);
+    editor.executeEdits('smoke', [{ range: new current.monaco.Range(1, 1, 1, firstLength + 1), text: 'X' }]);
+    const selectionReplacement = model.getValue().startsWith(`X${original.slice(firstLength)}`);
+    editor.trigger('smoke', 'undo');
+
+    editor.setPosition({ lineNumber: 1, column: 1 });
+    editor.trigger('smoke', 'type', { text: '{' });
+    const bracketPairing = editor.getOption(current.monaco.editor.EditorOption.autoClosingBrackets) !== 'never';
+    editor.trigger('smoke', 'undo');
+
+    editor.setPosition({ lineNumber: 1, column: 1 });
+    editor.trigger('smoke', 'type', { text: '\t' });
+    const tabInsertion = model.getValue().startsWith('\t');
+    editor.trigger('smoke', 'undo');
+
+    let compositionChanges = 0;
+    const compositionListener = model.onDidChangeContent(() => compositionChanges++);
+    editor.trigger('smoke', 'type', { text: 'Ω' });
+    compositionListener.dispose();
+    const compositionCommittedOnce = compositionChanges === 1;
+    editor.trigger('smoke', 'undo');
+    await new Promise(resolve => setTimeout(resolve, 100));
+    const renderedRows = root.querySelectorAll('.view-line').length;
+    const rowLimit = Math.ceil(root.clientHeight / 20) + 64;
+    return { inputPresent: !!root.querySelector('.monaco-editor'), selectionReplacement, bracketPairing,
+        tabInsertion, compositionCommittedOnce, rowsBounded: renderedRows > 0 && renderedRows <= rowLimit, renderedRows };
 }
 
 export function disposeEditor(root) {
