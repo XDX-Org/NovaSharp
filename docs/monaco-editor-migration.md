@@ -1,5 +1,14 @@
 # Monaco editor migration
 
+## Implementation status
+
+Monaco is the default editor on the `monaco` branch. Local asset packaging, shared bounded models, versioned edit
+batches, view-state restoration, language-feature routing, semantic presentation, diagnostics, debugger decorations,
+settings, commands, packaged native smoke coverage, licenses, and release validation are implemented.
+
+The old renderer is reachable only with `--legacy-editor` while its DOM-specific historical smoke suites are moved
+to Monaco. It is not the normal application path.
+
 ## Goal
 
 Replace NovaSharp's transparent full-document `textarea` and Blazor-rendered source rows with Monaco Editor while preserving NovaSharp's document lifecycle, workspace, language-server, debugging, settings, and persistence behavior.
