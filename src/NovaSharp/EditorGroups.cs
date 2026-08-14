@@ -425,4 +425,4 @@ internal sealed record WorkbenchLayoutState(int SchemaVersion, LayoutNodeState? 
     bool ProblemsOpen = false, bool OutputOpen = false, bool TerminalOpen = false, bool DebugOpen = false, string? StartupProject = null,
     string? WorkspacePath = null, string? BuildProjectPath = null, string? BuildConfiguration = null,
     string? TargetFramework = null, string? LaunchProfile = null, IReadOnlyList<string>? RunArguments = null,
-    string? RunWorkingDirectory = null);
+    string? RunWorkingDirectory = null, IReadOnlyList<PersistedBreakpoint>? Breakpoints = null);

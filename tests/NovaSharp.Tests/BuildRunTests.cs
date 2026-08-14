@@ -30,6 +30,24 @@ public sealed class BuildRunTests
     }
 
     [TestMethod]
+    public void RepeatedMsBuildDiagnosticLinesAreCoalesced()
+    {
+        var path = Path.GetFullPath("Microsoft.Common.CurrentVersion.targets");
+        var diagnostics = new List<LanguageDiagnostic>();
+        var first = new LanguageDiagnostic("MSB3277", LanguageDiagnosticSource.Build,
+            LanguageDiagnosticSeverity.Warning, "Found conflicts between different versions.", path,
+            new(0, 1), 9, 0, "App");
+        var detail = first with { Message = "There was a conflict between WindowsBase 4.0 and 5.0." };
+
+        BuildRunService.AddOrMergeDiagnostic(diagnostics, first);
+        BuildRunService.AddOrMergeDiagnostic(diagnostics, detail);
+
+        Assert.HasCount(1, diagnostics);
+        Assert.AreEqual(first.Message, diagnostics[0].Message);
+        CollectionAssert.Contains(diagnostics[0].RelatedInformation!.ToArray(), detail.Message);
+    }
+
+    [TestMethod]
     public async Task FixtureBuildPublishesMatchingStructuredDiagnosticThenClearsIt()
     {
         using var fixture = new ProjectFixture("Console.WriteLine(missing);");

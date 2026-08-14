@@ -12,6 +12,9 @@
                                SuggestionsEnabled="SuggestionsEnabled" SemanticHighlighting="SemanticHighlighting"
                                ExternalDragActive="ExternalDragActive"
                                ActiveChanged="ActiveChanged" ContentEdited="ContentEdited" CloseRequested="CloseRequested"
+                               BreakpointsForSource="BreakpointsForSource" BreakpointToggled="BreakpointToggled"
+                               ExecutionLineForSource="ExecutionLineForSource"
+                               NavigationRevision="NavigationRevision"
                                LanguageCommand="LanguageCommand" />
         <EditorSplitter @key="split.Id" Split="split" Workspace="Workspace" Resized="ActiveChanged" />
         <EditorGroupLayoutView @key="split.Second.Id" Node="split.Second" Workspace="Workspace" WordWrap="WordWrap"
@@ -22,6 +25,9 @@
                                SuggestionsEnabled="SuggestionsEnabled" SemanticHighlighting="SemanticHighlighting"
                                ExternalDragActive="ExternalDragActive"
                                ActiveChanged="ActiveChanged" ContentEdited="ContentEdited" CloseRequested="CloseRequested"
+                               BreakpointsForSource="BreakpointsForSource" BreakpointToggled="BreakpointToggled"
+                               ExecutionLineForSource="ExecutionLineForSource"
+                               NavigationRevision="NavigationRevision"
                                LanguageCommand="LanguageCommand" />
     </div>
 }
@@ -88,6 +94,10 @@ else if (Node is EditorGroup group)
                             ProjectContext="@(active.Document.FilePath is { } path ? ProjectSystem.GetActiveDocument(path)?.Project.Id.Id.ToString() : null)"
                             ProjectLoading="ProjectSystem.State.IsLoading"
                             SuggestionsEnabled="SuggestionsEnabled" SemanticHighlighting="SemanticHighlighting"
+                            BreakpointLines="@(active.Document.FilePath is { } breakpointPath ? BreakpointsForSource(breakpointPath) : new HashSet<int>())"
+                            ExecutionLine="@(active.Document.FilePath is { } executionPath ? ExecutionLineForSource(executionPath) : null)"
+                            NavigationRevision="NavigationRevision"
+                            BreakpointToggled="BreakpointToggled"
                             LanguageCommand="LanguageCommand"
                             @key="(active.Id, WordWrap, BraceGuides)" />
             }
@@ -121,6 +131,10 @@ else if (Node is EditorGroup group)
     [Parameter] public EventCallback ContentEdited { get; set; }
     [Parameter] public EventCallback<CloseViewRequest> CloseRequested { get; set; }
     [Parameter] public EventCallback<CodeEditor.EditorLanguageCommand> LanguageCommand { get; set; }
+    [Parameter] public Func<string, IReadOnlySet<int>> BreakpointsForSource { get; set; } = _ => new HashSet<int>();
+    [Parameter] public Func<string, int?> ExecutionLineForSource { get; set; } = _ => null;
+    [Parameter] public long NavigationRevision { get; set; }
+    [Parameter] public EventCallback<BreakpointToggleRequest> BreakpointToggled { get; set; }
     private DocumentTab? _contextTab;
     private EditorGroup? _contextGroup;
     private double _contextX, _contextY;

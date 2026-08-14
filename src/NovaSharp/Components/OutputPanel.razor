@@ -10,6 +10,7 @@
                 <button @onclick="async () => await Export.InvokeAsync()">Export</button>
                 <button @onclick="async () => await Clear.InvokeAsync()">Clear</button>
             </div>
+            <button class="panel-minimize" title="Hide Output" aria-label="Hide Output panel" @onclick="Close">_</button>
         </header>
         <div class="output-lines" role="log" aria-live="polite">
             @foreach (var entry in Entries)
@@ -39,6 +40,7 @@
     [Parameter] public EventCallback Copy { get; set; }
     [Parameter] public EventCallback Export { get; set; }
     [Parameter] public EventCallback Clear { get; set; }
+    [Parameter] public EventCallback Close { get; set; }
     private string _input = "";
     private async Task SendAsync() { if (_input.Length == 0) return; await Input.InvokeAsync(_input + Environment.NewLine); _input = ""; }
 }

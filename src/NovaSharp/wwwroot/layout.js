@@ -36,7 +36,11 @@ window.novaSharp.initTerminal = function (host, dotNet, terminalId) {
         void applyLatestSize();
     };
     host.addEventListener("keydown", event => event.stopPropagation());
-    new ResizeObserver(resize).observe(host);
+    let resizeFrame = 0;
+    new ResizeObserver(() => {
+        if (resizeFrame) cancelAnimationFrame(resizeFrame);
+        resizeFrame = requestAnimationFrame(() => { resizeFrame = 0; resize(); });
+    }).observe(host);
     resize();
     requestAnimationFrame(resize);
 };
@@ -130,7 +134,7 @@ window.novaSharp.initAppContextMenu = function () {
 
     document.addEventListener("contextmenu", event => {
         if (event.shiftKey) { close(); return; }
-        if (event.target.closest(".explorer")) { event.preventDefault(); return; }
+        if (event.target.closest(".explorer,.debug-breakpoints")) { event.preventDefault(); return; }
         if (event.target.closest(".document-tab")) return;
         if (event.target.closest(".menu-popup,.explorer-context-menu")) return;
         const editable = event.target.closest("textarea,input:not([type=button]):not([type=submit])");
@@ -216,6 +220,40 @@ window.novaSharp.initExplorerResize = function (explorer, dotNet) {
         () => dotNet?.invokeMethodAsync('ExplorerResized', explorer.getBoundingClientRect().width));
 };
 
+window.novaSharp.initDebugInspectionResize = function (grid) {
+    if (!grid || grid.dataset.resizeReady) return;
+    grid.dataset.resizeReady = 'true';
+    const saved = localStorage.getItem('novasharp.debug.columns');
+    if (saved) {
+        const widths = saved.split(',').map(Number);
+        if (widths.length === 2 && widths.every(Number.isFinite)) {
+            grid.style.setProperty('--debug-column-one', widths[0] + 'px');
+            grid.style.setProperty('--debug-column-two', widths[1] + 'px');
+        }
+    }
+    grid.querySelectorAll('.debug-column-resizer').forEach((handle, index) =>
+        window.novaSharp.initPointerResize(handle, 'x', 'resizing-debug-columns',
+            () => {
+                const sections = grid.querySelectorAll(':scope > section');
+                return { first: sections[0].getBoundingClientRect().width, second: sections[1].getBoundingClientRect().width };
+            },
+            (delta, state) => {
+                const total = grid.getBoundingClientRect().width;
+                if (index === 0) {
+                    const first = Math.max(150, Math.min(total - state.second - 235, state.first + delta));
+                    grid.style.setProperty('--debug-column-one', first + 'px');
+                } else {
+                    const second = Math.max(180, Math.min(total - state.first - 225, state.second + delta));
+                    grid.style.setProperty('--debug-column-two', second + 'px');
+                }
+            },
+            () => {
+                const sections = grid.querySelectorAll(':scope > section');
+                localStorage.setItem('novasharp.debug.columns', [sections[0].getBoundingClientRect().width,
+                    sections[1].getBoundingClientRect().width].join(','));
+            }));
+};
+
 window.novaSharp.initEditorSplitter = function (handle, dotNet, orientation) {
     const horizontal = orientation === 'horizontal';
     handle.dataset.axis = horizontal ? 'x' : 'y';
@@ -272,10 +310,7 @@ window.novaSharp.initCommandPaletteShortcut = function (workbench, dotNet, inter
     let lastTap = 0, resetTimer;
     const reset = delay => {
         clearTimeout(resetTimer);
-        resetTimer = setTimeout(() => {
-            lastTap = 0;
-            dotNet?.invokeMethodAsync('ResetCommandPaletteShiftTaps');
-        }, delay);
+        resetTimer = setTimeout(() => { lastTap = 0; }, delay);
     };
     window.addEventListener('keydown', event => {
         if (event.key === 'Escape') {
@@ -289,7 +324,7 @@ window.novaSharp.initCommandPaletteShortcut = function (workbench, dotNet, inter
         const now = performance.now();
         const completed = lastTap > 0 && now - lastTap <= interval;
         lastTap = completed ? 0 : now;
-        dotNet?.invokeMethodAsync('CommandPaletteShiftTaps', completed ? 2 : 1);
+        if (completed) dotNet?.invokeMethodAsync('OpenCommandPaletteFromShiftShortcut');
         reset(completed ? 250 : interval);
     }, { capture: true, signal: controller.signal });
 };

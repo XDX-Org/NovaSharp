@@ -1,55 +1,103 @@
+@inject IJSRuntime JS
+
 @if (Open)
 {
-    <section class="debug-panel" data-bottom-panel="debugger" aria-label="Debugger">
+    <section class="debug-panel @State.ToString().ToLowerInvariant()" data-bottom-panel="debugger" aria-label="Debugger">
         <div class="bottom-panel-resizer" role="separator" tabindex="0" aria-orientation="horizontal" aria-label="Resize Debugger panel"></div>
-        <header>
-            <strong>Debugger</strong>
-            <span aria-live="polite">@State</span>
-            @if (Session?.StopReason is { } reason) { <span aria-live="polite">@reason</span> }
-            <div class="debug-actions">
-                <button @onclick="Continue" disabled="@(State != DebugSessionState.Paused)">Continue</button>
-                <button @onclick="Pause" disabled="@(State != DebugSessionState.Running)">Pause</button>
-                <button @onclick='() => Step("next")' disabled="@(State != DebugSessionState.Paused)">Step over</button>
-                <button @onclick='() => Step("stepIn")' disabled="@(State != DebugSessionState.Paused)">Step into</button>
-                <button @onclick='() => Step("stepOut")' disabled="@(State != DebugSessionState.Paused)">Step out</button>
-                <button @onclick="RunToCursor" disabled="@(State != DebugSessionState.Paused)">Run to cursor</button>
-                <button @onclick="Restart" disabled="@(Session is null)">Restart</button>
-                <button @onclick="Stop" disabled="@(Session is null)">Stop</button>
-                <button @onclick="Refresh" disabled="@(State != DebugSessionState.Paused)">Refresh</button>
+        <header class="debug-titlebar">
+            <strong>Debug</strong>
+            <div class="debug-session" title="Active debug session">
+                <span class="debug-session-dot" aria-hidden="true"></span>
+                <span>NovaSharp</span>
             </div>
+            @if (Session?.StopReason is { } reason) { <span class="debug-reason" aria-live="polite">@reason</span> }
+            <button class="panel-minimize" title="Hide Debugger" aria-label="Hide Debugger panel" @onclick="Close">_</button>
         </header>
+        <div class="debug-toolbar">
+            <div class="debug-actions" aria-label="Debug controls">
+                <button title="Restart" aria-label="Restart" @onclick="Restart" disabled="@(Session is null)">↻</button>
+                <button class="debug-stop" title="Stop" aria-label="Stop" @onclick="Stop" disabled="@(Session is null)">■</button>
+                <button title="Continue" aria-label="Continue" @onclick="Continue" disabled="@(State != DebugSessionState.Paused)">▶</button>
+                <button title="Pause" aria-label="Pause" @onclick="Pause" disabled="@(State != DebugSessionState.Running)">Ⅱ</button>
+                <button title="Step over" aria-label="Step over" @onclick='() => Step("next")' disabled="@(State != DebugSessionState.Paused)">↷</button>
+                <button title="Step into" aria-label="Step into" @onclick='() => Step("stepIn")' disabled="@(State != DebugSessionState.Paused)">↓</button>
+                <button title="Step out" aria-label="Step out" @onclick='() => Step("stepOut")' disabled="@(State != DebugSessionState.Paused)">↑</button>
+                <button title="Run to cursor" aria-label="Run to cursor" @onclick="RunToCursor" disabled="@(State != DebugSessionState.Paused)">◉</button>
+                <button title="Refresh" aria-label="Refresh" @onclick="Refresh" disabled="@(State != DebugSessionState.Paused)">⟳</button>
+            </div>
+            <nav class="debug-tabs" aria-label="Debugger views">
+                <button class="@DebugTabClass("inspect")" aria-current="@(_activeView == "inspect" ? "page" : null)" @onclick='() => _activeView = "inspect"'>⚙ Threads &amp; Variables</button>
+                <button class="@DebugTabClass("console")" aria-current="@(_activeView == "console" ? "page" : null)" @onclick='() => _activeView = "console"'>▣ Console</button>
+                <button class="@DebugTabClass("output")" aria-current="@(_activeView == "output" ? "page" : null)" @onclick='() => _activeView = "output"'>▧ Debug Output</button>
+                <button class="@DebugTabClass("watches")" aria-current="@(_activeView == "watches" ? "page" : null)" @onclick='() => _activeView = "watches"'>◈ Watches</button>
+                <button class="@DebugTabClass("breakpoints")" aria-current="@(_activeView == "breakpoints" ? "page" : null)" @onclick='() => _activeView = "breakpoints"'>◉ Breakpoints</button>
+            </nav>
+            <span class="debug-connection" aria-live="polite"><i aria-hidden="true">i</i>@State</span>
+        </div>
+        @if (State == DebugSessionState.Paused)
+        {
+            <div class="debug-paused-banner" role="status" aria-live="assertive">
+                <span class="debug-paused-icon" aria-hidden="true">Ⅱ</span>
+                <strong>Paused at breakpoint</strong>
+                @if (CurrentFrame is { } pausedFrame)
+                {
+                    <span>@pausedFrame.Name</span><small>@Path.GetFileName(pausedFrame.SourcePath):@pausedFrame.Line</small>
+                }
+                <button @onclick="Continue">Continue <kbd>F5</kbd></button>
+            </div>
+        }
         <div class="debug-content">
-        @if (_threads.Count > 0) { <ul aria-label="Threads">@foreach (var thread in _threads) { <li><button @onclick="() => SelectThread(thread)">@thread.Name</button></li> }</ul> }
-        @if (Session?.Breakpoints.Count > 0)
+        @if (_activeView == "inspect")
         {
-            <ul aria-label="Breakpoints">@foreach (var breakpoint in Session.Breakpoints) { <li>@Path.GetFileName(breakpoint.SourcePath):@breakpoint.Line — @breakpoint.State</li> }</ul>
+            <div @ref="_inspectionGrid" class="debug-inspection-grid">
+                <section><h3>Threads</h3><div class="debug-inspection-body"><ul aria-label="Threads">@foreach (var thread in _threads) { <li><button class="@(thread.Id == Session?.CurrentThreadId ? "selected" : null)" @onclick="() => SelectThread(thread)">〽 @thread.Name</button></li> }</ul></div></section>
+                <div class="debug-column-resizer" role="separator" aria-label="Resize Threads and Call Stack" aria-orientation="vertical"></div>
+                <section><h3>Call Stack</h3><div class="debug-inspection-body"><ol aria-label="Call stack">@foreach (var frame in Session?.Inspection.Frames ?? []) { <li><button class="@(frame.Id == _selectedFrame ? "selected" : null)" @onclick="() => ActivateFrame(frame)"><span>@frame.Name</span><small>@Path.GetFileName(frame.SourcePath):@frame.Line</small></button></li> }</ol></div></section>
+                <div class="debug-column-resizer" role="separator" aria-label="Resize Call Stack and Variables" aria-orientation="vertical"></div>
+                <section><h3>Variables</h3><div class="debug-inspection-body">
+                    <div class="debug-scopes" aria-label="Scopes">@foreach (var scope in _scopes) { <button @onclick="() => LoadVariables(scope)">@scope.Name</button> }</div>
+                    <div class="debug-variable-tree" role="tree" aria-label="Variables">@foreach (var row in VisibleVariables()) { <div class="debug-variable-row" role="treeitem" aria-level="@(row.Depth + 1)" style="--debug-depth: @row.Depth"><button class="debug-variable-toggle" aria-label="@VariableToggleLabel(row.Variable)" disabled="@(row.Variable.VariablesReference <= 0)" @onclick="() => ToggleVariable(row.Variable)"><span aria-hidden="true">@VariableChevron(row.Variable)</span></button><span class="debug-variable-name" title="@row.Variable.Type">@row.Variable.Name</span>@if (row.Variable.VariablesReference <= 0) { <span class="debug-variable-value">= @row.Variable.Value</span> }</div> }</div>
+                    @if (_inspectionError is not null) { <div class="debug-inspection-error" role="status">ⓘ @_inspectionError</div> }
+                </div><footer class="debug-variable-footer">
+                    @if (_consoleEvaluation is not null) { <output class="debug-evaluation-result" aria-live="polite">@_consoleEvaluation.Result</output> }
+                    @if (_consoleError is not null) { <output class="debug-evaluation-result error" role="alert">@_consoleError</output> }
+                    <form class="debug-evaluate debug-variable-evaluate" @onsubmit="EvaluateConsole" aria-label="Evaluate expression"><span aria-hidden="true">›</span><input aria-label="Expression" placeholder="Evaluate expression" list="debug-evaluate-completions" value="@_consoleExpression" @oninput="CompleteEvaluation" autocomplete="off" disabled="@(State != DebugSessionState.Paused)" /><datalist id="debug-evaluate-completions">@foreach (var completion in _evaluationCompletions) { <option value="@completion"></option> }</datalist><button type="submit" disabled="@(State != DebugSessionState.Paused)">Evaluate</button></form>
+                </footer></section>
+            </div>
         }
-        @if (Session?.Inspection.Frames.Count > 0)
+        else if (_activeView == "console")
         {
-            <ol aria-label="Call stack">@foreach (var frame in Session.Inspection.Frames) { <li><button @onclick="() => SelectFrame(frame)">@frame.Name — @Path.GetFileName(frame.SourcePath):@frame.Line</button></li> }</ol>
+            <div class="debug-console-log" role="log" aria-live="polite">
+                @foreach (var entry in StartupOutput) { <div class="debug-console-line @entry.Category">@entry.Text</div> }
+                @foreach (var entry in Session?.Output ?? []) { <div class="debug-console-line @entry.Category">@entry.Text</div> }
+                @foreach (var entry in _controlOutput) { <div class="debug-console-line @entry.Category">@entry.Text</div> }
+            </div>
         }
-        @if (_scopes.Count > 0)
+        else if (_activeView == "output")
         {
-            <div class="debug-scopes" aria-label="Scopes">@foreach (var scope in _scopes) { <button @onclick="() => LoadVariables(scope)">@scope.Name</button> }</div>
+            <div class="debug-empty">@(Session?.StopReason ?? "Debug session output will appear here.")</div>
         }
-        @if (_variables.Count > 0)
+        else if (_activeView == "watches")
         {
-            <table aria-label="Variables"><tbody>@foreach (var variable in _variables) { <tr><th>@variable.Name</th><td>@variable.Value</td><td>@variable.Type</td></tr> }</tbody></table>
+            <form class="debug-evaluate debug-watch-input" @onsubmit="AddWatch" aria-label="Add watch expression"><input aria-label="Watch expression" placeholder="Add watch expression" list="debug-watch-completions" value="@_expression" @oninput="CompleteWatch" autocomplete="off" disabled="@(State != DebugSessionState.Paused)" /><datalist id="debug-watch-completions">@foreach (var completion in _watchCompletions) { <option value="@completion"></option> }</datalist><button type="submit" disabled="@(State != DebugSessionState.Paused)">Add watch</button></form>
+            @if (_watches.Count > 0) { <table class="debug-watch-table" aria-label="Watch expressions"><tbody>@foreach (var watch in _watches) { <tr><th>@watch.Expression</th><td>@watch.Value</td><td><button aria-label="Remove @watch.Expression" @onclick="() => RemoveWatch(watch)">×</button></td></tr> }</tbody></table> }
+            else { <div class="debug-empty">No watch expressions.</div> }
         }
-        <label class="debug-exceptions"><input type="checkbox" @bind="_breakOnThrown" @bind:after="ConfigureExceptions" disabled="@(Session?.Capabilities.SupportsExceptionBreakpoints != true)" /> Break on thrown exceptions</label>
-        <form class="debug-evaluate" @onsubmit="AddWatch" aria-label="Add watch expression">
-            <input aria-label="Expression" @bind="_expression" disabled="@(State != DebugSessionState.Paused)" />
-            <button type="submit" disabled="@(State != DebugSessionState.Paused)">Add watch</button>
-        </form>
-        @if (_watches.Count > 0)
+        else if (_activeView == "breakpoints")
         {
-            <table aria-label="Watch expressions"><tbody>@foreach (var watch in _watches) { <tr><th>@watch.Expression</th><td>@watch.Value</td><td><button aria-label="Remove @watch.Expression" @onclick="() => RemoveWatch(watch)">×</button></td></tr> }</tbody></table>
+            @if (_breakpointMenu is not null)
+            {
+                <div class="context-menu-dismiss" @onclick="CloseBreakpointMenu" @oncontextmenu="CloseBreakpointMenu" @oncontextmenu:preventDefault></div>
+                <div class="explorer-context-menu debug-breakpoint-menu" style="left: @_breakpointMenuXpx; top: @_breakpointMenuYpx" role="menu" @onclick:stopPropagation>
+                    <button role="menuitem" @onclick="RemoveBreakpoint">Remove breakpoint</button>
+                </div>
+            }
+            @if (Breakpoints.Count > 0)
+            {
+                <ul class="debug-breakpoints" aria-label="Breakpoints">@foreach (var breakpoint in Breakpoints) { <li><button title="Open @breakpoint.SourcePath at line @breakpoint.Line" @onclick="() => BreakpointActivated.InvokeAsync(breakpoint)" @oncontextmenu="args => OpenBreakpointMenu(breakpoint, args)" @oncontextmenu:stopPropagation><span class="debug-breakpoint-dot @breakpoint.State.ToString().ToLowerInvariant()" aria-hidden="true"></span><span>@Path.GetFileName(breakpoint.SourcePath):@breakpoint.Line</span><small>@breakpoint.State</small></button></li> }</ul>
+            }
+            else { <div class="debug-empty">No breakpoints set.</div> }
         }
-        <form class="debug-evaluate" @onsubmit="EvaluateConsole" aria-label="Debug console">
-            <input aria-label="Debug console input" @bind="_consoleExpression" disabled="@(State != DebugSessionState.Paused)" />
-            <button type="submit" disabled="@(State != DebugSessionState.Paused)">Evaluate</button>
-            @if (_consoleEvaluation is not null) { <output aria-live="polite">@_consoleEvaluation.Result</output> }
-        </form>
         </div>
     </section>
 }
@@ -57,65 +105,284 @@
 @code {
     [Parameter] public bool Open { get; set; }
     [Parameter] public DebugAdapterSession? Session { get; set; }
+    [Parameter] public IReadOnlyList<DebugBreakpoint> Breakpoints { get; set; } = [];
+    [Parameter] public IReadOnlyList<DebugOutputEntry> StartupOutput { get; set; } = [];
+    [Parameter] public EventCallback<DebugBreakpoint> BreakpointActivated { get; set; }
+    [Parameter] public EventCallback<DebugBreakpoint> BreakpointRemoveRequested { get; set; }
     [Parameter] public EventCallback Stopped { get; set; }
     [Parameter] public EventCallback Restarted { get; set; }
     [Parameter] public EventCallback RunToCursorRequested { get; set; }
+    [Parameter] public EventCallback Close { get; set; }
+    [Parameter] public EventCallback InspectionLoaded { get; set; }
+    [Parameter] public EventCallback<DebugStackFrame> FrameActivated { get; set; }
     private DebugSessionState State => Session?.Coordinator.State ?? DebugSessionState.Idle;
     private string _expression = "";
     private string _consoleExpression = "";
     private DebugEvaluation? _consoleEvaluation;
+    private string? _consoleError;
+    private string _activeView = "inspect";
     private readonly List<DebugWatch> _watches = [];
-    private bool _breakOnThrown;
+    private readonly List<DebugOutputEntry> _controlOutput = [];
+    private IReadOnlyList<string> _evaluationCompletions = [], _watchCompletions = [];
+    private CancellationTokenSource? _completionCancellation;
     private IReadOnlyList<DebugScope> _scopes = [];
     private IReadOnlyList<DebugVariable> _variables = [];
+    private readonly Dictionary<int, IReadOnlyList<DebugVariable>> _variableChildren = [];
+    private readonly HashSet<int> _expandedVariables = [];
     private IReadOnlyList<DebugThread> _threads = [];
     private int? _selectedFrame;
-    private Task Continue() => Session?.CurrentThreadId is { } thread ? Session.ContinueAsync(thread) : Task.CompletedTask;
-    private Task Pause() => Session?.PauseAsync(Session.CurrentThreadId ?? 0) ?? Task.CompletedTask;
-    private Task Step(string command) => Session?.CurrentThreadId is { } thread ? Session.StepAsync(command, thread) : Task.CompletedTask;
+    private ElementReference _inspectionGrid;
+    private string? _inspectionError;
+    private DebugBreakpoint? _breakpointMenu;
+    private double _breakpointMenuX, _breakpointMenuY;
+    private string _breakpointMenuXpx => $"{_breakpointMenuX}px";
+    private string _breakpointMenuYpx => $"{_breakpointMenuY}px";
+    private DebugAdapterSession? _loadedSession;
+    private long _loadedPauseEpoch = -1;
+    private DebugSessionState _observedState = DebugSessionState.Idle;
+    private int _observedStartupOutputCount;
+    private DebugStackFrame? CurrentFrame => Session?.Inspection.Frames.FirstOrDefault(frame => frame.Id == _selectedFrame)
+        ?? Session?.Inspection.Frames.FirstOrDefault();
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Open && _activeView == "inspect") await JS.InvokeVoidAsync("novaSharp.initDebugInspectionResize", _inspectionGrid);
+    }
+    protected override async Task OnParametersSetAsync()
+    {
+        if (StartupOutput.Count > _observedStartupOutputCount || State is DebugSessionState.Terminated or DebugSessionState.Failed or DebugSessionState.Disconnected && State != _observedState)
+            _activeView = "console";
+        _observedStartupOutputCount = StartupOutput.Count;
+        _observedState = State;
+        if (!ReferenceEquals(Session, _loadedSession))
+        {
+            ClearInspection();
+            _loadedSession = Session;
+        }
+        if (Session is null) return;
+        if (State != DebugSessionState.Paused)
+        {
+            if (_loadedPauseEpoch >= 0) ClearInspection();
+            return;
+        }
+        if (Session.Coordinator.PauseEpoch == _loadedPauseEpoch) return;
+        _loadedPauseEpoch = Session.Coordinator.PauseEpoch;
+        _activeView = "inspect";
+        await RefreshInspection();
+    }
+    private void ClearInspection()
+    {
+        _threads = [];
+        _scopes = [];
+        _variables = [];
+        _variableChildren.Clear();
+        _expandedVariables.Clear();
+        _selectedFrame = null;
+        _inspectionError = null;
+        _consoleEvaluation = null;
+        _consoleError = null;
+        _watches.Clear();
+        _expression = "";
+        _consoleExpression = "";
+        _evaluationCompletions = _watchCompletions = [];
+        _completionCancellation?.Cancel();
+        _loadedPauseEpoch = -1;
+    }
+    private string DebugTabClass(string view) => _activeView == view ? "active" : "";
+    private Task Continue() => Session?.CurrentThreadId is { } thread
+        ? RunControl(() => Session.ContinueAsync(thread), "Continue") : Task.CompletedTask;
+    private async Task Pause()
+    {
+        if (Session is null) return;
+        await RunControl(async () =>
+        {
+            var thread = Session.CurrentThreadId ?? (await Session.LoadThreadsAsync()).FirstOrDefault()?.Id;
+            if (thread is null) throw new InvalidOperationException("No running thread is available to pause.");
+            await Session.PauseAsync(thread.Value);
+        }, "Pause");
+    }
+    private Task Step(string command) => Session?.CurrentThreadId is { } thread
+        ? RunControl(() => Session.StepAsync(command, thread), command) : Task.CompletedTask;
+    private async Task RunControl(Func<Task> action, string name)
+    {
+        try { await action(); }
+        catch (Exception ex) when (ex is DebugProtocolException or InvalidOperationException or OperationCanceledException)
+        {
+            var message = ex is OperationCanceledException ? $"{name} was cancelled." : $"{name} failed: {ex.Message}";
+            _controlOutput.Add(new(message + Environment.NewLine, "stderr"));
+            _activeView = "console";
+        }
+    }
     private Task Stop() => Stopped.InvokeAsync();
     private Task Restart() => Restarted.InvokeAsync();
     private Task RunToCursor() => RunToCursorRequested.InvokeAsync();
     private async Task Refresh()
     {
         if (Session is null) return;
+        await RefreshInspection();
+    }
+    private async Task RefreshInspection()
+    {
+        if (Session is null) return;
         _threads = await Session.LoadThreadsAsync();
-        await Session.LoadStackAsync();
+        var frames = await Session.LoadStackAsync();
+        if (frames.FirstOrDefault() is { } frame) await SelectFrame(frame);
+        await InspectionLoaded.InvokeAsync();
     }
     private async Task SelectThread(DebugThread thread)
     {
         if (Session is null) return;
         Session.SelectThread(thread.Id);
-        await Session.LoadStackAsync();
+        var frames = await Session.LoadStackAsync();
+        if (frames.FirstOrDefault() is { } frame) await SelectFrame(frame);
+        await InspectionLoaded.InvokeAsync();
     }
     private async Task SelectFrame(DebugStackFrame frame)
     {
         if (Session is null) return;
         _selectedFrame = frame.Id;
         _variables = [];
-        _scopes = await Session.LoadScopesAsync(frame.Id);
+        _variableChildren.Clear();
+        _expandedVariables.Clear();
+        _scopes = [];
+        _inspectionError = null;
+        try
+        {
+            _scopes = await Session.LoadScopesAsync(frame.Id);
+            if (_scopes.FirstOrDefault(scope => !scope.Expensive && scope.VariablesReference > 0) is { } scope)
+                await LoadVariables(scope);
+            else if (_scopes.Count > 0) _inspectionError = "Variables are unavailable for this stack frame.";
+        }
+        catch (Exception ex) when (ex is DebugProtocolException or InvalidOperationException or OperationCanceledException)
+        {
+            _inspectionError = "The debug adapter could not inspect variables for this stack frame.";
+        }
+    }
+    private async Task ActivateFrame(DebugStackFrame frame)
+    {
+        await SelectFrame(frame);
+        await FrameActivated.InvokeAsync(frame);
+        await InspectionLoaded.InvokeAsync();
     }
     private async Task LoadVariables(DebugScope scope)
     {
-        if (Session is not null) _variables = await Session.LoadVariablesAsync(scope.VariablesReference);
+        if (Session is null) return;
+        _inspectionError = null;
+        try { _variables = await Session.LoadVariablesAsync(scope.VariablesReference); }
+        catch (Exception ex) when (ex is DebugProtocolException or InvalidOperationException or OperationCanceledException)
+        {
+            _variables = [];
+            _inspectionError = "The debug adapter could not inspect this scope.";
+        }
+    }
+    private async Task ToggleVariable(DebugVariable variable)
+    {
+        if (Session is null || variable.VariablesReference <= 0) return;
+        var reference = variable.VariablesReference;
+        if (_expandedVariables.Remove(reference)) return;
+        _inspectionError = null;
+        try
+        {
+            if (!_variableChildren.ContainsKey(reference))
+                _variableChildren[reference] = await Session.LoadVariablesAsync(reference, count: 250);
+            _expandedVariables.Add(reference);
+        }
+        catch (Exception ex) when (ex is DebugProtocolException or InvalidOperationException or OperationCanceledException)
+        {
+            _inspectionError = $"The debug adapter could not inspect '{variable.Name}'.";
+        }
+    }
+    private IReadOnlyList<DebugVariableRow> VisibleVariables()
+    {
+        var rows = new List<DebugVariableRow>();
+        AppendVariables(_variables, 0, rows, []);
+        return rows;
+    }
+    private void AppendVariables(IReadOnlyList<DebugVariable> variables, int depth, List<DebugVariableRow> rows, HashSet<int> ancestors)
+    {
+        foreach (var variable in variables)
+        {
+            rows.Add(new(variable, depth));
+            var reference = variable.VariablesReference;
+            if (!_expandedVariables.Contains(reference) || !_variableChildren.TryGetValue(reference, out var children)
+                || !ancestors.Add(reference)) continue;
+            AppendVariables(children, depth + 1, rows, ancestors);
+            ancestors.Remove(reference);
+        }
+    }
+    private string VariableChevron(DebugVariable variable) => variable.VariablesReference <= 0 ? "" : _expandedVariables.Contains(variable.VariablesReference) ? "⌄" : "›";
+    private string VariableToggleLabel(DebugVariable variable) => _expandedVariables.Contains(variable.VariablesReference) ? $"Collapse {variable.Name}" : $"Expand {variable.Name}";
+    private void OpenBreakpointMenu(DebugBreakpoint breakpoint, MouseEventArgs args)
+    {
+        if (args.ShiftKey) return;
+        _breakpointMenu = breakpoint;
+        _breakpointMenuX = args.ClientX;
+        _breakpointMenuY = args.ClientY;
+    }
+    private void CloseBreakpointMenu() => _breakpointMenu = null;
+    private async Task RemoveBreakpoint()
+    {
+        if (_breakpointMenu is not { } breakpoint) return;
+        _breakpointMenu = null;
+        await BreakpointRemoveRequested.InvokeAsync(breakpoint);
     }
     private async Task AddWatch()
     {
         if (Session is null || string.IsNullOrWhiteSpace(_expression)) return;
-        var evaluation = await Session.EvaluateAsync(_expression, _selectedFrame ?? Session.Inspection.Frames.FirstOrDefault()?.Id);
-        _watches.Add(new(_expression, evaluation?.Result ?? "Unavailable"));
+        try
+        {
+            var evaluation = await Session.EvaluateAsync(_expression, _selectedFrame ?? Session.Inspection.Frames.FirstOrDefault()?.Id);
+            _watches.Add(new(_expression, evaluation?.Result ?? "Unavailable"));
+        }
+        catch (Exception ex) when (ex is DebugProtocolException or InvalidOperationException or OperationCanceledException)
+        {
+            _watches.Add(new(_expression, EvaluationError(ex)));
+        }
         _expression = "";
     }
     private void RemoveWatch(DebugWatch watch) => _watches.Remove(watch);
+    private Task CompleteEvaluation(ChangeEventArgs args)
+    {
+        _consoleExpression = args.Value?.ToString() ?? "";
+        return LoadCompletions(_consoleExpression, values => _evaluationCompletions = values);
+    }
+    private Task CompleteWatch(ChangeEventArgs args)
+    {
+        _expression = args.Value?.ToString() ?? "";
+        return LoadCompletions(_expression, values => _watchCompletions = values);
+    }
+    private async Task LoadCompletions(string text, Action<IReadOnlyList<string>> apply)
+    {
+        _completionCancellation?.Cancel();
+        _completionCancellation?.Dispose();
+        _completionCancellation = new();
+        var token = _completionCancellation.Token;
+        if (Session is null || string.IsNullOrWhiteSpace(text)) { apply([]); return; }
+        try
+        {
+            await Task.Delay(80, token);
+            apply(await Session.CompleteAsync(text, _selectedFrame ?? Session.Inspection.Frames.FirstOrDefault()?.Id, token));
+        }
+        catch (OperationCanceledException) { }
+        catch (DebugProtocolException) { apply([]); }
+    }
     private async Task EvaluateConsole()
     {
-        if (Session is null) return;
-        _consoleEvaluation = await Session.EvaluateAsync(_consoleExpression,
-            _selectedFrame ?? Session.Inspection.Frames.FirstOrDefault()?.Id, context: "repl");
+        if (Session is null || string.IsNullOrWhiteSpace(_consoleExpression)) return;
+        _consoleEvaluation = null;
+        _consoleError = null;
+        try
+        {
+            _consoleEvaluation = await Session.EvaluateAsync(_consoleExpression,
+                _selectedFrame ?? Session.Inspection.Frames.FirstOrDefault()?.Id, context: "repl");
+        }
+        catch (Exception ex) when (ex is DebugProtocolException or InvalidOperationException or OperationCanceledException)
+        {
+            _consoleError = EvaluationError(ex);
+        }
+        _consoleExpression = "";
     }
-    private async Task ConfigureExceptions()
-    {
-        if (Session is not null) await Session.SetExceptionBreakpointsAsync([new("all", _breakOnThrown)]);
-    }
+    private static string EvaluationError(Exception exception) => exception is OperationCanceledException
+        ? "Evaluation was cancelled." : exception.Message;
     private sealed record DebugWatch(string Expression, string Value);
+    private sealed record DebugVariableRow(DebugVariable Variable, int Depth);
 }

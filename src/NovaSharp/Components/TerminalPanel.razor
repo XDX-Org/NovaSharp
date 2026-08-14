@@ -28,6 +28,7 @@
             </select>
             <button title="New terminal" aria-label="New terminal" @onclick="CreateAsync">＋</button>
             <button title="Restart terminal" aria-label="Restart terminal" disabled="@(Service.ActiveSession is null)" @onclick="RestartAsync">↻</button>
+            <button class="panel-minimize" title="Hide Terminal" aria-label="Hide Terminal panel" @onclick="Close">_</button>
         </header>
         @if (Service.ActiveSession is { } active)
         {
@@ -50,6 +51,7 @@
     [Parameter] public bool Open { get; set; }
     [Parameter] public string? WorkingDirectory { get; set; }
     [Parameter] public EventCallback<TerminalSession> ConfirmClose { get; set; }
+    [Parameter] public EventCallback Close { get; set; }
     private ElementReference _host;
     private Xterm? _xterm;
     private DotNetObjectReference<TerminalPanel>? _self;

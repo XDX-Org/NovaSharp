@@ -82,6 +82,45 @@ public sealed class DebuggingTests
     }
 
     [TestMethod]
+    public void BreakpointsToggleBySourceAndLine()
+    {
+        var source = Path.GetFullPath("toggle.cs");
+        var store = new BreakpointStore();
+
+        Assert.IsTrue(store.Toggle(source, 7));
+        Assert.AreEqual(7, store.ForSource(source).Single().Line);
+        Assert.IsFalse(store.Toggle(source, 7));
+        Assert.IsEmpty(store.ForSource(source));
+    }
+
+    [TestMethod]
+    public void BreakpointsCanBeRemovedExplicitly()
+    {
+        var source = Path.GetFullPath("remove.cs");
+        var store = new BreakpointStore();
+        store.Replace(source, [new(source, 3), new(source, 8)]);
+
+        Assert.IsTrue(store.Remove(source, 3));
+        Assert.AreEqual(8, store.ForSource(source).Single().Line);
+        Assert.IsFalse(store.Remove(source, 3));
+        Assert.IsTrue(store.Remove(source, 8));
+        Assert.IsEmpty(store.All);
+    }
+
+    [TestMethod]
+    public void BreakpointsRestoreFromWorkspaceState()
+    {
+        var first = Path.GetFullPath("first.cs");
+        var second = Path.GetFullPath("second.cs");
+        var store = new BreakpointStore();
+
+        store.Restore([new(first, 3), new(first, 9), new(second, 5)]);
+
+        CollectionAssert.AreEqual(new[] { 3, 9 }, store.ForSource(first).Select(item => item.Line).ToArray());
+        Assert.AreEqual(5, store.ForSource(second).Single().Line);
+    }
+
+    [TestMethod]
     public void SourceMappingUsesLongestRootAndDoesNotMatchFileNames()
     {
         var root = Path.GetFullPath(Path.Combine("workspace", "src"));

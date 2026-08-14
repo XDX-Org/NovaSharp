@@ -2,7 +2,7 @@
 {
     <section class="problems-panel" data-bottom-panel="problems" aria-label="Problems">
         <div class="bottom-panel-resizer" role="separator" tabindex="0" aria-orientation="horizontal" aria-label="Resize Problems panel"></div>
-        <header><strong>Problems</strong><span>@Diagnostics.Count</span></header>
+        <header><strong>Problems</strong><span>@Diagnostics.Count</span><button class="panel-minimize" title="Hide Problems" aria-label="Hide Problems panel" @onclick="Close">_</button></header>
         <div class="problem-filters">
             <select aria-label="Problem severity" @bind="_severity"><option value="">All severities</option>@foreach (var value in Enum.GetValues<LanguageDiagnosticSeverity>().Reverse()) { <option>@value</option> }</select>
             <select aria-label="Problem source" @bind="_source"><option value="">All sources</option>@foreach (var value in Enum.GetValues<LanguageDiagnosticSource>()) { <option>@value</option> }</select>
@@ -33,6 +33,7 @@
     [Parameter] public bool Open { get; set; }
     [Parameter, EditorRequired] public IReadOnlyList<LanguageDiagnostic> Diagnostics { get; set; } = [];
     [Parameter] public EventCallback<LanguageDiagnostic> Activated { get; set; }
+    [Parameter] public EventCallback Close { get; set; }
     private string _severity = "", _source = "", _project = "", _file = "";
     private IReadOnlyList<LanguageDiagnostic> Filtered => Diagnostics.Where(item =>
         (_severity.Length == 0 || item.Severity.ToString() == _severity)

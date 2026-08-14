@@ -7,7 +7,7 @@ internal sealed record EditorSettings(int SchemaVersion = 1, bool WordWrap = fal
     string[]? ExplorerIgnoredNames = null, bool AutoCompletion = true, bool SemanticHighlighting = true,
     string Theme = "Rider Dark", int Zoom = 100, bool ReducedMotion = false, bool HighContrast = false,
     bool Ligatures = false, string PopupPlacement = "Contextual", Dictionary<string, string>? Keybindings = null,
-    bool BraceGuides = false);
+    bool BraceGuides = false, bool BreakOnThrownExceptions = true);
 
 internal sealed class ConfigurationService(string userPath, string? workspacePath = null)
 {

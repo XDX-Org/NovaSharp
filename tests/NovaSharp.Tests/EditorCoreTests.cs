@@ -258,7 +258,7 @@ public sealed class WorkbenchServiceTests
         try
         {
             var service = new ConfigurationService(path);
-            var settings = new EditorSettings(1, true, 2, PopupPlacement: "BottomCenter");
+            var settings = new EditorSettings(1, true, 2, PopupPlacement: "BottomCenter", BreakOnThrownExceptions: true);
             await service.SaveUserAsync(settings);
             var restored = new ConfigurationService(path);
             await restored.LoadAsync();

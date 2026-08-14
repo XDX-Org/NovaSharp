@@ -213,7 +213,7 @@ public sealed class EditorGroupTests
                     StartupProject = Path.Combine(root, "NovaSharp.csproj"), WorkspacePath = root,
                     BuildProjectPath = Path.Combine(root, "NovaSharp.csproj"), BuildConfiguration = "Release",
                     TargetFramework = "net10.0", LaunchProfile = "Local", RunArguments = ["one"],
-                    RunWorkingDirectory = root };
+                    RunWorkingDirectory = root, Breakpoints = [new(Path.Combine(root, "source.cs"), 12)] };
                 await persistence.SaveAsync(captured);
             }
             using (var restored = new EditorGroupWorkspace())
@@ -239,6 +239,7 @@ public sealed class EditorGroupTests
             Assert.AreEqual("Local", panels.LaunchProfile);
             CollectionAssert.AreEqual(new[] { "one" }, panels.RunArguments!.ToArray());
             Assert.AreEqual(root, panels.RunWorkingDirectory);
+            Assert.AreEqual(12, panels.Breakpoints!.Single().Line);
 
             var legacy = new WorkbenchSessionState(1, file, [new(file, false, 1, 3, 12, 4)]);
             await File.WriteAllBytesAsync(session, System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(legacy));

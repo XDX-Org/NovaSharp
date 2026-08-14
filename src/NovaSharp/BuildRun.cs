@@ -200,11 +200,25 @@ internal sealed partial class BuildRunService : IAsyncDisposable
         {
             if (TryParseDiagnostic(line, request, out var diagnostic))
             {
-                lock (diagnostics) diagnostics.Add(diagnostic);
+                lock (diagnostics) AddOrMergeDiagnostic(diagnostics, diagnostic);
                 Output.Add(stream, line, diagnostic.DocumentPath, diagnostic.StartLine, diagnostic.StartColumn);
             }
             else Output.Add(stream, line);
         }
+    }
+
+    internal static void AddOrMergeDiagnostic(List<LanguageDiagnostic> diagnostics, LanguageDiagnostic diagnostic)
+    {
+        var previousIndex = diagnostics.FindLastIndex(item => item.Id == diagnostic.Id
+            && item.Source == diagnostic.Source && item.Severity == diagnostic.Severity
+            && DebugSourceMapper.PathComparer.Equals(item.DocumentPath, diagnostic.DocumentPath)
+            && item.Range == diagnostic.Range && item.ProjectName == diagnostic.ProjectName);
+        if (previousIndex < 0) { diagnostics.Add(diagnostic); return; }
+        var previous = diagnostics[previousIndex];
+        var details = previous.RelatedInformation?.ToList() ?? [];
+        if (diagnostic.Message != previous.Message && !details.Contains(diagnostic.Message, StringComparer.Ordinal))
+            details.Add(diagnostic.Message);
+        diagnostics[previousIndex] = previous with { RelatedInformation = details };
     }
 
     private void PublishDiagnostics(IReadOnlyList<LanguageDiagnostic> diagnostics)
