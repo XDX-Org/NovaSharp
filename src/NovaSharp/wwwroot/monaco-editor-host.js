@@ -30,7 +30,7 @@ function state(root) {
     return root.__novaMonaco;
 }
 
-export async function createEditor(root, documentId, filePath, languageId, value, version, wordWrap,
+export async function createEditor(root, documentId, filePath, languageId, value, version, options,
     selectionStart, selectionEnd, scrollTop, scrollLeft, dotNet) {
     const monaco = await loadMonaco();
     let entry = models.get(documentId);
@@ -54,13 +54,18 @@ export async function createEditor(root, documentId, filePath, languageId, value
     entry.views++;
     entry.lastUsed = Date.now();
     const editor = monaco.editor.create(root, {
-        model: entry.model, wordWrap: wordWrap ? 'on' : 'off', glyphMargin: true,
+        model: entry.model, wordWrap: options.wordWrap ? 'on' : 'off', glyphMargin: true,
         minimap: { enabled: false }, fontSize: 13, lineHeight: 20, tabSize: 4,
+        fontLigatures: options.ligatures, quickSuggestions: options.suggestionsEnabled,
+        suggestOnTriggerCharacters: options.suggestionsEnabled,
+        guides: { bracketPairs: options.braceGuides, indentation: options.braceGuides },
+        cursorBlinking: options.reducedMotion ? 'solid' : 'blink',
         fixedOverflowWidgets: true, accessibilitySupport: 'auto'
     });
     const resizeObserver = new ResizeObserver(() => editor.layout());
     resizeObserver.observe(root);
     let viewTimer;
+    let hoverTimer;
     const viewId = crypto.randomUUID();
     const offset = position => entry.model.getOffsetAt(position);
     const notifyView = () => {
@@ -76,6 +81,42 @@ export async function createEditor(root, documentId, filePath, languageId, value
     const disposables = [
         editor.onDidFocusEditorText(() => entry.owner = viewId),
         editor.onDidChangeCursorSelection(notifyView), editor.onDidScrollChange(notifyView),
+        editor.onKeyDown(event => {
+            const key = event.browserEvent.key;
+            const modifier = event.ctrlKey || event.metaKey;
+            if (modifier && ['z', 'y'].includes(key.toLowerCase())) { event.stopPropagation(); return; }
+            const popup = root.closest('.code-editor')?.querySelector('.completion-popup');
+            let command;
+            if (popup && ['ArrowDown', 'ArrowUp', 'Enter', 'Tab', 'Escape'].includes(key))
+                command = { ArrowDown: 'completion-next', ArrowUp: 'completion-previous', Enter: 'completion-accept',
+                    Tab: 'completion-accept', Escape: 'escape' }[key];
+            else if (modifier && key === ' ') command = event.shiftKey ? 'signature' : 'completion';
+            else if (modifier && event.shiftKey && key.toLowerCase() === 'f') command = 'format';
+            else if (key === 'F12') command = event.ctrlKey && event.shiftKey ? 'type-definition'
+                : event.altKey ? 'peek' : event.shiftKey ? 'references'
+                    : modifier ? 'implementation' : 'definition';
+            else if (key === 'F2') command = 'rename';
+            else if (modifier && key === '.') command = 'code-actions';
+            else if (modifier && event.shiftKey && key.toLowerCase() === 'o') command = 'outline';
+            else if (event.altKey && key === 'ArrowLeft') command = 'back';
+            else if (event.altKey && key === 'ArrowRight') command = 'forward';
+            if (!command) return;
+            event.preventDefault();
+            event.stopPropagation();
+            const position = editor.getPosition();
+            dotNet.invokeMethodAsync('Command', command, position ? offset(position) : 0);
+        }),
+        editor.onMouseMove(event => {
+            clearTimeout(hoverTimer);
+            if (!event.target.position) return;
+            const position = offset(event.target.position);
+            hoverTimer = setTimeout(() => dotNet.invokeMethodAsync('Command', 'hover', position), 250);
+        }),
+        editor.onMouseLeave(() => {
+            clearTimeout(hoverTimer);
+            const position = editor.getPosition();
+            dotNet.invokeMethodAsync('Command', 'hover-close', position ? offset(position) : 0);
+        }),
         editor.onMouseDown(event => {
             if (event.target.type === monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN && event.target.position)
                 dotNet.invokeMethodAsync('ToggleBreakpoint', event.target.position.lineNumber);
@@ -86,12 +127,18 @@ export async function createEditor(root, documentId, filePath, languageId, value
     editor.setSelection(new monaco.Selection(start.lineNumber, start.column, end.lineNumber, end.column));
     editor.setScrollPosition({ scrollTop, scrollLeft });
     root.__novaMonaco = { monaco, documentId, viewId, entry, editor, resizeObserver, disposables,
-        decorations: editor.createDecorationsCollection(), get viewTimer() { return viewTimer; } };
+        decorations: editor.createDecorationsCollection(), get viewTimer() { return viewTimer; },
+        get hoverTimer() { return hoverTimer; } };
 }
 
-export function updateEditor(root, value, version, wordWrap, markers, breakpointLines, executionLine) {
+export function updateEditor(root, value, version, options, markers, breakpointLines, executionLine, semanticSpans) {
     const current = state(root);
-    current.editor.updateOptions({ wordWrap: wordWrap ? 'on' : 'off' });
+    current.monaco.editor.setTheme(options.highContrast ? 'hc-black' : options.lightTheme ? 'vs' : 'vs-dark');
+    current.editor.updateOptions({ wordWrap: options.wordWrap ? 'on' : 'off', fontLigatures: options.ligatures,
+        quickSuggestions: options.suggestionsEnabled, suggestOnTriggerCharacters: options.suggestionsEnabled,
+        guides: { bracketPairs: options.braceGuides, indentation: options.braceGuides },
+        cursorBlinking: options.reducedMotion ? 'solid' : 'blink' });
+    current.entry.model.updateOptions({ tabSize: options.tabSize });
     if (current.entry.model.getValue() !== value) {
         current.entry.applying = true;
         current.entry.model.setValue(value);
@@ -106,13 +153,53 @@ export function updateEditor(root, value, version, wordWrap, markers, breakpoint
         options: { isWholeLine: true, glyphMarginClassName: 'monaco-breakpoint' } }));
     if (executionLine) decorations.push({ range: new current.monaco.Range(executionLine, 1, executionLine, 1),
         options: { isWholeLine: true, className: 'monaco-execution-line', glyphMarginClassName: 'monaco-execution-glyph' } });
+    for (const span of semanticSpans) {
+        const start = current.entry.model.getPositionAt(span.start);
+        const end = current.entry.model.getPositionAt(span.start + span.length);
+        const classification = span.classification.toLowerCase().replaceAll(/[^a-z0-9]/g, '');
+        decorations.push({ range: new current.monaco.Range(start.lineNumber, start.column, end.lineNumber, end.column),
+            options: { inlineClassName: `token-${classification}` } });
+    }
     current.decorations.set(decorations);
+}
+
+export function applyEditorEdit(root, start, length, text, newPosition) {
+    const current = state(root);
+    const model = current.entry.model;
+    const begin = model.getPositionAt(start);
+    const end = model.getPositionAt(start + length);
+    current.editor.executeEdits('novasharp', [{ range: new current.monaco.Range(begin.lineNumber, begin.column,
+        end.lineNumber, end.column), text, forceMoveMarkers: true }]);
+    const caret = model.getPositionAt(newPosition ?? start + text.length);
+    current.editor.setPosition(caret);
+    current.editor.focus();
+}
+
+export function replaceEditorText(root, text, selectionStart, selectionLength) {
+    const current = state(root);
+    current.editor.executeEdits('novasharp', [{ range: current.entry.model.getFullModelRange(), text }]);
+    setEditorSelection(root, selectionStart, selectionStart + selectionLength);
+}
+
+export function setEditorSelection(root, selectionStart, selectionEnd) {
+    const current = state(root);
+    const start = current.entry.model.getPositionAt(selectionStart);
+    const end = current.entry.model.getPositionAt(selectionEnd);
+    current.editor.setSelection(new current.monaco.Selection(start.lineNumber, start.column, end.lineNumber, end.column));
+    current.editor.revealPositionInCenterIfOutsideViewport(end);
+}
+
+export function getEditorAnchor(root, position) {
+    const current = state(root);
+    const location = current.editor.getScrolledVisiblePosition(current.entry.model.getPositionAt(position));
+    return location ? [location.left, location.top + location.height] : [72, 24];
 }
 
 export function disposeEditor(root) {
     const current = root.__novaMonaco;
     if (!current) return;
     clearTimeout(current.viewTimer);
+    clearTimeout(current.hoverTimer);
     current.resizeObserver.disconnect();
     current.disposables.forEach(disposable => disposable.dispose());
     current.decorations.clear();

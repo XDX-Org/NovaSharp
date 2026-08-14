@@ -31,6 +31,7 @@ public readonly record struct DiskStamp(long Length, DateTime LastWriteUtc, stri
 public readonly record struct EditorTextEdit(int Start, int Length, string Text);
 public sealed record EditorEditBatch(long BaseVersion, IReadOnlyList<EditorTextEdit> Edits,
     int SelectionStart, int SelectionEnd);
+public readonly record struct EditorInputCommand(string Command, int Position);
 
 internal sealed class SaveConflictException(string path)
     : IOException($"'{Path.GetFileName(path)}' changed on disk. Reload it or use Save As.");

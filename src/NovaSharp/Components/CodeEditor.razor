@@ -12,27 +12,39 @@
             }
         </div>
     }
-    <div class="presentation" aria-hidden="true">
-        @if (WordWrap)
-        {
-            @foreach (var line in Lines) { <SourceLineView Line="line" Diagnostics="DiagnosticsFor(line)" @key="line.Number" /> }
-        }
-        else
-        {
-            <Virtualize TItem="EditorLine" Items="@Lines" Context="line" ItemSize="20" OverscanCount="32">
-                <SourceLineView Line="line" Diagnostics="DiagnosticsFor(line)" />
-            </Virtualize>
-        }
-    </div>
-    <textarea class="editor-input" aria-label="File contents" autocomplete="off" autocorrect="off"
-              autocapitalize="off" spellcheck="false" wrap="off" value="@Value"></textarea>
-    <div class="diagnostic-overview" aria-hidden="true">
-        @foreach (var diagnostic in _diagnostics)
-        {
-            <span class="overview-mark @diagnostic.Severity.ToString().ToLowerInvariant()"
-                  style="top:@OverviewTop(diagnostic)"></span>
-        }
-    </div>
+    @if (Program.UseMonacoEditor)
+    {
+        <MonacoEditorHost @ref="_monaco" Value="Value" EditsChanged="MonacoEditsChanged" Document="Document"
+                          ViewState="ViewState" ViewStateChanged="ViewStateChanged" WordWrap="WordWrap"
+                          Diagnostics="_diagnostics" BreakpointLines="BreakpointLines" ExecutionLine="ExecutionLine"
+                          BreakpointToggled="BreakpointToggled" CommandRequested="MonacoCommandAsync"
+                          SemanticSpans="_semanticSpans" SuggestionsEnabled="SuggestionsEnabled"
+                          BraceGuides="BraceGuides" />
+    }
+    else
+    {
+        <div class="presentation" aria-hidden="true">
+            @if (WordWrap)
+            {
+                @foreach (var line in Lines) { <SourceLineView Line="line" Diagnostics="DiagnosticsFor(line)" @key="line.Number" /> }
+            }
+            else
+            {
+                <Virtualize TItem="EditorLine" Items="@Lines" Context="line" ItemSize="20" OverscanCount="32">
+                    <SourceLineView Line="line" Diagnostics="DiagnosticsFor(line)" />
+                </Virtualize>
+            }
+        </div>
+        <textarea class="editor-input" aria-label="File contents" autocomplete="off" autocorrect="off"
+                  autocapitalize="off" spellcheck="false" wrap="off" value="@Value"></textarea>
+        <div class="diagnostic-overview" aria-hidden="true">
+            @foreach (var diagnostic in _diagnostics)
+            {
+                <span class="overview-mark @diagnostic.Severity.ToString().ToLowerInvariant()"
+                      style="top:@OverviewTop(diagnostic)"></span>
+            }
+        </div>
+    }
     <div class="diagnostic-accessibility" aria-label="Editor diagnostics">
         @foreach (var diagnostic in _diagnostics.Where(item => item.Severity != LanguageDiagnosticSeverity.Hidden))
         {
@@ -125,6 +137,7 @@
 @code {
     [Parameter, EditorRequired] public string Value { get; set; } = string.Empty;
     [Parameter, EditorRequired] public EventCallback<string> ValueChanged { get; set; }
+    [Parameter] public EventCallback<EditorEditBatch> EditsChanged { get; set; }
     [Parameter, EditorRequired] public EditorDocumentState Document { get; set; } = null!;
     [Parameter, EditorRequired] public ILanguageProvider LanguageProvider { get; set; } = null!;
     [Parameter] public IReadOnlyList<LanguageDiagnostic> Diagnostics { get; set; } = [];
@@ -148,6 +161,7 @@
     private readonly LatestLanguageRequest _semanticRequest = new();
     private readonly LatestLanguageRequest _diagnosticRequest = new();
     private ElementReference _root;
+    private MonacoEditorHost? _monaco;
     private IJSObjectReference? _module;
     private DotNetObjectReference<CodeEditor>? _self;
     private CompletionResult? _completion;
@@ -271,15 +285,18 @@
         {
             _module = await JS.InvokeAsync<IJSObjectReference>("import", "./editor.js");
             _self = DotNetObjectReference.Create(this);
-            await _module.InvokeVoidAsync("createEditor", _root, WordWrap, _self, ViewState.SelectionStart,
-                ViewState.SelectionEnd, ViewState.ScrollTop, ViewState.ScrollLeft);
-            if (Program.Phase15Solution is not null) _ = RunPhase15SmokeAsync();
-            else if (Program.Phase8Solution is not null) _ = RunPhase8SmokeAsync();
-            else if (Program.Phase7Solution is not null) _ = RunPhase7SmokeAsync();
-            if (Program.Phase2SmokeFile is not null)
+            if (!Program.UseMonacoEditor)
             {
-                var result = await _module.InvokeAsync<EditorSmokeResult>("runSmokeChecks", _root);
-                await Program.CompleteSmokeAsync(result);
+                await _module.InvokeVoidAsync("createEditor", _root, WordWrap, _self, ViewState.SelectionStart,
+                    ViewState.SelectionEnd, ViewState.ScrollTop, ViewState.ScrollLeft);
+                if (Program.Phase15Solution is not null) _ = RunPhase15SmokeAsync();
+                else if (Program.Phase8Solution is not null) _ = RunPhase8SmokeAsync();
+                else if (Program.Phase7Solution is not null) _ = RunPhase7SmokeAsync();
+                if (Program.Phase2SmokeFile is not null)
+                {
+                    var result = await _module.InvokeAsync<EditorSmokeResult>("runSmokeChecks", _root);
+                    await Program.CompleteSmokeAsync(result);
+                }
             }
         }
         if (_refreshLanguageAfterRender && _module is not null && _languageReadyKey is not null)
@@ -293,7 +310,8 @@
             if (_synchronizeViewStateAfterRender)
             {
                 _synchronizeViewStateAfterRender = false;
-                await _module.InvokeVoidAsync("setEditorSelection", _root, ViewState.SelectionStart, ViewState.SelectionEnd);
+                if (_monaco is not null) await _monaco.SetSelectionAsync(ViewState.SelectionStart, ViewState.SelectionEnd);
+                else await _module.InvokeVoidAsync("setEditorSelection", _root, ViewState.SelectionStart, ViewState.SelectionEnd);
             }
             await _module.InvokeVoidAsync("fitLanguagePopups", _root);
             if (_scrollCompletionAfterRender)
@@ -323,6 +341,28 @@
         _ = RefreshSemanticAsync();
         _ = RefreshDiagnosticsAsync();
     }
+
+    private async Task MonacoEditsChanged(EditorEditBatch batch)
+    {
+        var version = Document.Version;
+        await EditsChanged.InvokeAsync(batch);
+        if (Document.Version == version) return;
+        ViewState.SetSelection(batch.SelectionStart, batch.SelectionEnd, Document.Content?.Length ?? 0);
+        _semanticRefreshCancellation?.Cancel();
+        _diagnosticRefreshCancellation?.Cancel();
+        var inserted = batch.Edits.Select(edit => edit.Text).LastOrDefault(text => text.Length > 0);
+        var trigger = string.IsNullOrEmpty(inserted) ? null : inserted[^1].ToString();
+        if (!ProjectLoading && Document.FilePath is not null && SuggestionsEnabled && Has(LanguageCapabilities.Completion)
+            && (trigger is "." or " " or "<" or "@" or ":" or "-" || trigger?.Length == 1 && char.IsLetterOrDigit(trigger[0])))
+            await RequestCompletionAsync(batch.SelectionEnd, false);
+        else CloseCompletion();
+        if (!ProjectLoading && Document.FilePath is not null && Has(LanguageCapabilities.SignatureHelp) && trigger is "(" or ",")
+            await RequestSignatureAsync(batch.SelectionEnd);
+        else if (trigger == ")") _signature = null;
+        _hover = null;
+    }
+
+    private Task MonacoCommandAsync(EditorInputCommand request) => EditorCommand(request.Command, request.Position);
 
     [JSInvokable]
     public async Task EditorCommand(string command, int caret)
@@ -447,8 +487,10 @@
                 || Value[edit.Replacement.Start + edit.Replacement.Length] != '('))
             edit = edit with { NewText = edit.NewText + "()", NewPosition = edit.Replacement.Start + edit.NewText.Length + 1 };
         _completion = null;
-        await _module.InvokeVoidAsync("applyEditorEdit", _root, edit.Replacement.Start, edit.Replacement.Length,
-            edit.NewText, edit.NewPosition);
+        if (_monaco is not null)
+            await _monaco.ApplyEditAsync(edit.Replacement.Start, edit.Replacement.Length, edit.NewText, edit.NewPosition);
+        else await _module.InvokeVoidAsync("applyEditorEdit", _root, edit.Replacement.Start, edit.Replacement.Length,
+                edit.NewText, edit.NewPosition);
         if (edit.Command is not null && Document.FilePath is { } path)
             await ExtendedProvider.ExecuteCommandAsync(path, edit.Command, default);
     }
@@ -653,8 +695,10 @@
             if (response.SourceVersion == Document.Version && response.Value is { } formatted)
             {
                 _formatDiagnostic = formatted.Text == Value ? "Provider returned unchanged text" : "Applied";
-                await _module.InvokeVoidAsync("replaceEditorText", _root, formatted.Text,
-                    formatted.SelectionStart, formatted.SelectionLength);
+                if (_monaco is not null)
+                    await _monaco.ReplaceTextAsync(formatted.Text, formatted.SelectionStart, formatted.SelectionLength);
+                else await _module.InvokeVoidAsync("replaceEditorText", _root, formatted.Text,
+                        formatted.SelectionStart, formatted.SelectionLength);
             }
             else _formatDiagnostic = $"Stale or empty response at document version {Document.Version}";
         }
@@ -664,7 +708,8 @@
     private async Task UpdateAnchorAsync(int caret, bool hover = false)
     {
         if (_module is null) return;
-        var anchor = await _module.InvokeAsync<double[]>("getEditorAnchor", _root, caret);
+        var anchor = _monaco is not null ? await _monaco.GetAnchorAsync(caret)
+            : await _module.InvokeAsync<double[]>("getEditorAnchor", _root, caret);
         if (anchor.Length != 2) return;
         if (hover) { _hoverPopupX = anchor[0]; _hoverPopupY = anchor[1]; }
         else { _popupX = anchor[0]; _popupY = anchor[1]; }

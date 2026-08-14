@@ -13,7 +13,11 @@
     [Parameter] public IReadOnlyList<LanguageDiagnostic> Diagnostics { get; set; } = [];
     [Parameter] public IReadOnlySet<int> BreakpointLines { get; set; } = new HashSet<int>();
     [Parameter] public int? ExecutionLine { get; set; }
+    [Parameter] public IReadOnlyList<SemanticSpan> SemanticSpans { get; set; } = [];
+    [Parameter] public bool SuggestionsEnabled { get; set; } = true;
+    [Parameter] public bool BraceGuides { get; set; }
     [Parameter] public EventCallback<BreakpointToggleRequest> BreakpointToggled { get; set; }
+    [Parameter] public EventCallback<EditorInputCommand> CommandRequested { get; set; }
 
     private ElementReference _root;
     private IJSObjectReference? _module;
@@ -27,13 +31,13 @@
             _module = await JS.InvokeAsync<IJSObjectReference>("import", "./monaco-editor-host.js");
             _self = DotNetObjectReference.Create(this);
             await _module.InvokeVoidAsync("createEditor", _root, Document.Id.ToString("N"), Document.FilePath,
-                LanguageId(Document.FilePath), Value, Document.Version, WordWrap, ViewState.SelectionStart, ViewState.SelectionEnd,
+                LanguageId(Document.FilePath), Value, Document.Version, Options(), ViewState.SelectionStart, ViewState.SelectionEnd,
                 ViewState.ScrollTop, ViewState.ScrollLeft, _self);
             _created = true;
         }
         if (_created)
-            await _module!.InvokeVoidAsync("updateEditor", _root, Value, Document.Version, WordWrap, Markers(),
-                BreakpointLines, ExecutionLine);
+            await _module!.InvokeVoidAsync("updateEditor", _root, Value, Document.Version, Options(), Markers(),
+                BreakpointLines, ExecutionLine, SemanticSpans);
     }
 
     [JSInvokable]
@@ -54,6 +58,21 @@
     public Task ToggleBreakpoint(int line) => Document.FilePath is null
         ? Task.CompletedTask : BreakpointToggled.InvokeAsync(new(Document.FilePath, line));
 
+    [JSInvokable]
+    public Task Command(string command, int position) => CommandRequested.InvokeAsync(new(command, position));
+
+    internal Task ApplyEditAsync(int start, int length, string text, int? newPosition) =>
+        _module!.InvokeVoidAsync("applyEditorEdit", _root, start, length, text, newPosition).AsTask();
+
+    internal Task ReplaceTextAsync(string text, int selectionStart, int selectionLength) =>
+        _module!.InvokeVoidAsync("replaceEditorText", _root, text, selectionStart, selectionLength).AsTask();
+
+    internal Task SetSelectionAsync(int selectionStart, int selectionEnd) =>
+        _module!.InvokeVoidAsync("setEditorSelection", _root, selectionStart, selectionEnd).AsTask();
+
+    internal Task<double[]> GetAnchorAsync(int position) =>
+        _module!.InvokeAsync<double[]>("getEditorAnchor", _root, position).AsTask();
+
     private object[] Markers() => Diagnostics.Select(item => new
     {
         startLineNumber = item.StartLine + 1,
@@ -65,6 +84,13 @@
         message = item.Message,
         source = item.Source
     }).Cast<object>().ToArray();
+
+    private object Options()
+    {
+        var settings = Program.Configuration.Current;
+        return new { wordWrap = WordWrap, settings.TabSize, settings.Ligatures, settings.HighContrast,
+            lightTheme = settings.Theme == "Light", settings.ReducedMotion, SuggestionsEnabled, BraceGuides };
+    }
 
     private static string LanguageId(string? path) => Path.GetExtension(path)?.ToLowerInvariant() switch
     {
