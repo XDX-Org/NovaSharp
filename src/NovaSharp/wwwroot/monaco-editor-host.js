@@ -99,7 +99,14 @@ export async function createEditor(root, documentId, filePath, languageId, value
         editor.onKeyDown(event => {
             const key = event.browserEvent.key;
             const modifier = event.ctrlKey || event.metaKey;
-            if (modifier && ['z', 'y'].includes(key.toLowerCase())) { event.stopPropagation(); return; }
+            if (modifier && ['z', 'y'].includes(key.toLowerCase())) {
+                event.preventDefault();
+                event.stopPropagation();
+                const position = editor.getPosition();
+                const command = key.toLowerCase() === 'y' || event.shiftKey ? 'redo' : 'undo';
+                dotNet.invokeMethodAsync('Command', command, position ? offset(position) : 0);
+                return;
+            }
             const popup = root.closest('.code-editor')?.querySelector('.completion-popup');
             const selectedCompletion = popup?.querySelector('.selected');
             if (selectedCompletion?.dataset.commit?.includes(key) && key.length === 1) {

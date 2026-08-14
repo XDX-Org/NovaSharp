@@ -112,6 +112,7 @@
                                    LanguageAnalysisRevision="_languageAnalysisRevision"
                                    SuggestionsEnabled="_suggestions" SemanticHighlighting="Program.Configuration.Current.SemanticHighlighting"
                                    BraceGuides="_braceGuides"
+                                   NavigationRevision="_navigationRevision"
                                    ExternalDragActive="_explorerFileDrag is not null"
                                    ActiveChanged="ActiveChangedAsync" ContentEdited="ContentEditedAsync"
                                    CloseRequested="CloseRequestedAsync" LanguageCommand="HandleLanguageCommandAsync" />
@@ -278,6 +279,7 @@
     private readonly BuildRunService _buildRun;
     private readonly TerminalService _terminal = new();
     private DebugAdapterSession? _debugSession;
+    private long _navigationRevision;
     private readonly List<(LanguageServerKind Kind, LanguageServerManager Manager)> _languageServers = [];
     private readonly Dictionary<LanguageServerManager, LanguageDocumentCoordinator> _languageCoordinators = [];
     private readonly HashSet<EditorDocumentState> _languageDocuments = [];
@@ -1281,6 +1283,8 @@
             case "rename": _renamePosition = command.Position; _renameName = ""; break;
             case "back": await NavigateBackAsync(); break;
             case "forward": await NavigateForwardAsync(); break;
+            case "undo": Undo(); break;
+            case "redo": Redo(); break;
             case "workspace-edit" when command.Edit is not null:
                 _pendingWorkspaceEdit = command.Edit; _editPreview = _workspaceEdits.Preview(command.Edit); break;
             case "navigation-empty": _status = "No navigation results."; break;
@@ -1331,6 +1335,7 @@
             if (tab is null) return;
             tab.ViewState.Restore(state.SelectionStart, state.SelectionEnd, state.ScrollTop, state.ScrollLeft,
                 tab.Document.Content?.Length ?? 0);
+            _navigationRevision++;
             TrackActiveDocument();
             await SaveLayoutAsync();
         }

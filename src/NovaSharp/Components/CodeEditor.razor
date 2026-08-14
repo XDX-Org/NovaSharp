@@ -19,7 +19,7 @@
                           Diagnostics="_diagnostics" BreakpointLines="BreakpointLines" ExecutionLine="ExecutionLine"
                           BreakpointToggled="BreakpointToggled" CommandRequested="MonacoCommandAsync"
                           SemanticSpans="_semanticSpans" SuggestionsEnabled="SuggestionsEnabled"
-                          BraceGuides="BraceGuides" />
+                          BraceGuides="BraceGuides" Ready="MonacoReady" />
     }
     else
     {
@@ -182,6 +182,7 @@
     private string? _languageReadyKey;
     private int _semanticRevision, _renderedSemanticRevision, _presentationGeneration;
     private long _observedLanguageAnalysisRevision = -1;
+    private long _observedNavigationRevision;
     private int _selectedCompletion;
     private bool _outlineOpen;
     private bool _semanticReady;
@@ -274,6 +275,11 @@
         if (readyKey is not null && LanguageAnalysisRevision != _observedLanguageAnalysisRevision)
             _refreshLanguageAfterRender = true;
         _observedLanguageAnalysisRevision = LanguageAnalysisRevision;
+        if (_observedNavigationRevision != NavigationRevision)
+        {
+            _observedNavigationRevision = NavigationRevision;
+            _synchronizeViewStateAfterRender = true;
+        }
         _languageReadyKey = readyKey;
     }
     private string PopupStyle => $"left:{_popupX}px;top:{_popupY}px";
@@ -309,9 +315,16 @@
         {
             if (_synchronizeViewStateAfterRender)
             {
-                _synchronizeViewStateAfterRender = false;
-                if (_monaco is not null) await _monaco.SetSelectionAsync(ViewState.SelectionStart, ViewState.SelectionEnd);
-                else await _module.InvokeVoidAsync("setEditorSelection", _root, ViewState.SelectionStart, ViewState.SelectionEnd);
+                if (_monaco is { IsReady: true })
+                {
+                    _synchronizeViewStateAfterRender = false;
+                    await _monaco.SetSelectionAsync(ViewState.SelectionStart, ViewState.SelectionEnd);
+                }
+                else if (_monaco is null)
+                {
+                    _synchronizeViewStateAfterRender = false;
+                    await _module.InvokeVoidAsync("setEditorSelection", _root, ViewState.SelectionStart, ViewState.SelectionEnd);
+                }
             }
             await _module.InvokeVoidAsync("fitLanguagePopups", _root);
             if (_scrollCompletionAfterRender)
@@ -363,6 +376,7 @@
     }
 
     private Task MonacoCommandAsync(EditorInputCommand request) => EditorCommand(request.Command, request.Position);
+    private Task MonacoReady() => InvokeAsync(StateHasChanged);
 
     [JSInvokable]
     public async Task EditorCommand(string command, int caret)
@@ -394,6 +408,8 @@
             case "rename" when Has(LanguageCapabilities.Rename):
                 await LanguageCommand.InvokeAsync(new(command, caret)); break;
             case "back": case "forward":
+                await LanguageCommand.InvokeAsync(new(command, caret)); break;
+            case "undo": case "redo":
                 await LanguageCommand.InvokeAsync(new(command, caret)); break;
             case "code-actions" when Has(LanguageCapabilities.CodeActions):
                 _codeActions = await ExtendedProvider.GetCodeActionsAsync(Request(caret), default);
