@@ -31,6 +31,20 @@ function state(root) {
     return root.__novaMonaco;
 }
 
+function semanticClass(classification) {
+    const value = classification.toLowerCase().replaceAll(/[^a-z0-9]/g, '');
+    const mappings = [['comment', 'comment'], ['string', 'string'], ['attributevalue', 'string'], ['number', 'number'],
+        ['keyword', 'keyword'], ['directive', 'keyword'], ['transition', 'razortransition'],
+        ['componentattribute', 'componentattribute'], ['component', 'component'], ['attribute', 'htmlattribute'],
+        ['element', 'htmltag'], ['taghelper', 'htmltag'], ['method', 'method'], ['function', 'method'],
+        ['property', 'property'], ['field', 'field'], ['constant', 'constant'], ['variable', 'variable'],
+        ['local', 'variable'], ['typeparameter', 'typeparameter'], ['parameter', 'parameter'],
+        ['enummember', 'enummember'], ['event', 'event'], ['namespace', 'namespace'], ['record', 'record'],
+        ['interface', 'interface'], ['struct', 'struct'], ['class', 'class'], ['type', 'type'], ['label', 'label'],
+        ['operator', 'operator'], ['regexp', 'regex'], ['regex', 'regex'], ['decorator', 'decorator'], ['macro', 'macro']];
+    return mappings.find(([part]) => value.includes(part))?.[1] ?? 'semantic';
+}
+
 export async function createEditor(root, documentId, filePath, languageId, value, version, options,
     selectionStart, selectionEnd, scrollTop, scrollLeft, dotNet) {
     const monaco = await loadMonaco();
@@ -87,6 +101,15 @@ export async function createEditor(root, documentId, filePath, languageId, value
             const modifier = event.ctrlKey || event.metaKey;
             if (modifier && ['z', 'y'].includes(key.toLowerCase())) { event.stopPropagation(); return; }
             const popup = root.closest('.code-editor')?.querySelector('.completion-popup');
+            const selectedCompletion = popup?.querySelector('.selected');
+            if (selectedCompletion?.dataset.commit?.includes(key) && key.length === 1) {
+                event.preventDefault();
+                event.stopPropagation();
+                const position = editor.getPosition();
+                dotNet.invokeMethodAsync('Command', 'completion-accept', position ? offset(position) : 0)
+                    .then(() => editor.trigger('completion', 'type', { text: key }));
+                return;
+            }
             let command;
             if (popup && ['ArrowDown', 'ArrowUp', 'Enter', 'Tab', 'Escape'].includes(key))
                 command = { ArrowDown: 'completion-next', ArrowUp: 'completion-previous', Enter: 'completion-accept',
@@ -157,9 +180,8 @@ export function updateEditor(root, value, version, options, markers, breakpointL
     for (const span of semanticSpans) {
         const start = current.entry.model.getPositionAt(span.start);
         const end = current.entry.model.getPositionAt(span.start + span.length);
-        const classification = span.classification.toLowerCase().replaceAll(/[^a-z0-9]/g, '');
         decorations.push({ range: new current.monaco.Range(start.lineNumber, start.column, end.lineNumber, end.column),
-            options: { inlineClassName: `token-${classification}` } });
+            options: { inlineClassName: `token-${semanticClass(span.classification)}` } });
     }
     current.decorations.set(decorations);
 }

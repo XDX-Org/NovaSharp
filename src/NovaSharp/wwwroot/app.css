@@ -437,6 +437,20 @@ body.resizing-editor-y { cursor: row-resize; user-select: none; }
 .token-regexgroup { color: var(--syntax-regex-group); }
 .token-regexcharacterclass { color: var(--syntax-regex-class); }
 .token-regexquantifier { color: var(--syntax-regex-quantifier); }
+.monaco-editor .token-keyword { color: var(--syntax-keyword) !important; }
+.monaco-editor .token-type, .monaco-editor .token-class, .monaco-editor .token-struct,
+.monaco-editor .token-interface, .monaco-editor .token-record { color: var(--syntax-type) !important; }
+.monaco-editor .token-method { color: var(--syntax-method) !important; }
+.monaco-editor .token-property, .monaco-editor .token-field { color: var(--syntax-member) !important; }
+.monaco-editor .token-parameter { color: var(--syntax-parameter) !important; }
+.monaco-editor .token-variable { color: var(--syntax-variable) !important; }
+.monaco-editor .token-constant { color: var(--syntax-constant) !important; }
+.monaco-editor .token-event { color: var(--syntax-event) !important; }
+.monaco-editor .token-namespace { color: var(--syntax-namespace) !important; }
+.monaco-editor .token-enummember { color: var(--syntax-enum-member) !important; }
+.monaco-editor .token-comment { color: var(--syntax-comment) !important; }
+.monaco-editor .token-string, .monaco-editor .token-regex { color: var(--syntax-string) !important; }
+.monaco-editor .token-number { color: var(--syntax-number) !important; }
 
 .editor-input {
     width: 100%;
