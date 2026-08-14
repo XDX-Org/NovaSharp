@@ -37,7 +37,7 @@ internal static class Program
         Phase9Solution = ReadOption(args, "--phase9-smoke");
         Phase11Workspace = ReadOption(args, "--phase11-smoke");
         Phase15Solution = ReadOption(args, "--phase15-smoke");
-        UseMonacoEditor = args.Contains("--monaco-editor", StringComparer.Ordinal);
+        UseMonacoEditor = !args.Contains("--legacy-editor", StringComparer.Ordinal);
         SmokeFile = Phase2SmokeFile ?? (Phase3Workspace is null ? null : Path.Combine(Phase3Workspace, "active.cs"))
             ?? (Phase15Solution is { } webSolution ? Path.Combine(Path.GetDirectoryName(webSolution)!, "Index.razor")
                 : (Phase9Solution ?? Phase8Solution ?? Phase7Solution) is not { } languageSolution ? null

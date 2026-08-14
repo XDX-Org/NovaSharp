@@ -48,7 +48,7 @@
           CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
-  <Target Name="ValidateMonacoAssets" BeforeTargets="Publish">
+  <Target Name="ValidateMonacoAssets" BeforeTargets="Build;Publish">
     <Error Condition="!Exists('wwwroot/monaco/asset-manifest.json')"
            Text="Monaco assets are missing. Run npm ci and npm run build:monaco before publishing." />
   </Target>

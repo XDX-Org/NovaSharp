@@ -71,9 +71,12 @@ Expect:
 
 Clone and run NovaSharp:
 
+Node.js 24 and the .NET SDK pinned by `global.json` are required.
+
 ```bash
 git clone https://github.com/XDX-Org/NovaSharp.git
 cd NovaSharp
+tools/build-monaco-assets.sh
 dotnet build NovaSharp.slnx
 dotnet run --project src/NovaSharp/NovaSharp.csproj
 ```
