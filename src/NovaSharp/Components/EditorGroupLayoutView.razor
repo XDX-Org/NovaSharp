@@ -85,8 +85,7 @@ else if (Node is EditorGroup group)
             @if (group.ActiveTab is { } active)
             {
                 @if (active.Document.Error is not null) { <div class="error" role="alert">@active.Document.Error</div> }
-                <CodeEditor Value="@(active.Document.Content ?? string.Empty)" ValueChanged="value => Edit(active, value)"
-                            EditsChanged="batch => Edit(active, batch)"
+                <CodeEditor Value="@(active.Document.Content ?? string.Empty)" EditsChanged="batch => Edit(active, batch)"
                             WordWrap="WordWrap" ViewState="active.ViewState" ViewStateChanged="ActiveChanged"
                             Document="active.Document" LanguageProvider="LanguageProvider"
                             Diagnostics="Diagnostics"
@@ -176,7 +175,6 @@ else if (Node is EditorGroup group)
         }
         HideContextMenu();
     }
-    private async Task Edit(DocumentTab tab, string value) { tab.Document.Content = value; if (tab.IsPreview) Workspace.Promote(tab); await ContentEdited.InvokeAsync(); }
     private async Task Edit(DocumentTab tab, EditorEditBatch batch)
     {
         if (!tab.Document.ApplyEdits(batch)) return;

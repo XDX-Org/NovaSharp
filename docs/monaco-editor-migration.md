@@ -6,8 +6,7 @@ Monaco is the default editor on the `monaco` branch. Local asset packaging, shar
 batches, view-state restoration, language-feature routing, semantic presentation, diagnostics, debugger decorations,
 settings, commands, packaged native smoke coverage, licenses, and release validation are implemented.
 
-The old renderer is reachable only with `--legacy-editor` while its DOM-specific historical smoke suites are moved
-to Monaco. It is not the normal application path.
+The old textarea/presentation renderer and its runtime switch have been removed. Monaco is the sole editor path.
 
 ## Goal
 

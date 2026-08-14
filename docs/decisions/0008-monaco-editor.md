@@ -23,12 +23,6 @@ commands, workspace-edit validation, and persisted view state through the host b
 All Monaco scripts, workers, styles, and license texts are generated from the exact npm lockfile and packaged under
 `wwwroot/monaco`; runtime CDN or network access is prohibited. Published builds fail when those assets are absent.
 
-## Compatibility path
-
-`--legacy-editor` temporarily retains the old textarea/presentation renderer for its existing DOM-specific native
-smoke suites. Normal application launches use Monaco. The compatibility path is not a second supported production
-editor and can be deleted after those smoke suites target Monaco directly.
-
 ## Consequences
 
 - Native browser input and Monaco handle IME, bidi text, wrapping, hit testing, multiple selections, and viewport
@@ -39,3 +33,4 @@ editor and can be deleted after those smoke suites target Monaco directly.
   workspace transactions, and bounded runtime state.
 - Full-model `setValue` updates are reserved for .NET-originated replacements; interactive typing uses incremental
   edit batches.
+- The former textarea/presentation renderer and its runtime switch are removed; Monaco is the sole editor path.
