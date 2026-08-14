@@ -240,6 +240,29 @@ public sealed class EditorCoreTests
         await Assert.ThrowsExactlyAsync<SaveConflictException>(() => document.SaveAsync());
     }
 
+    [TestMethod]
+    public async Task MonacoEditBatchIsAtomicAndVersioned()
+    {
+        using var document = await DocumentAsync("alpha beta gamma");
+        var version = document.Version;
+        Assert.IsTrue(document.ApplyEdits(new(version,
+            [new(11, 5, "delta"), new(0, 5, "one")], 3, 3)));
+        Assert.AreEqual("one beta delta", document.Content);
+        Assert.AreEqual(version + 1, document.Version);
+        document.Undo();
+        Assert.AreEqual("alpha beta gamma", document.Content);
+    }
+
+    [TestMethod]
+    public async Task MonacoEditBatchRejectsStaleOrOverlappingChanges()
+    {
+        using var document = await DocumentAsync("abcdef");
+        Assert.IsFalse(document.ApplyEdits(new(document.Version - 1, [new(0, 1, "x")], 0, 0)));
+        Assert.IsFalse(document.ApplyEdits(new(document.Version,
+            [new(1, 3, "x"), new(2, 2, "y")], 0, 0)));
+        Assert.AreEqual("abcdef", document.Content);
+    }
+
     private static async Task<EditorDocumentState> DocumentAsync(string content)
     {
         var document = new EditorDocumentState();

@@ -5,7 +5,7 @@
 
 @code {
     [Parameter, EditorRequired] public string Value { get; set; } = string.Empty;
-    [Parameter, EditorRequired] public EventCallback<string> ValueChanged { get; set; }
+    [Parameter, EditorRequired] public EventCallback<EditorEditBatch> EditsChanged { get; set; }
     [Parameter, EditorRequired] public EditorDocumentState Document { get; set; } = null!;
     [Parameter, EditorRequired] public EditorViewState ViewState { get; set; } = null!;
     [Parameter] public EventCallback ViewStateChanged { get; set; }
@@ -27,20 +27,19 @@
             _module = await JS.InvokeAsync<IJSObjectReference>("import", "./monaco-editor-host.js");
             _self = DotNetObjectReference.Create(this);
             await _module.InvokeVoidAsync("createEditor", _root, Document.Id.ToString("N"), Document.FilePath,
-                LanguageId(Document.FilePath), Value, WordWrap, ViewState.SelectionStart, ViewState.SelectionEnd,
+                LanguageId(Document.FilePath), Value, Document.Version, WordWrap, ViewState.SelectionStart, ViewState.SelectionEnd,
                 ViewState.ScrollTop, ViewState.ScrollLeft, _self);
             _created = true;
         }
         if (_created)
-            await _module!.InvokeVoidAsync("updateEditor", _root, Value, WordWrap, Markers(),
+            await _module!.InvokeVoidAsync("updateEditor", _root, Value, Document.Version, WordWrap, Markers(),
                 BreakpointLines, ExecutionLine);
     }
 
     [JSInvokable]
-    public async Task ModelChanged(string value, int selectionStart, int selectionEnd)
+    public Task ModelChanged(long baseVersion, EditorTextEdit[] edits, int selectionStart, int selectionEnd)
     {
-        ViewState.SetSelection(selectionStart, selectionEnd, value.Length);
-        await ValueChanged.InvokeAsync(value);
+        return EditsChanged.InvokeAsync(new(baseVersion, edits, selectionStart, selectionEnd));
     }
 
     [JSInvokable]

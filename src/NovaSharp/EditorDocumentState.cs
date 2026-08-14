@@ -28,6 +28,10 @@ public readonly record struct DiskStamp(long Length, DateTime LastWriteUtc, stri
     }
 }
 
+public readonly record struct EditorTextEdit(int Start, int Length, string Text);
+public sealed record EditorEditBatch(long BaseVersion, IReadOnlyList<EditorTextEdit> Edits,
+    int SelectionStart, int SelectionEnd);
+
 internal sealed class SaveConflictException(string path)
     : IOException($"'{Path.GetFileName(path)}' changed on disk. Reload it or use Save As.");
 
@@ -240,6 +244,26 @@ public sealed class EditorDocumentState : IDisposable
     }
 
     internal void ApplyEdit(TextEdit edit) => SetContent(edit.Apply(_content ?? string.Empty), recordUndo: true);
+
+    internal bool ApplyEdits(EditorEditBatch batch)
+    {
+        if (batch.BaseVersion != Version || batch.Edits.Count == 0) return false;
+        var original = _content ?? string.Empty;
+        var ordered = batch.Edits.OrderByDescending(edit => edit.Start).ToArray();
+        var previousStart = original.Length;
+        foreach (var edit in ordered)
+        {
+            if (edit.Start < 0 || edit.Length < 0 || edit.Start + edit.Length > original.Length
+                || edit.Start + edit.Length > previousStart) return false;
+            previousStart = edit.Start;
+        }
+        var updated = original;
+        foreach (var edit in ordered)
+            updated = string.Concat(updated.AsSpan(0, edit.Start), edit.Text,
+                updated.AsSpan(edit.Start + edit.Length));
+        SetContent(updated, recordUndo: true);
+        return true;
+    }
 
     internal void ReplaceAll(string query, string replacement, bool matchCase = false) =>
         SetContent(TextSearch.ReplaceAll(_content ?? string.Empty, query, replacement, matchCase), recordUndo: true);

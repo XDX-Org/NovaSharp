@@ -87,7 +87,7 @@ else if (Node is EditorGroup group)
                 @if (active.Document.Error is not null) { <div class="error" role="alert">@active.Document.Error</div> }
                 @if (Program.UseMonacoEditor)
                 {
-                    <MonacoEditorHost Value="@(active.Document.Content ?? string.Empty)" ValueChanged="value => Edit(active, value)"
+                    <MonacoEditorHost Value="@(active.Document.Content ?? string.Empty)" EditsChanged="batch => Edit(active, batch)"
                                       Document="active.Document" ViewState="active.ViewState" ViewStateChanged="ActiveChanged"
                                       WordWrap="WordWrap" Diagnostics="Diagnostics"
                                       BreakpointLines="@(active.Document.FilePath is { } monacoBreakpointPath ? BreakpointsForSource(monacoBreakpointPath) : new HashSet<int>())"
@@ -188,6 +188,13 @@ else if (Node is EditorGroup group)
         HideContextMenu();
     }
     private async Task Edit(DocumentTab tab, string value) { tab.Document.Content = value; if (tab.IsPreview) Workspace.Promote(tab); await ContentEdited.InvokeAsync(); }
+    private async Task Edit(DocumentTab tab, EditorEditBatch batch)
+    {
+        if (!tab.Document.ApplyEdits(batch)) return;
+        tab.ViewState.SetSelection(batch.SelectionStart, batch.SelectionEnd, tab.Document.Content?.Length ?? 0);
+        if (tab.IsPreview) Workspace.Promote(tab);
+        await ContentEdited.InvokeAsync();
+    }
     private Task DropOnTabAsync(EditorGroup group, int index, DragEventArgs args) => DropAsync(group, index, null, args);
     private Task DropEdgeAsync(EditorGroup group, SplitDirection direction, DragEventArgs args) => DropAsync(group, null, direction, args);
     private Task DropCenterAsync(EditorGroup group, DragEventArgs args) => DropAsync(group, null, null, args);
