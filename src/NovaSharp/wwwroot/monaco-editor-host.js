@@ -51,7 +51,7 @@ export async function createEditor(root, documentId, filePath, languageId, value
     let entry = models.get(documentId);
     if (!entry) {
         entry = { model: monaco.editor.createModel(value, languageId, modelUri(monaco, documentId, filePath)),
-            version, clients: new Map(), owner: undefined, applying: false, views: 0, lastUsed: Date.now() };
+            version, languageId, clients: new Map(), owner: undefined, applying: false, views: 0, lastUsed: Date.now() };
         entry.modelListener = entry.model.onDidChangeContent(event => {
             if (entry.applying) return;
             const client = entry.clients.get(entry.owner) ?? [...entry.clients.values()].find(item => item.editor.hasTextFocus())
@@ -162,7 +162,7 @@ export async function createEditor(root, documentId, filePath, languageId, value
         get hoverTimer() { return hoverTimer; } };
 }
 
-export function updateEditor(root, value, version, options, markers, breakpointLines, executionLine, semanticSpans) {
+export function updateEditor(root, value, version, languageId, options, markers, breakpointLines, executionLine, semanticSpans) {
     const current = state(root);
     current.monaco.editor.setTheme(options.highContrast ? 'hc-black' : options.lightTheme ? 'vs' : 'vs-dark');
     current.editor.updateOptions({ wordWrap: options.wordWrap ? 'on' : 'off', fontLigatures: options.ligatures,
@@ -170,6 +170,10 @@ export function updateEditor(root, value, version, options, markers, breakpointL
         guides: { bracketPairs: options.braceGuides, indentation: options.braceGuides },
         cursorBlinking: options.reducedMotion ? 'solid' : 'blink' });
     current.entry.model.updateOptions({ tabSize: options.tabSize });
+    if (current.entry.languageId !== languageId) {
+        current.monaco.editor.setModelLanguage(current.entry.model, languageId);
+        current.entry.languageId = languageId;
+    }
     if (current.entry.model.getValue() !== value) {
         current.entry.applying = true;
         current.entry.model.setValue(value);

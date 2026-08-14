@@ -44,7 +44,7 @@
             }
         }
         if (_created)
-            await _module!.InvokeVoidAsync("updateEditor", _root, Value, Document.Version, Options(), Markers(),
+            await _module!.InvokeVoidAsync("updateEditor", _root, Value, Document.Version, LanguageId(Document.FilePath), Options(), Markers(),
                 BreakpointLines, ExecutionLine, SemanticSpans);
     }
 
