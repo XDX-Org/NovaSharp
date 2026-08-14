@@ -85,7 +85,18 @@ else if (Node is EditorGroup group)
             @if (group.ActiveTab is { } active)
             {
                 @if (active.Document.Error is not null) { <div class="error" role="alert">@active.Document.Error</div> }
-                <CodeEditor Value="@(active.Document.Content ?? string.Empty)" ValueChanged="value => Edit(active, value)"
+                @if (Program.UseMonacoEditor)
+                {
+                    <MonacoEditorHost Value="@(active.Document.Content ?? string.Empty)" ValueChanged="value => Edit(active, value)"
+                                      Document="active.Document" ViewState="active.ViewState" ViewStateChanged="ActiveChanged"
+                                      WordWrap="WordWrap" Diagnostics="Diagnostics"
+                                      BreakpointLines="@(active.Document.FilePath is { } monacoBreakpointPath ? BreakpointsForSource(monacoBreakpointPath) : new HashSet<int>())"
+                                      ExecutionLine="@(active.Document.FilePath is { } monacoExecutionPath ? ExecutionLineForSource(monacoExecutionPath) : null)"
+                                      BreakpointToggled="BreakpointToggled" />
+                }
+                else
+                {
+                    <CodeEditor Value="@(active.Document.Content ?? string.Empty)" ValueChanged="value => Edit(active, value)"
                             WordWrap="WordWrap" ViewState="active.ViewState" ViewStateChanged="ActiveChanged"
                             Document="active.Document" LanguageProvider="LanguageProvider"
                             Diagnostics="Diagnostics"
@@ -100,6 +111,7 @@ else if (Node is EditorGroup group)
                             BreakpointToggled="BreakpointToggled"
                             LanguageCommand="LanguageCommand"
                             @key="(active.Id, WordWrap, BraceGuides)" />
+                }
             }
             @if (Workspace.DraggedTab is not null || ExternalDragActive)
             {

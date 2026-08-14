@@ -79,6 +79,7 @@ public sealed class EditorViewState
 
 public sealed class EditorDocumentState : IDisposable
 {
+    internal Guid Id { get; } = Guid.NewGuid();
     private string? _content;
     private long _savedVersion;
     private DiskStamp? _diskStamp;
