@@ -135,6 +135,10 @@
     [Parameter] public bool SemanticHighlighting { get; set; } = true;
     [Parameter] public bool BraceGuides { get; set; }
     [Parameter] public bool WordWrap { get; set; }
+    [Parameter] public IReadOnlySet<int> BreakpointLines { get; set; } = new HashSet<int>();
+    [Parameter] public int? ExecutionLine { get; set; }
+    [Parameter] public long NavigationRevision { get; set; }
+    [Parameter] public EventCallback<BreakpointToggleRequest> BreakpointToggled { get; set; }
     [Parameter, EditorRequired] public EditorViewState ViewState { get; set; } = null!;
     [Parameter] public EventCallback ViewStateChanged { get; set; }
     [Parameter] public EventCallback<EditorLanguageCommand> LanguageCommand { get; set; }
