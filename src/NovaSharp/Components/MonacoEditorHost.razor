@@ -39,7 +39,7 @@
             await Ready.InvokeAsync();
             if (Program.Phase2SmokeFile is not null)
             {
-                var result = await _module.InvokeAsync<EditorSmokeResult>("runSmokeChecks", _root);
+                var result = await _module.InvokeAsync<EditorSmokeResult>("runSmokeChecks", _root, Value);
                 await Program.CompleteSmokeAsync(result);
             }
         }

@@ -14,7 +14,7 @@
     }
     @if (Program.UseMonacoEditor)
     {
-        <MonacoEditorHost @ref="_monaco" Value="Value" EditsChanged="MonacoEditsChanged" Document="Document"
+        <MonacoEditorHost @ref="_monaco" Value="@Value" EditsChanged="MonacoEditsChanged" Document="Document"
                           ViewState="ViewState" ViewStateChanged="ViewStateChanged" WordWrap="WordWrap"
                           Diagnostics="_diagnostics" BreakpointLines="BreakpointLines" ExecutionLine="ExecutionLine"
                           BreakpointToggled="BreakpointToggled" CommandRequested="MonacoCommandAsync"

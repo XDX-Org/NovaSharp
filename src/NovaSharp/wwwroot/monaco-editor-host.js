@@ -229,7 +229,7 @@ export function getEditorAnchor(root, position) {
     return location ? [location.left, location.top + location.height] : [72, 24];
 }
 
-export async function runSmokeChecks(root) {
+export async function runSmokeChecks(root, expectedValue) {
     const current = state(root);
     const editor = current.editor;
     const model = current.entry.model;
@@ -259,7 +259,7 @@ export async function runSmokeChecks(root) {
     await new Promise(resolve => setTimeout(resolve, 100));
     const renderedRows = root.querySelectorAll('.view-line').length;
     const rowLimit = Math.ceil(root.clientHeight / 20) + 64;
-    return { inputPresent: !!root.querySelector('.monaco-editor'), selectionReplacement, bracketPairing,
+    return { inputPresent: !!root.querySelector('.monaco-editor') && original === expectedValue, selectionReplacement, bracketPairing,
         tabInsertion, compositionCommittedOnce, rowsBounded: renderedRows > 0 && renderedRows <= rowLimit, renderedRows };
 }
 
