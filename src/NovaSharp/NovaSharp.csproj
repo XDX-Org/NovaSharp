@@ -42,7 +42,14 @@
           CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Condition="'$(RuntimeIdentifier)' != ''" />
     <None Include="../../THIRD-PARTY-NOTICES-LANGUAGESERVERS.md" Link="THIRD-PARTY-NOTICES-LANGUAGESERVERS.md"
           CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="../../THIRD-PARTY-NOTICES-MONACO.md" Link="THIRD-PARTY-NOTICES-MONACO.md"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Include="../../LANGUAGE-SERVERS.spdx.json" Link="LANGUAGE-SERVERS.spdx.json"
           CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
+
+  <Target Name="ValidateMonacoAssets" BeforeTargets="Publish">
+    <Error Condition="!Exists('wwwroot/monaco/asset-manifest.json')"
+           Text="Monaco assets are missing. Run npm ci and npm run build:monaco before publishing." />
+  </Target>
 </Project>

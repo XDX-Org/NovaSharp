@@ -28,6 +28,8 @@ project.lock.json
 project.fragment.lock.json
 artifacts/
 /src/NovaSharp/DebugAdapters/Assets/
+node_modules/
+/src/NovaSharp/wwwroot/monaco/
 
 # ASP.NET Scaffolding
 ScaffoldingReadMe.txt

@@ -98,6 +98,46 @@
       "licenseConcluded": "MIT",
       "licenseDeclared": "MIT",
       "copyrightText": "Copyright Samsung Electronics Co., Ltd."
+    },
+    {
+      "SPDXID": "SPDXRef-MonacoEditor",
+      "name": "monaco-editor",
+      "versionInfo": "0.56.0",
+      "downloadLocation": "https://www.npmjs.com/package/monaco-editor/v/0.56.0",
+      "filesAnalyzed": false,
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
+      "copyrightText": "Copyright Microsoft Corporation"
+    },
+    {
+      "SPDXID": "SPDXRef-DOMPurify",
+      "name": "DOMPurify",
+      "versionInfo": "3.4.8",
+      "downloadLocation": "https://www.npmjs.com/package/dompurify/v/3.4.8",
+      "filesAnalyzed": false,
+      "licenseConcluded": "Apache-2.0",
+      "licenseDeclared": "(MPL-2.0 OR Apache-2.0)",
+      "copyrightText": "Copyright DOMPurify contributors"
+    },
+    {
+      "SPDXID": "SPDXRef-Marked",
+      "name": "marked",
+      "versionInfo": "14.0.0",
+      "downloadLocation": "https://www.npmjs.com/package/marked/v/14.0.0",
+      "filesAnalyzed": false,
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
+      "copyrightText": "Copyright marked contributors"
+    },
+    {
+      "SPDXID": "SPDXRef-TrustedTypes",
+      "name": "@types/trusted-types",
+      "versionInfo": "2.0.7",
+      "downloadLocation": "https://www.npmjs.com/package/@types/trusted-types/v/2.0.7",
+      "filesAnalyzed": false,
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
+      "copyrightText": "Copyright DefinitelyTyped contributors"
     }
   ],
   "relationships": [
@@ -109,6 +149,10 @@
     { "spdxElementId": "SPDXRef-DOCUMENT", "relationshipType": "DESCRIBES", "relatedSpdxElement": "SPDXRef-TypeScriptLanguageServer" },
     { "spdxElementId": "SPDXRef-DOCUMENT", "relationshipType": "DESCRIBES", "relatedSpdxElement": "SPDXRef-TypeScript" },
     { "spdxElementId": "SPDXRef-DOCUMENT", "relationshipType": "DESCRIBES", "relatedSpdxElement": "SPDXRef-Netcoredbg313" },
-    { "spdxElementId": "SPDXRef-DOCUMENT", "relationshipType": "DESCRIBES", "relatedSpdxElement": "SPDXRef-Netcoredbg320" }
+    { "spdxElementId": "SPDXRef-DOCUMENT", "relationshipType": "DESCRIBES", "relatedSpdxElement": "SPDXRef-Netcoredbg320" },
+    { "spdxElementId": "SPDXRef-DOCUMENT", "relationshipType": "DESCRIBES", "relatedSpdxElement": "SPDXRef-MonacoEditor" },
+    { "spdxElementId": "SPDXRef-DOCUMENT", "relationshipType": "DESCRIBES", "relatedSpdxElement": "SPDXRef-DOMPurify" },
+    { "spdxElementId": "SPDXRef-DOCUMENT", "relationshipType": "DESCRIBES", "relatedSpdxElement": "SPDXRef-Marked" },
+    { "spdxElementId": "SPDXRef-DOCUMENT", "relationshipType": "DESCRIBES", "relatedSpdxElement": "SPDXRef-TrustedTypes" }
   ]
 }

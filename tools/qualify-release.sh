@@ -5,6 +5,7 @@ root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$root"
 jq empty LANGUAGE-SERVERS.spdx.json
 rid=${NOVASHARP_RELEASE_RID:-linux-x64}
+tools/build-monaco-assets.sh
 dotnet restore NovaSharp.slnx -r "$rid" -p:Configuration=Release
 dotnet build NovaSharp.slnx --no-restore --configuration Release --warnaserror
 dotnet tests/NovaSharp.Tests/bin/Release/net10.0/NovaSharp.Tests.dll --progress off
