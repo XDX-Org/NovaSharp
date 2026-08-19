@@ -26,7 +26,9 @@ Split(horizontal, 0.58)
     └── Group(tabs: A-copy)
 ```
 
-Each leaf is an editor group; each branch owns orientation and size ratio. Normalize away empty branches. Duplicate views share one `EditorDocument` and presentation cache entry but retain separate `EditorViewState` records, following DnSpyXDX's separation of document keys from tab/view state. VS Code and Visual Studio provide the interaction reference for moving, copying, and splitting tabs ([VS Code side-by-side editing](https://code.visualstudio.com/docs/editing/userinterface), [Visual Studio editor windows](https://learn.microsoft.com/en-us/visualstudio/ide/how-to-manage-editor-windows?view=visualstudio)).
+Each leaf is an editor group; each branch owns orientation and size ratio. Normalize away empty branches. Duplicate views use separate Monaco editor instances attached to the same `ITextModel`, sharing text and undo history while retaining separate validated view-state records. VS Code and Visual Studio provide the interaction reference for moving, copying, and splitting tabs ([VS Code side-by-side editing](https://code.visualstudio.com/docs/editing/userinterface), [Visual Studio editor windows](https://learn.microsoft.com/en-us/visualstudio/ide/how-to-manage-editor-windows?view=visualstudio)).
+
+Creating, moving, resizing, or closing a view must not clone model text or synchronously query .NET. Resize notifications are frame-coalesced; editor/model leases and observers have idempotent disposal. Layout persistence runs asynchronously from immutable snapshots.
 
 ## Completion criteria
 
@@ -36,6 +38,7 @@ Each leaf is an editor group; each branch owns orientation and size ratio. Norma
 - Closing one copied view does not dispose its shared model or prompt to save unnecessarily.
 - Layout restoration is deterministic and safely falls back to one group on invalid data.
 - Pointer, keyboard, high-DPI, and narrow-window interaction tests cover splitters and drop zones.
+- Split creation, rapid resize, movement, and closure stay within frame-time and memory budgets with two views editing concurrently.
 
 ## Next phase
 

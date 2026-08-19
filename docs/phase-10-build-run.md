@@ -20,6 +20,8 @@ Terminal emulation and debugging are deferred to phases 11–13.
 - Prefer structured MSBuild logging. Keep raw logs separately; console parsing is a fallback for third-party tools.
 - Track the complete owned process tree without signaling unrelated processes.
 - Define concurrency policy for restore/build/run and serialize conflicting operations.
+- Read stdout/stderr asynchronously into bounded channels and batch UI publication. Process output, structured-log parsing, and diagnostics may not run on the renderer thread.
+- Allow independent project operations only when MSBuild/process ownership says they do not conflict; enforce global and per-workspace limits and give user-started stop/restart commands priority.
 - Redact secrets in commands and environment values displayed or logged.
 
 ## Completion criteria
@@ -29,6 +31,7 @@ Terminal emulation and debugging are deferred to phases 11–13.
 - Cancellation and application shutdown clean up owned descendants on every supported OS.
 - Invalid SDKs, restore failures, malformed profiles, huge output, and interactive input fail recoverably.
 - Numeric cancellation, cleanup, output-memory, and diagnostic-publication budgets are met.
+- Output floods, concurrent requests, cancellation races, and shutdown do not starve Monaco input or leak background readers/processes.
 
 ## Next phase
 

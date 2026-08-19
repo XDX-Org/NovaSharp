@@ -12,6 +12,7 @@ Make the C# workbench resilient and configurable enough for sustained daily use.
 - Crash recovery for dirty buffers and startup safe mode after repeated restoration failure.
 - Storage/schema migration, reset/export diagnostics, and documented data locations.
 - Full-workbench profiling and correction of lifecycle, startup, typing, and memory regressions.
+- Scheduler diagnostics for queue depth, active workers, cancellation/coalescing, replica lag, UI long tasks, and saturation.
 
 ## Design constraints
 
@@ -20,6 +21,8 @@ Make the C# workbench resilient and configurable enough for sustained daily use.
 - Dirty-buffer recovery is isolated from optional layout restoration and never overwrites the original file automatically.
 - Secret values use platform credential storage or remain outside ordinary settings and diagnostics.
 - All major flows must work without a pointer and with visible focus.
+- Persist asynchronously from immutable snapshots. Recovery checkpoints coalesce changes and run at low priority; they must not serialize Monaco content on every keystroke.
+- Profile contention and thread-pool starvation as well as elapsed time. Tune bounded concurrency per workload and retain single-writer state coordinators.
 
 ## Completion criteria
 
@@ -28,6 +31,7 @@ Make the C# workbench resilient and configurable enough for sustained daily use.
 - Keyboard-only and screen-reader passes cover shell, Explorer, tabs, splits, editor, Problems, output, terminal, and debugger.
 - Repeated open/close, workspace switching, reload, terminal, and debug cycles show no unbounded resource growth.
 - Startup, idle memory, typing, restoration, recovery, and sustained-session budgets pass on named fixtures.
+- Typing remains within budget during solution load, search, build output, terminal floods, diagnostics, and debugging; no queue, task, model, worker, or snapshot grows without a configured bound.
 
 ## Next phase
 

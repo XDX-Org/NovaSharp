@@ -16,12 +16,14 @@ Turn language analysis into an IDE workflow for finding, understanding, and fixi
 
 ## Design constraints
 
-- The .NET diagnostic store is authoritative. Visible line rows project intersecting diagnostic spans into underlines, gutter glyphs, overview marks, and accessible hover/focus details; virtualization must not limit the Problems list.
-- Diagnostic and semantic decorations are versioned interval data merged during line presentation, following DnSpyXDX's existing visible-token decoration approach.
+- The .NET diagnostic store is authoritative. Publish exact-version diagnostics to Monaco with `setModelMarkers`, using a stable owner per producer; the independent Problems store is not limited to visible lines.
+- Use Monaco providers for definition/type/implementation/references, rename, code actions, symbols, and Peek where supported. Monaco owns editor-local result UI; NovaSharp owns cross-file navigation history and validates workspace edits.
+- Do not overlay syntax or semantic colors. Reserve Monaco decoration collections for non-token adornments that markers/providers do not cover, and update collections rather than recreating the editor.
 - Diagnostics are keyed by document version and producer. Publishing one producer's result must not erase another's.
 - Navigation chooses an existing view when sensible; Peek is transient and must not alter tab history until promoted.
 - Preview all multi-file edits. Reject or recompute when any affected document version differs.
 - Roslyn diagnostics naturally include compiler and pluggable analyzer results ([Roslyn diagnostic APIs](https://learn.microsoft.com/en-us/dotnet/csharp/roslyn-sdk/compiler-api-model)).
+- Run diagnostic producers, reference search, symbols, and workspace-edit preparation asynchronously on bounded workers. Prioritize the active document, cancel superseded versions, and merge independent producer results deterministically through a single diagnostic-store writer.
 
 ## Completion criteria
 
@@ -31,6 +33,7 @@ Turn language analysis into an IDE workflow for finding, understanding, and fixi
 - Rename updates open dirty documents and unopened files as one reviewed operation.
 - Canceling or failing a workspace edit leaves every buffer and disk file unchanged.
 - Accessibility announcements cover new errors and navigation results without overwhelming screen readers.
+- Diagnostics/navigation under rapid edits and concurrent project analysis stay within queue, latency, marker-count, result-count, and memory budgets without degrading Monaco typing.
 
 ## Next phase
 

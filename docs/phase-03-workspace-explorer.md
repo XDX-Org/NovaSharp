@@ -20,7 +20,9 @@ Solution/project semantics and source-control decorations are deferred. The tree
 ## Design constraints
 
 - A tool window stays alive when hidden, rather than losing its state. This matches the established role of Explorer-like tool windows ([Visual Studio tool windows](https://learn.microsoft.com/en-us/visualstudio/extensibility/visualstudio.extensibility/tool-window/tool-window?view=visualstudio)).
-- Tree nodes use stable canonical-path IDs. Expansion loads children on demand and enumeration runs off the UI thread.
+- Tree nodes use stable canonical-path IDs. Expansion awaits batched enumeration on the bounded background scheduler and publishes immutable child batches; it never performs filesystem work in a render callback.
+- Watcher events enter a bounded channel, are coalesced by canonical path, and update only affected branches. Overflow triggers a cancellable scoped rescan rather than unbounded event retention.
+- Independent directory reads may run concurrently up to a measured limit. Mutations affecting the same path/document registry are serialized and revalidated immediately before commit.
 - Detect symlink cycles and do not traverse outside the workspace through links unless explicitly allowed.
 - File operations update the document registry atomically so an open renamed file keeps its buffer.
 - Use virtualization or incremental rendering for large directories.
@@ -32,6 +34,7 @@ Solution/project semantics and source-control decorations are deferred. The tree
 - External create/rename/delete events update affected branches without rebuilding the whole tree.
 - Renaming an open dirty file retains its text, dirty state, and selection.
 - Invalid paths, permissions, symlink loops, and watcher overflow produce recoverable UI errors.
+- Expanding/canceling rapidly under watcher load stays within queue, worker, latency, and memory budgets without delaying Monaco input.
 
 ## Next phase
 

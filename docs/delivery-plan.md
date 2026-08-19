@@ -10,7 +10,7 @@ Source control UI, remote development, collaboration, notebooks, AI completion, 
 
 | Phase | Status | Exit evidence |
 |---|---|---|
-| 1. Single-file editor shell | Implemented; verification incomplete | Build passes; manual platform smoke tests remain |
+| 1. Monaco single-file editor shell | Planned | The existing textarea must be replaced; it does not meet the Monaco-first phase gate |
 | 2–17 | Planned | Completion criteria not yet met |
 
 Status values are `planned`, `in progress`, `blocked`, and `complete`. Update this table only from test or release evidence; documentation or partial UI alone does not complete a phase.
@@ -21,16 +21,29 @@ These are not separate feature phases. Introduce each boundary by the indicated 
 
 | Foundation | Required by | Minimum contract |
 |---|---:|---|
+| Dependency bootstrap | 1 | One documented command acquires hash-pinned Monaco, Roslyn/Razor, Node, and web-language assets for the current RID |
+| Monaco host and asset pipeline | 1 | Exact npm lock, local ESM bundle, functioning editor worker, deterministic disposal, no runtime CDN |
+| Async work scheduler | 1 | UI/background priority lanes, bounded queues, cancellation, backpressure, ownership, and observable saturation |
 | Command registry | 2 | Stable command ID, handler, enablement, keybinding, menu/palette metadata |
 | Configuration service | 2 | Typed defaults, user/workspace scopes, validation, atomic versioned storage |
 | Notification and logging | 2 | Structured severity, actionable errors, bounded local logs, source-text redaction |
-| Lifetime/task coordinator | 2 | Ownership, cancellation, stale-result rejection, disposal diagnostics |
+| Lifetime/task coordinator | 1 | Ownership, cancellation, stale-result rejection, disposal diagnostics |
 | Persistence service | 3 | Versioned schemas, portable workspace paths, atomic writes, corruption fallback |
 | Diagnostic store | 6 | Results keyed by producer, context, document version, and stable identity |
 | Process service | 10 | Argument arrays, explicit environment/working directory, process-tree ownership |
 | Capability/extension boundary | 7 | Internal provider contracts that can later be exposed selectively by phase 16 |
 
-Record decisions that constrain multiple phases as short ADRs under `docs/decisions/`. At minimum, decide editor input architecture before phase 2, project-system strategy before phase 6, terminal engine before phase 11, and debug adapter before phase 12.
+Record decisions that constrain multiple phases as short ADRs under `docs/decisions/`. The editor decision is fixed by [ADR 0001](decisions/0001-monaco-editor.md). Decide project-system strategy before phase 6, terminal engine before phase 11, and debug adapter before phase 12.
+
+## Required execution model
+
+- Monaco's browser thread owns typing, selection, IME, undo/redo, token rendering, editor widgets, and viewport work. No .NET round trip is allowed in the keystroke-to-paint path.
+- JavaScript sends ordered incremental change batches to .NET without waiting for Blazor rendering. The receiver is a bounded single-writer queue per document; coalesce safe adjacent notifications and request a full resynchronization if a sequence gap occurs.
+- File, watcher, process, terminal, adapter, and network I/O use asynchronous APIs end to end. Do not block with `.Result`, `.Wait()`, synchronous polling, or UI-thread file access.
+- CPU-heavy project evaluation, Roslyn analysis, indexing, search, parsing, and serialization run on bounded background workers. Parallelize independent work only; coordinators that mutate shared state remain single-writer.
+- Foreground requests have priority over speculative/background work. Every supersedable operation carries cancellation and a source version; stale results are discarded before publication.
+- Queues, caches, task counts, worker counts, and retained snapshots are bounded. Overload degrades by canceling/coalescing background work, never by accumulating an unbounded backlog.
+- UI state is published as small immutable snapshots. Background workers do not mutate Blazor component state and marshal only the final state change to the renderer.
 
 ## Supported platform matrix
 
@@ -43,6 +56,7 @@ Every phase must pass:
 - A clean build with warnings either fixed or linked to an accepted, time-bounded issue.
 - Unit tests for state and algorithms; integration tests for service boundaries; interaction tests for the phase's primary user flow.
 - Cancellation, disposal, error recovery, keyboard access, and restored-state tests where applicable.
+- Tests prove the UI/Monaco thread is not blocked, stale work is rejected, queues remain bounded, and concurrent completion order cannot corrupt state.
 - No secrets, source text, or absolute paths in telemetry; telemetry remains opt-in.
 - Updated status, user documentation, known limitations, and migration notes for changed persisted schemas.
 
@@ -68,7 +82,11 @@ For an active phase, track an owner, target release, dependencies, risks, and li
 
 | Risk | Required mitigation |
 |---|---|
-| Editable virtualized Blazor surface mishandles IME or selection | Prototype and test the native input geometry before expanding editor features |
+| JS/.NET synchronization enters the typing hot path | Monaco remains locally responsive; replicate incremental edits asynchronously and use barriers only for consistency-sensitive commands |
+| Monaco workers fail under a packaged WebView origin | Prove locally bundled ESM assets and worker creation on every supported host in phase 1 |
+| Upstream executable assets change or disappear | Pin versions and hashes per RID, fail closed on mismatch, retain notices, and mirror only through an audited manifest change |
+| Duplicate Monaco models diverge across split views | One model per document URI with explicit view/model leases |
+| Unbounded background parallelism makes the IDE slower | Bounded priority queues, cancellation, measurements, and single-writer mutation boundaries |
 | PhotinoXDX/WebView platform differences | Run host smoke tests on every supported OS from phase 1 onward |
 | Roslyn/MSBuild state diverges from dirty buffers | One workspace coordinator with versioned mappings and fixture solutions |
 | Terminal/debug child processes leak or target unrelated processes | Explicit process-tree ownership and adversarial cleanup tests |
@@ -80,13 +98,14 @@ For an active phase, track an owner, target release, dependencies, risks, and li
 
 Resolve these before the named phase starts:
 
-1. Phase 2: browser input mechanism, text-buffer/undo representation, encoding fallback, and settings format/location.
-2. Phase 6: MSBuild discovery/evaluation library, supported SDK/project types, and multi-target context policy.
-3. Phase 11: terminal emulator implementation or dependency, licensing, and PTY/conpty strategy.
-4. Phase 12: debug adapter/engine, protocol transport, redistribution/licensing, attach permissions, and capability fallback.
-5. Phase 15: Razor language-service integration and projection ownership.
-6. Phase 16: in-process versus isolated extension host, trust model, permissions, compatibility, and signing policy.
-7. Phase 17: application identity, versioning, package formats, signing/notarization, update channel, and support lifetime.
+1. Phase 1: Monaco version/build tool, packaged worker URLs, content security policy, and supported WebView versions.
+2. Phase 2: edit-journal persistence boundary, encoding fallback, and settings format/location. Monaco owns live text and undo/redo.
+3. Phase 6: MSBuild discovery/evaluation library, supported SDK/project types, and multi-target context policy.
+4. Phase 11: terminal emulator implementation or dependency, licensing, and PTY/conpty strategy.
+5. Phase 12: debug adapter/engine, protocol transport, redistribution/licensing, attach permissions, and capability fallback.
+6. Phase 15: Razor projection ownership. Protocol-based, pinned Roslyn/Razor acquisition is fixed by the language-server asset manifest.
+7. Phase 16: in-process versus isolated extension host, trust model, permissions, compatibility, and signing policy.
+8. Phase 17: application identity, versioning, package formats, signing/notarization, update channel, and support lifetime.
 
 ## Preview definition
 

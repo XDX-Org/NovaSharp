@@ -17,6 +17,8 @@ Provide reliable interactive terminal sessions without coupling terminal emulati
 - Bound scrollback by configurable lines and bytes; process output must not exhaust UI memory.
 - Keep terminal escape handling isolated from application markup and commands.
 - Route lifecycle through the phase 10 process service and preserve exact byte/encoding semantics.
+- Read/write PTY streams asynchronously. Parse escape sequences on a dedicated bounded session worker, batch render updates, and apply scrollback backpressure without delaying Monaco or Blazor input.
+- Each session is single-writer for emulator state; sessions may run concurrently within process/memory limits. Cancellation and disposal unblock pending reads and await owned pumps with deadlines.
 
 ## Completion criteria
 
@@ -24,6 +26,7 @@ Provide reliable interactive terminal sessions without coupling terminal emulati
 - Malicious escape sequences cannot inject workbench markup or invoke commands.
 - Closing, stopping, shell failure, PTY failure, and application exit clean up owned processes predictably.
 - Keyboard, screen-reader labeling, paste confirmation policy, scrollback bounds, and latency budgets are tested.
+- Output floods across multiple sessions remain within worker, queue, frame-time, and memory budgets and cannot starve editor foreground work.
 
 ## Next phase
 

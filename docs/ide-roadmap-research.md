@@ -2,76 +2,84 @@
 
 ## Product model
 
-NovaSharp should separate four kinds of state:
+NovaSharp separates four kinds of state:
 
 1. A **workspace** owns folders, solutions, projects, files, configuration, and services.
-2. A **document** owns identity, text, encoding, dirty state, version, and one editor model.
-3. An **editor view** owns cursor, selection, scroll position, and a reference to a document.
+2. A **document record** owns canonical identity, encoding, line endings, dirty/save state, disk metadata, and the lease on one Monaco model.
+3. An **editor view** owns an editor instance, cursor/selection, scroll position, and a reference to a document.
 4. An **editor group** owns an ordered tab list and one active editor view.
 
-This separation is the prerequisite for moving a tab without recreating its document, showing one document in two views, and disposing resources only when the last view closes. VS Code likewise treats splits as editor groups that contain items and supports moving or copying tabs between groups. Visual Studio distinguishes tab groups from splitting one document into independently scrolling views ([VS Code UI](https://code.visualstudio.com/docs/editing/userinterface), [Visual Studio editor windows](https://learn.microsoft.com/en-us/visualstudio/ide/how-to-manage-editor-windows?view=visualstudio)).
+This separation allows a tab to move without recreating its model, two editors to show one shared model, and resources to be disposed only after the last lease closes. VS Code likewise treats splits as editor groups that contain items, while Visual Studio distinguishes tab groups from independently scrolling views ([VS Code UI](https://code.visualstudio.com/docs/editing/userinterface), [Visual Studio editor windows](https://learn.microsoft.com/en-us/visualstudio/ide/how-to-manage-editor-windows?view=visualstudio)).
 
-Use stable URI-like document IDs based on canonical paths. Keep the in-memory buffer authoritative while dirty; filesystem watchers must never silently replace unsaved text.
+Use canonical URI-like document IDs. A dirty Monaco model wins over filesystem watcher events until the user explicitly reloads or resolves the conflict.
 
-## Editor presentation
+## Monaco editor boundary
 
-NovaSharp will use a pure C#/Blazor editor derived from DnSpyXDX's production source-presentation design, with no third-party editor runtime, frontend build toolchain, web worker, or CDN asset.
-
-The relevant DnSpyXDX structure is:
+NovaSharp uses Monaco Editor from phase 1. Monaco is the editor extracted from VS Code, its models hold content and edit history, and each model has a unique URI ([Monaco concepts](https://github.com/microsoft/monaco-editor#concepts)). Use only Monaco's public, versioned API.
 
 ```text
-plain document text
-        |
-        v
-indexed document model <--------------+
-  line starts, lengths, token state    |
-        |                               |
-        v                               |
-Virtualize<TItem> -> visible line rows |
-        |                               |
-        v                               |
-presentation cache --------------------+
+Monaco ITextModel (one per document URI; live text and undo)
+       |                         |
+       +--> editor view A       +--> editor view B
+       |
+       +-- ordered edit journal --> bounded .NET replica
+                                           |
+                          +----------------+----------------+
+                          |                                 |
+                    file lifecycle                    language services
 ```
 
-DnSpyXDX's `SourceDocumentModel` indexes UTF-16 lines and positions, maintains tokenizer checkpoints, and produces cancellable immutable line batches. `SourceView` renders only the visible range through `Virtualize<TItem>`, `SourceLineView` renders classified token fragments, `SourcePresentationCache` bounds models and token batches by count and estimated bytes, and `SourceViewStateStore` separates per-tab scroll state from document identity. JavaScript is limited to focus, measurement, scroll, selection, and other browser operations Blazor cannot express directly.
+Monaco owns the latency-sensitive browser-side work: text mutation, undo/redo, caret, selections, multi-cursor behavior, clipboard, composition/IME, hit testing, wrapping, viewport rendering, lexical token colors, editor widgets, and editor accessibility. NovaSharp must not reproduce the text, token rows, caret, selection, completion, hover, or signature UI as aligned Blazor layers.
 
-NovaSharp must adapt this read-only design for editing. A mutable `EditorDocument` owns authoritative text, version, undo history, line index, and dirty state. Immutable versioned presentation snapshots feed a virtualized `EditorView`. A browser-native input surface owns caret, selection, clipboard, keyboard composition, and IME; C# applies the resulting edits and retokenizes only invalidated ranges. Highlighted visible rows and the input surface share exact font, tab, line-height, wrap, and scroll geometry.
+NovaSharp owns file/workspace policy, encoding, line endings, dirty/save state, external conflicts, project context, language-service routing, transactional workspace edits, recovery, and validated persistence. `ITextModel.createSnapshot()` is safe to consume asynchronously, and editor instances can save/restore view state or attach to a model without destroying it ([model API](https://microsoft.github.io/monaco-editor/typedoc/interfaces/editor_editor_api.editor.ITextModel.html), [editor API](https://microsoft.github.io/monaco-editor/typedoc/interfaces/editor_editor_api.editor.ICodeEditor.html)).
 
-One document model may have multiple views. Each view independently owns cursor, selection, scroll, completion UI, and view state, while edits and undo history remain document-wide.
+Baseline C# colors come from Monaco's C# language definition. Roslyn supplies project-aware semantics. Register semantic tokens and language providers through Monaco's public language API; publish diagnostics as model markers and debugger/editor adornments as decoration collections. Do not merge colors into custom rendered rows. Monaco does not itself provide project-aware C# completion merely because the C# tokenizer is registered.
+
+Ship an exact lockfile-pinned ESM build and its workers locally. AMD is deprecated. Monaco documents that heavy language features use web workers and that failed worker loading can fall back to the main thread, which is unacceptable for NovaSharp's performance target ([Monaco README](https://github.com/microsoft/monaco-editor), [ESM integration](https://github.com/microsoft/monaco-editor/blob/main/docs/integrate-esm.md)). Phase 1 therefore tests the packaged application origin and verifies that the worker actually starts on every supported WebView.
+
+## Edit replication and consistency
+
+Typing changes the Monaco model immediately and never waits for .NET. The JavaScript host assigns a monotonically increasing sequence to each `onDidChangeModelContent` batch. A per-document pump coalesces changes, keeps at most one interop call in flight, and submits ordered UTF-16 range edits to a bounded .NET channel. A single .NET consumer applies batches in order to a shadow snapshot.
+
+The shadow supports Roslyn synchronization, dirty-buffer search, recovery, and workbench commands; it is not a second interactive editor. Save, build, refactor, recovery checkpoint, and workspace-edit operations await a sequence barrier before reading it. Missing/out-of-order sequences reject the incremental batch and request one full Monaco snapshot. They never guess or block typing.
+
+Edits originating in .NET—reload, formatting, rename, code actions, or external conflict resolution—are applied through Monaco edit operations with an origin token and deliberate undo stops. Do not use full `setValue` for ordinary edits because it discards useful edit/undo behavior and moves whole documents across interop.
 
 ## Language-service boundary
 
-Roslyn's Workspace API is the solution-wide starting point for code analysis and refactoring. Its immutable solution snapshots, syntax/semantic models, and diagnostics fit a versioned document service ([Roslyn SDK model](https://learn.microsoft.com/en-us/dotnet/csharp/roslyn-sdk/compiler-api-model)).
-
-Language features should use cancellable, versioned requests:
+Roslyn's Workspace API is the solution-wide starting point for C# analysis and refactoring. Its immutable solution snapshots, syntax/semantic models, and diagnostics fit a versioned document service ([Roslyn SDK model](https://learn.microsoft.com/en-us/dotnet/csharp/roslyn-sdk/compiler-api-model)).
 
 ```text
-editor request -> C# language service -> Roslyn snapshot
-       ^                                      |
-       +------ response if version matches ---+
+Monaco provider request -> NovaSharp provider -> current Roslyn snapshot
+          ^                                         |
+          +------ response only if version matches -+
 ```
 
-Discard stale results after further edits. Completion and hover should not block typing; diagnostics should be debounced. Keep a provider-shaped internal API so Razor/HTML/CSS services or a future Language Server Protocol client can implement the same contracts. The common feature set includes diagnostics, completion, hover, signature help, definitions, references, symbols, code actions, formatting, and rename ([VS Code language features](https://code.visualstudio.com/api/language-extensions/programmatic-language-features)).
+Completion, hover, signature help, formatting, semantic tokens, diagnostics, definition, references, rename, and code actions use Monaco providers. The provider call captures document URI, active project context, model/shadow version, position/range, cancellation, and request priority. Explicit foreground requests start immediately; speculative requests are cancellable and lower priority. Resolve expensive item details lazily. A response for an old version is discarded before it reaches Monaco.
+
+Use one semantic authority per language and feature. C# uses Roslyn. Razor uses the selected project-aware Razor service. Monaco's packaged HTML/CSS/JSON/TypeScript services may be used where their capabilities meet the roadmap, but disable overlapping providers so duplicate diagnostics or completion cannot appear.
+
+## Async and concurrency model
+
+- The Monaco/browser and Blazor renderer threads only perform short UI work. They never perform file I/O, wait on a worker, parse process output, evaluate projects, or run Roslyn analysis.
+- I/O is asynchronous end to end. CPU-bound work runs on explicitly bounded workers, not an unbounded collection of `Task.Run` calls.
+- Partition state by ownership: one edit consumer per document, one solution-mutation coordinator, one process-session owner, and immutable result snapshots. This preserves order without global locking.
+- Parallelize independent reads such as directory enumeration, project analysis, search shards, and diagnostic producers up to measured limits. Serialize conflicting writes and apply results deterministically.
+- Foreground editing/navigation work has priority. Cancel or coalesce superseded diagnostics, indexing, and preview work. Never let background saturation delay typing or explicit completion.
+- Bound channels, queues, caches, output, snapshots, models, and concurrency. Expose queue depth, active workers, cancellation, dropped/coalesced work, and end-to-end latency to debug diagnostics.
+- Avoid thread-pool starvation: no sync-over-async, long blocking waits, or holding locks across `await`. Libraries that only expose blocking APIs run on a dedicated bounded scheduler.
+- Shutdown cancels producers, completes channels, awaits owned consumers with a deadline, and disposes models/workers/processes in dependency order.
+
+Multithreading is a means, not a blanket rule: small ordered mutations stay single-writer, because adding parallel writers would increase contention and correctness risk. Performance gates measure the result rather than thread count.
 
 ## Workbench rules
 
-- Every command must be invocable independently of its button so menus, shortcuts, and command palette share behavior.
-- Tree, tabs, splitters, dialogs, and completion lists must be keyboard operable with visible focus.
-- Long-running I/O, restore, analysis, search, build, and debugger operations are cancellable and report status.
+- Every command is invocable independently of its button so menus, shortcuts, Monaco actions, and the command palette share behavior.
+- Tree, tabs, splitters, dialogs, editor widgets, and completion lists are keyboard operable with visible focus.
 - Services return structured results; UI components do not parse console text when a structured API exists.
 - Persist paths portably when they are inside the workspace and validate all restored state.
-- Add telemetry only through an explicit opt-in design; never include source text, paths, or secrets by default.
-
-## Presentation constraints inherited from DnSpyXDX
-
-- All offsets are UTF-16 code-unit offsets so .NET strings, Roslyn spans, and browser selections agree.
-- Tokenization is stateful across lines; checkpoints allow an invalidated or newly visible range to resume without rescanning from the start.
-- Rendering remains proportional to viewport height plus overscan, not document length.
-- Fixed-height, unwrapped lines are the first implementation. Wrapping requires a separately measured variable-height path.
-- Background indexing, tokenization, search, and semantic classification are cancellable and return immutable results.
-- Caches have explicit count and byte limits, protect active models, cancel evicted work, and expose debug counters.
-- A tab ID is view identity, never document identity.
+- Add telemetry only through explicit opt-in; never include source text, paths, or secrets by default.
 
 ## Deferred features
 
-Source control UI, remote workspaces, notebooks, collaboration, AI completion, visual designers, profiling, and multiple native windows remain outside the preview roadmap. Razor/HTML/CSS services and extensions are planned after the C# workbench is stable in phases 15 and 16. The internal command, language-provider, document, and workbench boundaries should allow deferred features later without defining speculative public APIs now.
+Source control UI, remote workspaces, notebooks, collaboration, AI completion, visual designers, profiling, and multiple native windows remain outside the preview roadmap. Razor/HTML/CSS services and extensions follow the stable C# workbench. Internal command, language-provider, document, and workbench boundaries should allow deferred features later without defining speculative public APIs now.

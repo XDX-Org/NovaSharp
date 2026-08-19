@@ -20,6 +20,8 @@ Inspect and control managed execution through a complete, keyboard-operable debu
 - Clearly label side-effecting evaluation and never evaluate properties implicitly when the engine cannot do so safely.
 - Preserve user-authored breakpoints separately from adapter binding state.
 - Keep debug console input distinct from terminal and application stdin.
+- Fetch independent scopes/watches/frames concurrently only up to a per-session limit. Prioritize the selected frame and visible expansions; cancel all paused-state work immediately on resume.
+- Publish execution-line and breakpoint state with Monaco marker/decoration APIs. Do not render a duplicate colored source layer or remount the editor.
 
 ## Completion criteria
 
@@ -28,6 +30,7 @@ Inspect and control managed execution through a complete, keyboard-operable debu
 - Breakpoints survive edits and restarts and visibly explain binding failures.
 - Keyboard and screen-reader flows cover every debug command and view.
 - Step, stack, expansion, and evaluation latency/memory budgets are met.
+- Multi-threaded debug-event storms and concurrent inspection cannot publish state from an earlier pause or starve editing.
 
 ## Next phase
 

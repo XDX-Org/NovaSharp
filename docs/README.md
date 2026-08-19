@@ -4,8 +4,8 @@ NovaSharp is being built in small, runnable phases. Each phase must leave the ap
 
 ## Phases
 
-1. [Single-file editor shell](phase-01-single-file-editor.md) — PhotinoXDX window, one editor panel, and opening one `.cs` file.
-2. [Editor and file lifecycle](phase-02-editor-file-lifecycle.md) — a DnSpyXDX-style Blazor editor, safe save/reload, dirty state, and shortcuts.
+1. [Monaco single-file editor shell](phase-01-single-file-editor.md) — PhotinoXDX, locally packaged Monaco and its worker, and opening one `.cs` file.
+2. [Editor and file lifecycle](phase-02-editor-file-lifecycle.md) — Monaco-backed models, asynchronous edit replication, safe save/reload, dirty state, and shortcuts.
 3. [Workspace explorer](phase-03-workspace-explorer.md) — folder/project tree, file operations, and scalable tree behavior.
 4. [Documents and movable tabs](phase-04-documents-tabs.md) — multiple files, tab ordering, close flows, and document identity.
 5. [Editor groups and split views](phase-05-editor-groups.md) — horizontal/vertical groups, drag targets, and side-by-side editing.
@@ -26,5 +26,7 @@ The sequence is dependency order, not a promise that every phase has equal size.
 
 - [Delivery plan](delivery-plan.md) for status, cross-cutting foundations, quality gates, risks, and open decisions.
 - [Research and architecture notes](ide-roadmap-research.md) for the design rationale and source material.
+- [Monaco decision](decisions/0001-monaco-editor.md) for editor ownership, packaging, and integration boundaries.
+- [Language-server assets](language-server-assets.md) for automatic acquisition, pinned versions, hashes, and runtime policy.
 
 The former combined phases 9 and 10 are retained as redirect pages so existing links do not silently point at obsolete scope.

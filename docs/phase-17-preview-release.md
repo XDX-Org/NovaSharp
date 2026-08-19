@@ -9,6 +9,8 @@ Ship an installable, supportable preview whose platform claims are backed by rep
 - Reproducible CI builds and platform-native packages for the supported matrix.
 - Application identity, semantic versioning, release channels, atomic update/rollback, and persisted-state migration policy.
 - Code signing/notarization, checksums, provenance, dependency/license inventory, and vulnerability response.
+- Locally packaged, lockfile-reproducible Monaco ESM assets, selected languages, workers, fonts, and third-party notices.
+- RID-specific, hash-verified Roslyn/Razor, Node, and web-language-server assets with their third-party notices.
 - Clean install, upgrade, downgrade/rollback, repair where applicable, and uninstall behavior.
 - Opt-in crash reporting/telemetry policy, privacy documentation, support route, known limitations, and release notes.
 
@@ -19,6 +21,7 @@ Ship an installable, supportable preview whose platform claims are backed by rep
 - Uninstall distinguishes application files from user settings, workspaces, and recovery data.
 - No release gate depends only on a manual claim; retain logs or test results for each platform.
 - Preview status and unsupported workflows remain visible in product and documentation.
+- Qualification fails if a Monaco worker falls back to the browser thread, any editor asset requires runtime network access, or generated assets differ from the lockfile/build inputs.
 
 ## Completion criteria
 
@@ -27,6 +30,7 @@ Ship an installable, supportable preview whose platform claims are backed by rep
 - Crash recovery, safe mode, schema migration, offline startup, revoked/invalid update signature, and disk-full cases pass.
 - No release-blocking security, license, accessibility, data-loss, or process-leak issue remains open.
 - Performance/reliability budgets, SBOM/provenance, support policy, privacy notice, known limitations, and release notes are published.
+- Sustained mixed workloads verify bounded async queues/workers and responsive Monaco input on every supported package.
 
 ## Next phase
 

@@ -19,6 +19,8 @@ Full stack/variable UI and stepping experience move to phase 13.
 
 - Decide engine, transport, redistribution terms, supported runtimes, attach permissions, and unsupported capability behavior before implementation.
 - Validate all adapter messages and bound message size, pending requests, output, and shutdown time.
+- Use asynchronous framed transport with independent bounded read, dispatch, and write paths. Correlate responses without blocking the UI and cancel/timeout pending requests on session changes.
+- Keep session-state transitions on one coordinator; parse and validate messages on bounded background work and publish immutable snapshots. Never hold a session lock across `await`.
 - Never match source solely by file name. Show unmapped or stale source explicitly.
 - Commands declare valid session states and transition through one coordinator.
 - Terminating a debug session targets only processes NovaSharp owns or the user explicitly attached to.
@@ -30,6 +32,7 @@ Full stack/variable UI and stepping experience move to phase 13.
 - Invalid configuration, attach denial, malformed messages, adapter crash, target exit, and disconnect are recoverable.
 - Protocol contract, state-machine, ownership, timeout, and cleanup tests pass.
 - Numeric launch, breakpoint-bind, pause, and shutdown budgets are met.
+- Concurrent events/responses, malformed-message floods, cancellation races, adapter loss, and shutdown remain bounded and do not delay Monaco input.
 
 ## Next phase
 

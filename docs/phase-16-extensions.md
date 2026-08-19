@@ -21,6 +21,7 @@ An online marketplace, arbitrary UI embedding, extension self-update, and full i
 - Extension failures cannot crash the workbench, corrupt persisted state, or block startup; safe mode disables third-party activation.
 - Public contracts are additive within a declared compatibility band and separate from internal service interfaces.
 - Clearly label extensions as trusted/untrusted and show requested permissions before enablement.
+- Extension calls are asynchronous, cancellable, timed, and concurrency-limited. No extension callback runs on Monaco's browser thread or the Blazor renderer; slow providers receive backpressure and can be disabled without blocking shutdown.
 
 ## Completion criteria
 
@@ -29,6 +30,7 @@ An online marketplace, arbitrary UI embedding, extension self-update, and full i
 - Disable/uninstall removes contributions and releases resources without restarting where the host permits.
 - API compatibility, permissions, activation timing, safe mode, and malicious-input tests pass.
 - SDK reference, manifest schema, sample, compatibility policy, and security model are published.
+- Extension request storms, cancellation, timeout, restart, and concurrent disposal stay within queue/worker/memory limits and do not starve built-in foreground providers.
 
 ## Next phase
 

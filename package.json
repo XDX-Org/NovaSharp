@@ -1,0 +1,12 @@
+{
+  "name": "novasharp-editor-assets",
+  "private": true,
+  "scripts": {
+    "build:monaco": "node tools/build-monaco.mjs",
+    "check:monaco": "node tools/build-monaco.mjs --check"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "monaco-editor": "0.56.0"
+  }
+}
