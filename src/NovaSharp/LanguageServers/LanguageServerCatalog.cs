@@ -36,14 +36,14 @@ internal sealed class LanguageServerCatalog
                         "--extension", razorExtension, "--telemetryLevel", "off", "--extensionLogDirectory", logDirectory,
                         $"--clientProcessId={Environment.ProcessId}"], workspace, environment))
                 : new(LanguageServerKind.RoslynRazor, new HashSet<string>([".cs", ".razor", ".cshtml"]), null,
-                    "Packaged Roslyn/Razor assets are missing. Run tools/acquire-language-servers.sh for the publish RID."),
+                    MissingAssets("Roslyn/Razor")),
             Web(LanguageServerKind.Html, [".html", ".htm"], "--html"),
             Web(LanguageServerKind.Css, [".css"], "--css"),
             File.Exists(node) && File.Exists(javascriptServer)
                 ? new(LanguageServerKind.Javascript, new HashSet<string>([".js", ".jsx", ".ts", ".tsx"]),
                     new(node, [javascriptServer, "--stdio"], workspace))
                 : new(LanguageServerKind.Javascript, new HashSet<string>([".js", ".jsx", ".ts", ".tsx"]), null,
-                    "Packaged JavaScript/TypeScript language-server assets are missing. Run tools/acquire-language-servers.sh for the publish RID.")
+                    MissingAssets("JavaScript/TypeScript language-server"))
         };
         return new(definitions);
 
@@ -51,7 +51,12 @@ internal sealed class LanguageServerCatalog
             => File.Exists(node) && File.Exists(webServer)
                 ? new(kind, new HashSet<string>(extensions), new(node, [webServer, "--stdio", language], workspace))
                 : new(kind, new HashSet<string>(extensions), null,
-                    "Packaged web-language-server assets are missing. Run tools/acquire-language-servers.sh for the publish RID.");
+                    MissingAssets("web-language-server"));
+
+        static string MissingAssets(string name) => $"Packaged {name} assets are missing. Run " +
+            (OperatingSystem.IsWindows()
+                ? "powershell -ExecutionPolicy Bypass -File tools/acquire-language-servers.ps1 win-x64."
+                : "tools/acquire-language-servers.sh for the publish RID.");
     }
 
     private static string ResolveAssetRoot()

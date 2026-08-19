@@ -157,19 +157,19 @@ internal static class Program
 
     private static bool ConfirmClose(object? sender, EventArgs? args)
     {
-        if (ConfirmWorkbenchClose is not null) return ConfirmWorkbenchClose();
+        if (ConfirmWorkbenchClose is not null) return !ConfirmWorkbenchClose();
         var document = ActiveDocument;
-        if (document is null || !document.IsDirty) return true;
+        if (document is null || !document.IsDirty) return false;
         var result = App.MainWindow.ShowMessageDialogAsync(
             "Unsaved changes", $"Save changes to {document.DisplayName} before closing?",
             DialogButtons.YesNoCancel, DialogIcon.Warning).GetAwaiter().GetResult();
-        if (result == DialogResult.No) return true;
-        if (result != DialogResult.Yes) return false;
+        if (result == DialogResult.No) return false;
+        if (result != DialogResult.Yes) return true;
         try
         {
             document.SaveAsync().GetAwaiter().GetResult();
-            return true;
+            return false;
         }
-        catch { return false; }
+        catch { return true; }
     }
 }

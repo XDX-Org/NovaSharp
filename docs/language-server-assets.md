@@ -25,6 +25,12 @@ Run from the repository root:
 tools/acquire-language-servers.sh linux-x64
 ```
 
+On Windows, run from PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/acquire-language-servers.ps1 win-x64
+```
+
 Supported release RIDs are `win-x64`, `linux-x64`, `linux-arm64`, `osx-x64`, and `osx-arm64`. The tool:
 
 1. Downloads the exact platform package and Node archive.

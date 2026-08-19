@@ -69,14 +69,41 @@ Expect:
 
 ## Building NovaSharp
 
-Clone and run NovaSharp:
+Clone and run NovaSharp.
 
-Node.js 24 and the .NET SDK pinned by `global.json` are required.
+Prerequisites:
+
+* Node.js 24, including npm, installed locally and available on `PATH`
+* The .NET SDK version pinned by `global.json`
+
+Verify the prerequisites:
+
+```powershell
+node --version
+npm --version
+dotnet --version
+```
+
+On Windows (PowerShell):
+
+```powershell
+git clone https://github.com/XDX-Org/NovaSharp.git
+cd NovaSharp
+npm ci
+npm run build:monaco
+npm run check:monaco
+powershell -ExecutionPolicy Bypass -File tools/acquire-language-servers.ps1 win-x64
+dotnet build NovaSharp.slnx
+dotnet run --project src/NovaSharp/NovaSharp.csproj
+```
+
+On Linux or macOS:
 
 ```bash
 git clone https://github.com/XDX-Org/NovaSharp.git
 cd NovaSharp
 tools/build-monaco-assets.sh
+tools/acquire-language-servers.sh linux-x64
 dotnet build NovaSharp.slnx
 dotnet run --project src/NovaSharp/NovaSharp.csproj
 ```
