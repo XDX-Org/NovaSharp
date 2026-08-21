@@ -44,31 +44,26 @@ jobs:
           - rid: linux-arm64
             runner: ubuntu-24.04-arm
             shell: bash
-            bootstrap: bash tools/setup.sh
             node-bin: src/NovaSharp/LanguageServers/Assets/linux-arm64/node/bin
             npm-cli: src/NovaSharp/LanguageServers/Assets/linux-arm64/node/lib/node_modules/npm/bin/npm-cli.js
           - rid: linux-x64
             runner: ubuntu-24.04
             shell: bash
-            bootstrap: bash tools/setup.sh
             node-bin: src/NovaSharp/LanguageServers/Assets/linux-x64/node/bin
             npm-cli: src/NovaSharp/LanguageServers/Assets/linux-x64/node/lib/node_modules/npm/bin/npm-cli.js
           - rid: osx-arm64
             runner: macos-15
             shell: bash
-            bootstrap: bash tools/setup.sh
             node-bin: src/NovaSharp/LanguageServers/Assets/osx-arm64/node/bin
             npm-cli: src/NovaSharp/LanguageServers/Assets/osx-arm64/node/lib/node_modules/npm/bin/npm-cli.js
           - rid: osx-x64
             runner: macos-15-intel
             shell: bash
-            bootstrap: bash tools/setup.sh
             node-bin: src/NovaSharp/LanguageServers/Assets/osx-x64/node/bin
             npm-cli: src/NovaSharp/LanguageServers/Assets/osx-x64/node/lib/node_modules/npm/bin/npm-cli.js
           - rid: win-x64
             runner: windows-2025
             shell: pwsh
-            bootstrap: '& ./tools/setup.ps1'
             node-bin: src/NovaSharp/LanguageServers/Assets/win-x64/node
             npm-cli: src/NovaSharp/LanguageServers/Assets/win-x64/node/node_modules/npm/bin/npm-cli.js
 
@@ -108,12 +103,25 @@ jobs:
             exit 1
           fi
 
-      # The one deliberately platform-specific step, and the reason there are two entry points. Everything it does is
-      # a gate in its own right: acquiring the pinned assets, installing the pinned frontend dependencies, building the
-      # Monaco bundle, verifying that build is reproducible, then restoring, building, and testing the solution.
+      # The one deliberately platform-specific pair of steps, and the reason the repository has two bootstrap entry
+      # points at all. Exactly one runs per row. AGENTS.md requires the two to stay equivalent, and running each on its
+      # own platforms from the same commit is what actually checks that.
+      #
+      # Everything they do is a gate in its own right: acquiring the pinned assets, installing the pinned frontend
+      # dependencies, building the Monaco bundle, verifying that build is reproducible, then restoring, building, and
+      # testing the solution.
+      #
+      # Two steps rather than one with an interpolated shell, because `shell:` is evaluated before the matrix exists
+      # and cannot read it. `if:` can, so the choice is made there.
       - name: Bootstrap
-        shell: ${{ matrix.shell }}
-        run: ${{ matrix.bootstrap }}
+        if: matrix.shell == 'bash'
+        shell: bash
+        run: bash tools/setup.sh
+
+      - name: Bootstrap
+        if: matrix.shell == 'pwsh'
+        shell: pwsh
+        run: ./tools/setup.ps1
 
       # The bootstrap acquires a pinned Node.js per runtime identifier, and that is the one the rest of the job uses.
       # A second Node from the runner image would be an unpinned dependency in a repository that pins everything else.
