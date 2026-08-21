@@ -283,8 +283,8 @@ try {
     // Undo is Monaco's, not a NovaSharp reimplementation, and its alternative version returns to the earlier value —
     // which is what lets dirty state clear when the user undoes back to what was saved.
     const beforeUndo = await page.evaluate(() => globalThis.editor.sequence());
-    await page.keyboard.press('Control+z');
-    await page.keyboard.press('Control+z');
+    await page.keyboard.press('ControlOrMeta+z');
+    await page.keyboard.press('ControlOrMeta+z');
     await settle();
 
     const afterUndo = await page.evaluate(() => globalThis.editor.sequence());
@@ -361,7 +361,7 @@ try {
         JSON.stringify(unresolved));
 
     await page.evaluate(() => globalThis.NovaMonaco.editor.getEditors()[0].focus());
-    await page.keyboard.press('Control+s');
+    await page.keyboard.press('ControlOrMeta+s');
     let saveCommandSeen = true;
     try {
         await page.waitForFunction(
