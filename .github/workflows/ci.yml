@@ -1,0 +1,229 @@
+# The quality gates from docs/delivery-plan.md, run on every runtime identifier in the supported platform matrix from
+# the same commit.
+#
+# The parity rule is what shapes this file. Every supported platform runs the same gates, none is excluded, and
+# `fail-fast: false` keeps one platform's failure from hiding the others' results. The only place a platform is named
+# is the matrix itself: each row carries its runner, its bootstrap entry point, and the shell that entry point is
+# written for, so the steps below stay identical across rows.
+#
+# `win-arm64` is a recorded gap rather than an omission. Its bootstrap refuses to run, and the last job asserts that it
+# still refuses for the reason the documentation gives — so the day assets exist for it, this workflow fails and forces
+# the matrix and the phase documents to be updated.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A newer commit on the same branch supersedes an older run. Pushes to main are never cancelled: their results are the
+# evidence the delivery plan's status table is updated from.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+
+jobs:
+  gates:
+    name: ${{ matrix.rid }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: linux-arm64
+            runner: ubuntu-24.04-arm
+            shell: bash
+            bootstrap: bash tools/setup.sh
+            node-bin: src/NovaSharp/LanguageServers/Assets/linux-arm64/node/bin
+            npm-cli: src/NovaSharp/LanguageServers/Assets/linux-arm64/node/lib/node_modules/npm/bin/npm-cli.js
+          - rid: linux-x64
+            runner: ubuntu-24.04
+            shell: bash
+            bootstrap: bash tools/setup.sh
+            node-bin: src/NovaSharp/LanguageServers/Assets/linux-x64/node/bin
+            npm-cli: src/NovaSharp/LanguageServers/Assets/linux-x64/node/lib/node_modules/npm/bin/npm-cli.js
+          - rid: osx-arm64
+            runner: macos-15
+            shell: bash
+            bootstrap: bash tools/setup.sh
+            node-bin: src/NovaSharp/LanguageServers/Assets/osx-arm64/node/bin
+            npm-cli: src/NovaSharp/LanguageServers/Assets/osx-arm64/node/lib/node_modules/npm/bin/npm-cli.js
+          - rid: osx-x64
+            runner: macos-15-intel
+            shell: bash
+            bootstrap: bash tools/setup.sh
+            node-bin: src/NovaSharp/LanguageServers/Assets/osx-x64/node/bin
+            npm-cli: src/NovaSharp/LanguageServers/Assets/osx-x64/node/lib/node_modules/npm/bin/npm-cli.js
+          - rid: win-x64
+            runner: windows-2025
+            shell: pwsh
+            bootstrap: '& ./tools/setup.ps1'
+            node-bin: src/NovaSharp/LanguageServers/Assets/win-x64/node
+            npm-cli: src/NovaSharp/LanguageServers/Assets/win-x64/node/node_modules/npm/bin/npm-cli.js
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Use the SDK global.json pins
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      # The bootstrap checks for these itself and fails with a clear message. Installing them here keeps that check
+      # about the developer's machine, where it is a useful diagnostic, rather than about the runner image.
+      - name: Install the host prerequisites the bootstrap requires
+        if: matrix.shell == 'bash'
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=
+          for command in curl jq unzip tar; do
+            command -v "$command" >/dev/null || missing="$missing $command"
+          done
+
+          if [ -z "$missing" ]; then
+            echo "Nothing missing."
+            exit 0
+          fi
+
+          echo "Installing:$missing"
+          if command -v apt-get >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install --yes $missing
+          elif command -v brew >/dev/null; then
+            brew install $missing
+          else
+            echo "No package manager was found to install:$missing" >&2
+            exit 1
+          fi
+
+      # The one deliberately platform-specific step, and the reason there are two entry points. Everything it does is
+      # a gate in its own right: acquiring the pinned assets, installing the pinned frontend dependencies, building the
+      # Monaco bundle, verifying that build is reproducible, then restoring, building, and testing the solution.
+      - name: Bootstrap
+        shell: ${{ matrix.shell }}
+        run: ${{ matrix.bootstrap }}
+
+      # The bootstrap acquires a pinned Node.js per runtime identifier, and that is the one the rest of the job uses.
+      # A second Node from the runner image would be an unpinned dependency in a repository that pins everything else.
+      - name: Put the acquired Node.js on the path
+        shell: bash
+        run: echo "${{ github.workspace }}/${{ matrix.node-bin }}" >> "$GITHUB_PATH"
+
+      - name: The bootstrap leaves no changes behind
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Acquisition and asset building must be reproducible and must write only to ignored paths. A dirty tree here
+          # means the bootstrap modified something a contributor would then have to explain in their next commit.
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "The bootstrap left the working tree dirty:" >&2
+            git status --porcelain >&2
+            exit 1
+          fi
+
+          git diff --check
+
+      - name: Browser gates
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # npm is invoked through node and its CLI script rather than by name: a bash shell on Windows resolves
+          # `node.exe` but not `npm.cmd`, and naming the script keeps this step identical on every row.
+          npm_cli="${{ github.workspace }}/${{ matrix.npm-cli }}"
+
+          node "$npm_cli" --prefix tests/editor-host ci --no-audit --no-fund
+
+          # The browser build is pinned by the Playwright version in tests/editor-host/package-lock.json, the same way
+          # every other dependency is pinned. --with-deps installs the shared libraries Chromium needs on Linux and is
+          # a no-op elsewhere.
+          node tests/editor-host/node_modules/playwright/cli.js install --with-deps chromium
+
+          node "$npm_cli" --prefix tests/editor-host test
+
+      - name: A publish for this runtime identifier produces a complete payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet publish src/NovaSharp/NovaSharp.csproj \
+            --configuration Release \
+            --runtime ${{ matrix.rid }} \
+            --output "artifacts/publish/${{ matrix.rid }}"
+
+      - name: A publish without a runtime identifier fails rather than shipping an incomplete application
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # A negative gate: the project is expected to refuse. Asserting the refusal is what keeps it from being
+          # quietly removed, which would let a publish emit an application missing its language-server payload.
+          if dotnet publish src/NovaSharp/NovaSharp.csproj --configuration Release --output artifacts/publish/no-rid; then
+            echo "A publish without a runtime identifier succeeded. It must fail." >&2
+            exit 1
+          fi
+
+      - name: A Debug publish fails rather than embedding a build-machine path
+        shell: bash
+        run: |
+          set -euo pipefail
+          if dotnet publish src/NovaSharp/NovaSharp.csproj \
+              --configuration Debug \
+              --runtime ${{ matrix.rid }} \
+              --output "artifacts/publish/debug-${{ matrix.rid }}"; then
+            echo "A Debug publish succeeded. It must fail: the development asset root embeds a build-machine path." >&2
+            exit 1
+          fi
+
+      - name: Keep the payload for the smoke tests
+        uses: actions/upload-artifact@v7
+        with:
+          name: novasharp-${{ matrix.rid }}
+          path: artifacts/publish/${{ matrix.rid }}
+          retention-days: 7
+          if-no-files-found: error
+
+  recorded-gaps:
+    name: win-arm64 (recorded gap)
+    runs-on: windows-11-arm
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      # The supported platform matrix lists win-arm64, and its bootstrap does not support it yet. That gap is recorded
+      # in the documentation, and this asserts the recorded behaviour is still the actual behaviour: the bootstrap must
+      # refuse, and must say why. When assets for it do exist, this job fails and the matrix has to be updated with it.
+      - name: The bootstrap refuses this platform, and says why
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $output = (& pwsh -NoProfile -File ./tools/setup.ps1 2>&1 | Out-String)
+          $exitCode = $LASTEXITCODE
+          Write-Output $output
+
+          if ($exitCode -eq 0) {
+              throw ('The bootstrap succeeded on win-arm64. Update the supported platform matrix and the phase '
+                  + 'documents, then move this row into the gates job.')
+          }
+
+          if ($output -notmatch 'does not support win-arm64') {
+              throw 'The bootstrap failed on win-arm64 for a reason other than the recorded gap.'
+          }
+
+          Write-Output 'The bootstrap refused win-arm64 for the recorded reason.'
