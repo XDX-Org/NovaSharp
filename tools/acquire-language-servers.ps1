@@ -51,10 +51,11 @@ if (-not $artifact) {
 }
 
 $work = Join-Path ([System.IO.Path]::GetTempPath()) ("novasharp-language-servers-" + [guid]::NewGuid())
-# npm on macOS validates the staged root identity against the lockfile.
-$stage = Join-Path $work 'novasharp-web-language-servers'
+$stage = Join-Path $work 'asset'
+# Keep npm's project outside the payload containing the npm runtime. macOS otherwise resolves the project as its own dependency.
+$webStage = Join-Path $work 'novasharp-web-language-servers'
 try {
-    New-Item -ItemType Directory -Path $work, $stage | Out-Null
+    New-Item -ItemType Directory -Path $work, $stage, $webStage | Out-Null
     $vsix = Join-Path $work 'csharp.vsix'
     $version = $manifest.roslynRazor.version
     $gallery = 'https://marketplace.visualstudio.com/_apis/public/gallery'
@@ -102,17 +103,18 @@ try {
     Copy-Item "$nodeOutput\node-v$nodeVersion-$nodePlatform" "$stage\node" -Recurse
 
     $web = Join-Path $repo 'src\NovaSharp\LanguageServers\Web'
-    Copy-Item "$web\server.cjs", "$web\package.json", "$web\package-lock.json" $stage
+    Copy-Item "$web\server.cjs", "$web\package.json", "$web\package-lock.json" $webStage
     $node = if ($Rid.StartsWith('win-')) { "$stage\node\node.exe" } else { "$stage\node\bin\node" }
     $npmCli = if ($Rid.StartsWith('win-')) {
         "$stage\node\node_modules\npm\bin\npm-cli.js"
     } else {
         "$stage\node\lib\node_modules\npm\bin\npm-cli.js"
     }
-    & $node $npmCli ci --omit=dev --ignore-scripts --no-audit --no-fund --prefix $stage
+    & $node $npmCli ci --omit=dev --ignore-scripts --no-audit --no-fund --prefix $webStage
     if ($LASTEXITCODE -ne 0) {
         throw 'npm ci failed for web language servers.'
     }
+    Move-Item "$webStage\server.cjs", "$webStage\package.json", "$webStage\package-lock.json", "$webStage\node_modules" $stage
     Copy-Item "$stage\node\LICENSE" "$stage\licenses\node-MIT.txt"
     [System.IO.File]::WriteAllText((Join-Path $stage '.source-manifest.sha256'), "$manifestHash`n")
 

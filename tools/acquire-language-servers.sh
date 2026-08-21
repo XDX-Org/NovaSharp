@@ -56,9 +56,10 @@ expected=$(jq -r ".roslynRazor.artifacts[\"$rid\"].sha256 // empty" "$manifest")
 [[ -n "$platform" && -n "$expected" ]] || { echo "Unsupported RID: $rid" >&2; exit 2; }
 
 work=$(mktemp -d)
-# npm on macOS validates the staged root identity against the lockfile.
-stage="$work/novasharp-web-language-servers"
-mkdir -p "$stage"
+stage="$work/asset"
+# Keep npm's project outside the payload containing the npm runtime. macOS otherwise resolves the project as its own dependency.
+web_stage="$work/novasharp-web-language-servers"
+mkdir -p "$stage" "$web_stage"
 cleanup() {
     [[ -n "${work:-}" && -d "$work" ]] && rm -rf "$work"
 }
@@ -97,10 +98,11 @@ tar -xf "$work/$archive" -C "$work/node"
 cp -R "$work/node/node-v$node_version-$node_platform" "$stage/node"
 
 web="$repo/src/NovaSharp/LanguageServers/Web"
-cp "$web/server.cjs" "$web/package.json" "$web/package-lock.json" "$stage/"
+cp "$web/server.cjs" "$web/package.json" "$web/package-lock.json" "$web_stage/"
 node="$stage/node/bin/node"
 npm_cli="$stage/node/lib/node_modules/npm/bin/npm-cli.js"
-"$node" "$npm_cli" ci --omit=dev --ignore-scripts --no-audit --no-fund --prefix "$stage"
+"$node" "$npm_cli" ci --omit=dev --ignore-scripts --no-audit --no-fund --prefix "$web_stage"
+mv "$web_stage/server.cjs" "$web_stage/package.json" "$web_stage/package-lock.json" "$web_stage/node_modules" "$stage/"
 cp "$stage/node/LICENSE" "$stage/licenses/node-MIT.txt"
 printf '%s\n' "$manifest_hash" > "$stage/.source-manifest.sha256"
 

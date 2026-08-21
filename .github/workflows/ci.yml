@@ -234,3 +234,4 @@ jobs:
           }
 
           Write-Output 'The bootstrap refused win-arm64 for the recorded reason.'
+          exit 0
