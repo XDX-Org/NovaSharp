@@ -56,7 +56,8 @@ expected=$(jq -r ".roslynRazor.artifacts[\"$rid\"].sha256 // empty" "$manifest")
 [[ -n "$platform" && -n "$expected" ]] || { echo "Unsupported RID: $rid" >&2; exit 2; }
 
 work=$(mktemp -d)
-stage="$work/asset"
+# npm on macOS validates the staged root identity against the lockfile.
+stage="$work/novasharp-web-language-servers"
 mkdir -p "$stage"
 cleanup() {
     [[ -n "${work:-}" && -d "$work" ]] && rm -rf "$work"

@@ -225,8 +225,8 @@ jobs:
           Write-Output $output
 
           if ($exitCode -eq 0) {
-              throw ('The bootstrap succeeded on win-arm64. Update the supported platform matrix and the phase '
-                  + 'documents, then move this row into the gates job.')
+              throw ('The bootstrap succeeded on win-arm64. Update the supported platform matrix and the phase ' +
+                  'documents, then move this row into the gates job.')
           }
 
           if ($output -notmatch 'does not support win-arm64') {

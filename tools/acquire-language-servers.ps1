@@ -51,7 +51,8 @@ if (-not $artifact) {
 }
 
 $work = Join-Path ([System.IO.Path]::GetTempPath()) ("novasharp-language-servers-" + [guid]::NewGuid())
-$stage = Join-Path $work 'asset'
+# npm on macOS validates the staged root identity against the lockfile.
+$stage = Join-Path $work 'novasharp-web-language-servers'
 try {
     New-Item -ItemType Directory -Path $work, $stage | Out-Null
     $vsix = Join-Path $work 'csharp.vsix'
