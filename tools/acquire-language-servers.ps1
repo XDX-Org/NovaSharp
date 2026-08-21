@@ -52,7 +52,8 @@ if (-not $artifact) {
 
 $work = Join-Path ([System.IO.Path]::GetTempPath()) ("novasharp-language-servers-" + [guid]::NewGuid())
 $stage = Join-Path $work 'asset'
-# Keep npm's project outside the payload containing the npm runtime. macOS otherwise resolves the project as its own dependency.
+# Keep npm's project outside the payload and invoke npm from that project below. npm 11 on macOS can otherwise
+# resolve the staging directory as a local dependency.
 $webStage = Join-Path $work 'novasharp-web-language-servers'
 try {
     New-Item -ItemType Directory -Path $work, $stage, $webStage | Out-Null
@@ -110,9 +111,14 @@ try {
     } else {
         "$stage\node\lib\node_modules\npm\bin\npm-cli.js"
     }
-    & $node $npmCli ci --omit=dev --ignore-scripts --no-audit --no-fund --prefix $webStage
-    if ($LASTEXITCODE -ne 0) {
-        throw 'npm ci failed for web language servers.'
+    Push-Location -LiteralPath $webStage
+    try {
+        & $node $npmCli ci --omit=dev --ignore-scripts --no-audit --no-fund
+        if ($LASTEXITCODE -ne 0) {
+            throw 'npm ci failed for web language servers.'
+        }
+    } finally {
+        Pop-Location
     }
     Move-Item "$webStage\server.cjs", "$webStage\package.json", "$webStage\package-lock.json", "$webStage\node_modules" $stage
     Copy-Item "$stage\node\LICENSE" "$stage\licenses\node-MIT.txt"
