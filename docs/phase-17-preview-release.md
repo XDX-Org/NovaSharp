@@ -22,6 +22,8 @@ Ship an installable, supportable preview whose platform claims are backed by rep
 - No release gate depends only on a manual claim; retain logs or test results for each platform.
 - Preview status and unsupported workflows remain visible in product and documentation.
 - Qualification fails if a Monaco worker falls back to the browser thread, any editor asset requires runtime network access, or generated assets differ from the lockfile/build inputs.
+- Qualification fails if any row of the supported platform matrix is missing a package, an unattended smoke test, or a recorded performance budget. Shipping a subset of the matrix is a scope change, not a release.
+- Qualification fails if a shipped binary contains a build-machine path, or if a package was produced without an explicit runtime identifier.
 
 ## Completion criteria
 

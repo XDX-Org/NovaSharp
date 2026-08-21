@@ -7,4 +7,5 @@
     <File Path="package.json" />
   </Folder>
   <Project Path="src/NovaSharp/NovaSharp.csproj" />
+  <Project Path="tests/NovaSharp.Tests/NovaSharp.Tests.csproj" />
 </Solution>

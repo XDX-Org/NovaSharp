@@ -9,7 +9,7 @@
 
 html, body, app, .workbench { width: 100%; height: 100%; margin: 0; }
 
-.workbench { display: grid; grid-template-rows: 44px minmax(0, 1fr); }
+.workbench { display: grid; grid-template-rows: 44px minmax(0, 1fr) 26px; }
 
 .toolbar {
     display: flex;
@@ -30,23 +30,93 @@ button {
 }
 
 button:hover { background: #3b4252; }
+button:disabled { cursor: default; opacity: 0.6; }
 
 .file-name { overflow: hidden; color: #aeb6c4; text-overflow: ellipsis; white-space: nowrap; }
-.editor-panel { min-height: 0; position: relative; }
 
-textarea {
-    width: 100%;
-    height: 100%;
-    padding: 16px;
-    resize: none;
-    border: 0;
-    outline: none;
-    color: #d8dee9;
-    background: #181a1f;
-    font: 14px/1.55 "JetBrains Mono", "Cascadia Code", monospace;
-    tab-size: 4;
+.editor-panel {
+    position: relative;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
 }
 
-.empty-state, .error { padding: 24px; color: #8f99a8; }
-.error { color: #ff8a8a; }
+
+/* The element Monaco is created in. It stays empty until the editor mounts and is never written to by Blazor. */
+.editor-host { min-width: 0; min-height: 0; grid-area: 1 / 1; }
+
+/* Hidden rather than removed while comparing: destroying the element would destroy the editor mounted in it. */
+.editor-host.hidden { visibility: hidden; pointer-events: none; }
+
 #blazor-error-ui { display: none; position: fixed; right: 16px; bottom: 16px; padding: 12px; background: #5b2525; }
+
+/* Shown over the editor rather than replacing it, so a failed action never destroys the current model. Notifications
+   stack in normal flow inside this, so a second one appears below the first instead of covering it. */
+.notices {
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 0;
+    z-index: 2;
+    display: grid;
+}
+
+.notice {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    border-bottom: 1px solid #343842;
+    background: #202329;
+    color: #8f99a8;
+}
+
+.notice > span { flex: 1; }
+.notice button { padding: 4px 10px; }
+.notice .dismiss { padding: 2px 8px; border-color: transparent; background: none; font-size: 15px; line-height: 1; }
+.notice.error { border-bottom-color: #7a3030; background: #2a1d1d; color: #ff8a8a; }
+.notice.conflict { border-bottom-color: #7a6030; background: #2a2418; color: #e8c07d; }
+
+.status-bar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+    padding: 0 8px;
+    border-top: 1px solid #343842;
+    background: #202329;
+    font-size: 12px;
+}
+
+.status-item {
+    padding: 2px 8px;
+    border: none;
+    border-radius: 3px;
+    background: none;
+    color: #aeb6c4;
+    font-size: inherit;
+}
+
+.status-item:hover { background: #2e3440; }
+.badge { color: #e8c07d; }
+
+.picker {
+    position: absolute;
+    right: 16px;
+    bottom: 34px;
+    z-index: 3;
+    display: grid;
+    gap: 10px;
+    width: min(420px, calc(100% - 32px));
+    padding: 14px 16px;
+    border: 1px solid #4c566a;
+    border-radius: 6px;
+    background: #202329;
+    box-shadow: 0 12px 32px rgb(0 0 0 / 45%);
+}
+
+.picker h2 { margin: 0; font-size: 13px; font-weight: 600; }
+.picker select { padding: 6px; border: 1px solid #4c566a; border-radius: 4px; color: inherit; background: #181a1f; }
+.picker-hint { margin: 0; color: #8f99a8; font-size: 12px; }
+.picker-actions { display: flex; gap: 8px; justify-content: flex-end; }

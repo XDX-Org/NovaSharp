@@ -1,6 +1,6 @@
 # NovaSharp documentation
 
-NovaSharp is being built in small, runnable phases. Each phase must leave the application usable and define a narrow foundation for the next one. A phase is complete only when its completion criteria and the applicable [delivery gates](delivery-plan.md) pass on the supported platform matrix.
+NovaSharp is being built in small, runnable phases. Each phase must leave the application usable and define a narrow foundation for the next one. A phase is complete only when its completion criteria and the applicable [delivery gates](delivery-plan.md) pass on every row of the supported platform matrix. NovaSharp is a cross-platform IDE: no operating system is the reference platform, and evidence from one platform is not evidence for the others.
 
 ## Phases
 
@@ -27,6 +27,9 @@ The sequence is dependency order, not a promise that every phase has equal size.
 - [Delivery plan](delivery-plan.md) for status, cross-cutting foundations, quality gates, risks, and open decisions.
 - [Research and architecture notes](ide-roadmap-research.md) for the design rationale and source material.
 - [Monaco decision](decisions/0001-monaco-editor.md) for editor ownership, packaging, and integration boundaries.
+- [Document lifecycle decision](decisions/0002-document-lifecycle.md) for the edit-journal boundary, the text-encoding
+  catalogue and its fallback, and where settings are stored.
+- [Supported platform matrix](delivery-plan.md#supported-platform-matrix) and its parity rule, which govern every phase equally.
 - [Language-server assets](language-server-assets.md) for automatic acquisition, pinned versions, hashes, and runtime policy.
 
 The former combined phases 9 and 10 are retained as redirect pages so existing links do not silently point at obsolete scope.

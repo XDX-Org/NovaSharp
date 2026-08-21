@@ -3,7 +3,8 @@
   "private": true,
   "scripts": {
     "build:monaco": "node tools/build-monaco.mjs",
-    "check:monaco": "node tools/build-monaco.mjs --check"
+    "check:monaco": "node tools/build-monaco.mjs --check",
+    "test:editor-host": "npm --prefix tests/editor-host test"
   },
   "devDependencies": {
     "esbuild": "0.28.2",

@@ -10,10 +10,11 @@ Source control UI, remote development, collaboration, notebooks, AI completion, 
 
 | Phase | Status | Exit evidence |
 |---|---|---|
-| 1. Monaco single-file editor shell | Planned | The existing textarea must be replaced; it does not meet the Monaco-first phase gate |
-| 2–17 | Planned | Completion criteria not yet met |
+| 1. Monaco single-file editor shell | In progress | Monaco is mounted and is the only editor; the placeholder text area is gone. Unit and contract tests run under `dotnet test`, and a browser suite proves worker startup, no runtime network access, and model disposal. Outstanding: per-platform smoke tests, recorded performance budgets, and wiring the browser suite into the bootstrap and CI |
+| 2. Editor and file lifecycle | In progress | Ordered edit replication, the versioned .NET replica and its save barrier, encoding and line-ending resolution, atomic save, save-as, reload, reopen-with-encoding, comparison against the file on disk, and external-change resolution are implemented, as are this phase's three cross-cutting foundations: the command registry, the typed configuration service, and structured notification and logging. 215 assertions run under `dotnet test` and 49 browser gates in `tests/editor-host`. Outstanding: every per-platform gate — the [phase-2 budgets](phase-02-editor-file-lifecycle.md#performance-budgets) are set but unmeasured, and neither suite runs in CI |
+| 3–17 | Planned | Completion criteria not yet met |
 
-Status values are `planned`, `in progress`, `blocked`, and `complete`. Update this table only from test or release evidence; documentation or partial UI alone does not complete a phase.
+Status values are `planned`, `in progress`, `blocked`, and `complete`. Update this table only from test or release evidence; documentation, packaged dependencies, or partial UI alone does not complete a phase. A phase is never `complete` on evidence from a single operating system.
 
 ## Cross-cutting foundations
 
@@ -24,6 +25,7 @@ These are not separate feature phases. Introduce each boundary by the indicated 
 | Dependency bootstrap | 1 | One documented command acquires hash-pinned Monaco, Roslyn/Razor, Node, and web-language assets for the current RID |
 | Monaco host and asset pipeline | 1 | Exact npm lock, local ESM bundle, functioning editor worker, deterministic disposal, no runtime CDN |
 | Async work scheduler | 1 | UI/background priority lanes, bounded queues, cancellation, backpressure, ownership, and observable saturation |
+| Platform abstraction | 1 | One seam for paths, URIs, line endings, file casing, dialogs, and process launch. Product code contains no operating-system branches |
 | Command registry | 2 | Stable command ID, handler, enablement, keybinding, menu/palette metadata |
 | Configuration service | 2 | Typed defaults, user/workspace scopes, validation, atomic versioned storage |
 | Notification and logging | 2 | Structured severity, actionable errors, bounded local logs, source-text redaction |
@@ -33,7 +35,7 @@ These are not separate feature phases. Introduce each boundary by the indicated 
 | Process service | 10 | Argument arrays, explicit environment/working directory, process-tree ownership |
 | Capability/extension boundary | 7 | Internal provider contracts that can later be exposed selectively by phase 16 |
 
-Record decisions that constrain multiple phases as short ADRs under `docs/decisions/`. The editor decision is fixed by [ADR 0001](decisions/0001-monaco-editor.md). Decide project-system strategy before phase 6, terminal engine before phase 11, and debug adapter before phase 12.
+Record decisions that constrain multiple phases as short ADRs under `docs/decisions/`. The editor decision is fixed by [ADR 0001](decisions/0001-monaco-editor.md), and the document lifecycle — replication durability, text encoding, and settings storage — by [ADR 0002](decisions/0002-document-lifecycle.md). Decide C# language-service hosting before phase 6, terminal engine before phase 11, and debug adapter before phase 12. A dependency that presupposes one of those answers must not be added to a project file before its ADR exists.
 
 ## Required execution model
 
@@ -47,25 +49,61 @@ Record decisions that constrain multiple phases as short ADRs under `docs/decisi
 
 ## Supported platform matrix
 
-Before phase 2 completes, record exact minimum OS versions and CI images for Windows x64, Linux x64, and macOS arm64/x64. A platform is supported only when its native host prerequisites, packaging format, and automated smoke-test route are documented. Other architectures are best effort until added to this matrix.
+Every runtime identifier in this table is a first-class target. Ordering is alphabetical and carries no priority. The root
+[README](../README.md#supported-platforms) publishes the contributor-facing view of the same rows.
+
+| Runtime identifier | Pinned assets | Minimum OS version | CI image | Packaging format | Automated smoke test |
+|---|---|---|---|---|---|
+| `linux-arm64` | Yes | Record before phase 2 completes | `ubuntu-24.04-arm` | Record before phase 17 | Pending |
+| `linux-x64` | Yes | Record before phase 2 completes | `ubuntu-24.04` | Record before phase 17 | Pending |
+| `osx-arm64` | Yes | Record before phase 2 completes | `macos-15` | Record before phase 17 | Pending |
+| `osx-x64` | Yes | Record before phase 2 completes | `macos-15-intel` | Record before phase 17 | Pending |
+| `win-arm64` | No | Record before phase 2 completes | `windows-11-arm` (gap asserted) | Record before phase 17 | Pending |
+| `win-x64` | Yes | Record before phase 2 completes | `windows-2025` | Record before phase 17 | Pending |
+
+CI images are the runner labels [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) uses. Every row runs the same
+gates from the same commit: the platform's bootstrap entry point end to end, `dotnet test`, the `tests/editor-host`
+browser suite, and the publish gates. `win-arm64` has no assets yet and its bootstrap refuses to run; the workflow
+asserts that it still refuses for the documented reason, so the gap cannot quietly become a silent exclusion, and the
+day assets exist for it the workflow fails until this table is updated.
+
+Minimum OS versions are still open. They are a product decision about the oldest WebView the packaged Monaco host is
+supported on, not a property of the runner images, so they are not filled in from CI.
+
+### Parity rule
+
+- A platform is supported only when its host prerequisites, bootstrap route, packaging format, and unattended smoke test are all
+  documented and passing. Anything less is `planned`, never `partially supported`.
+- A feature is not complete while it works on some rows and not others. If a capability genuinely cannot exist on a platform, record the
+  gap and its user-visible behavior in the same change that introduces the capability.
+- Product code must not branch on the host operating system. Differences belong behind the platform abstraction seam, which is tested
+  directly.
+- Bootstrap, build, and packaging entry points must be equivalent across shells. Adding a capability to one entry point without the other
+  is an incomplete change.
+- Documentation must present platforms symmetrically. No operating system is the default, the reference, or the one whose instructions
+  appear first by convention.
+- Performance budgets are recorded per platform. A budget met on one operating system says nothing about the others.
 
 ## Quality gates
 
 Every phase must pass:
 
 - A clean build with warnings either fixed or linked to an accepted, time-bounded issue.
+- A test project in `NovaSharp.slnx` that `dotnet test NovaSharp.slnx` executes. A phase with no runnable test project cannot pass any gate below it.
 - Unit tests for state and algorithms; integration tests for service boundaries; interaction tests for the phase's primary user flow.
 - Cancellation, disposal, error recovery, keyboard access, and restored-state tests where applicable.
 - Tests prove the UI/Monaco thread is not blocked, stale work is rejected, queues remain bounded, and concurrent completion order cannot corrupt state.
-- No secrets, source text, or absolute paths in telemetry; telemetry remains opt-in.
+- Every gate above passes on every supported runtime identifier, from the same commit, without platform-specific test exclusions.
+- A runtime-identifier-specific publish produces a complete payload, and a publish without one fails rather than shipping an incomplete application.
+- No secrets, source text, absolute build-machine paths, or developer directory layouts in shipped binaries or telemetry; telemetry remains opt-in.
 - Updated status, user documentation, known limitations, and migration notes for changed persisted schemas.
 
 Budgets must be measured on named fixture hardware and repositories. Set numeric budgets before implementing the affected phase:
 
-| Budget | Set no later than |
-|---|---:|
-| Startup time and idle memory | 2 |
-| Typing/render latency and large-file memory | 2 |
+| Budget | Set no later than | Recorded in |
+|---|---:|---|
+| Startup time and idle memory | 2 | [Phase 2](phase-02-editor-file-lifecycle.md#performance-budgets) |
+| Typing/render latency and large-file memory | 2 | [Phase 2](phase-02-editor-file-lifecycle.md#performance-budgets) |
 | Explorer expansion and watcher recovery | 3 |
 | Solution load, Roslyn snapshot count, completion first result | 6 |
 | Search throughput/result memory | 9 |
@@ -88,6 +126,8 @@ For an active phase, track an owner, target release, dependencies, risks, and li
 | Duplicate Monaco models diverge across split views | One model per document URI with explicit view/model leases |
 | Unbounded background parallelism makes the IDE slower | Bounded priority queues, cancellation, measurements, and single-writer mutation boundaries |
 | PhotinoXDX/WebView platform differences | Run host smoke tests on every supported OS from phase 1 onward |
+| Development converges on one operating system and the others rot | Keep the platform matrix, both bootstrap entry points, and CI green together; treat a single-platform result as no result |
+| Dependencies commit to an architecture before its ADR exists | Project files may not reference a language-service, terminal, or debugger implementation until the governing decision is recorded |
 | Roslyn/MSBuild state diverges from dirty buffers | One workspace coordinator with versioned mappings and fixture solutions |
 | Terminal/debug child processes leak or target unrelated processes | Explicit process-tree ownership and adversarial cleanup tests |
 | Razor projections map edits or diagnostics incorrectly | Versioned host/projected ranges and round-trip mapping fixtures |
@@ -98,15 +138,19 @@ For an active phase, track an owner, target release, dependencies, risks, and li
 
 Resolve these before the named phase starts:
 
-1. Phase 1: Monaco version/build tool, packaged worker URLs, content security policy, and supported WebView versions.
-2. Phase 2: edit-journal persistence boundary, encoding fallback, and settings format/location. Monaco owns live text and undo/redo.
-3. Phase 6: MSBuild discovery/evaluation library, supported SDK/project types, and multi-target context policy.
-4. Phase 11: terminal emulator implementation or dependency, licensing, and PTY/conpty strategy.
-5. Phase 12: debug adapter/engine, protocol transport, redistribution/licensing, attach permissions, and capability fallback.
-6. Phase 15: Razor projection ownership. Protocol-based, pinned Roslyn/Razor acquisition is fixed by the language-server asset manifest.
-7. Phase 16: in-process versus isolated extension host, trust model, permissions, compatibility, and signing policy.
-8. Phase 17: application identity, versioning, package formats, signing/notarization, update channel, and support lifetime.
+1. Phase 1: Monaco version/build tool, packaged worker URLs, content security policy, and the minimum WebView version on each supported platform.
+2. ~~Phase 2: edit-journal persistence boundary, encoding fallback, and settings format/location.~~ Resolved by
+   [ADR 0002](decisions/0002-document-lifecycle.md): the journal is in memory only and crash recovery is phase 14's,
+   the encoding surface is the framework's whole catalogue with a byte-preserving fallback, and settings are versioned
+   JSON in a user and a workspace scope.
+3. Phase 6: C# language-service hosting — the pinned out-of-process Roslyn language server, in-process `Microsoft.CodeAnalysis.Workspaces.MSBuild`, or a defined split. The project file currently references both; that must be resolved to one recorded decision, with the unused dependencies removed.
+4. Phase 6: MSBuild discovery/evaluation library, supported SDK/project types, and multi-target context policy.
+5. Phase 11: terminal emulator implementation or dependency, licensing, and the pseudoterminal strategy for every supported platform.
+6. Phase 12: debug adapter/engine, protocol transport, redistribution/licensing, attach permissions, and capability fallback.
+7. Phase 15: Razor projection ownership. Protocol-based, pinned Roslyn/Razor acquisition is fixed by the language-server asset manifest.
+8. Phase 16: in-process versus isolated extension host, trust model, permissions, compatibility, and signing policy.
+9. Phase 17: application identity, versioning, package formats, signing/notarization, update channel, and support lifetime.
 
 ## Preview definition
 
-Preview is reached only when phases 1–17 are complete, the supported platform matrix is green, clean install/update/uninstall paths pass, persisted-state migration and crash recovery pass, security and license reviews have no release blockers, and known limitations are published.
+Preview is reached only when phases 1–17 are complete, every row of the supported platform matrix is green, clean install/update/uninstall paths pass, persisted-state migration and crash recovery pass, security and license reviews have no release blockers, and known limitations are published.

@@ -16,7 +16,9 @@
     <PackageReference Include="PhotinoXDX.Blazor" Version="0.1.0-preview.6" />
   </ItemGroup>
 
-  <ItemGroup>
+  <!-- Development-only convenience: lets the inner loop find language-server assets that a RID-less build does not copy.
+       It embeds a build-machine path, so it must never reach a shipped binary. -->
+  <ItemGroup Condition="'$(Configuration)' == 'Debug'">
     <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
       <_Parameter1>LanguageServerDevelopmentAssetRoot</_Parameter1>
       <_Parameter2>$(MSBuildProjectDirectory)/LanguageServers/Assets</_Parameter2>
@@ -41,10 +43,21 @@
           CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
-  <Target Name="ValidateLocalAssets" BeforeTargets="Build;Publish">
+  <Target Name="ValidateLocalAssets" BeforeTargets="Build">
     <Error Condition="!Exists('wwwroot/monaco/asset-manifest.json')"
-           Text="Monaco assets are missing. Run the platform bootstrap command from README.md." />
+           Text="Monaco assets are missing. Run the bootstrap entry point for your shell, as described in README.md." />
     <Error Condition="'$(RuntimeIdentifier)' != '' and !Exists('LanguageServers/Assets/$(RuntimeIdentifier)/.source-manifest.sha256')"
-           Text="Language-server assets for $(RuntimeIdentifier) are missing. Run the platform bootstrap command from README.md." />
+           Text="Language-server assets for $(RuntimeIdentifier) are missing. Run the bootstrap entry point for your shell, as described in README.md." />
+  </Target>
+
+  <!-- Language-server assets are runtime-identifier specific. A publish without one would silently ship an application with no
+       Roslyn, Razor, Node, or web-language payload, so it fails here instead. -->
+  <Target Name="ValidatePublishAssets" BeforeTargets="Publish">
+    <Error Condition="'$(RuntimeIdentifier)' == ''"
+           Text="Publishing NovaSharp requires an explicit runtime identifier: dotnet publish src/NovaSharp/NovaSharp.csproj -r &lt;runtime-identifier&gt; -c Release." />
+    <Error Condition="!Exists('LanguageServers/Assets/$(RuntimeIdentifier)/.source-manifest.sha256')"
+           Text="Language-server assets for $(RuntimeIdentifier) are missing. Run the bootstrap entry point for your shell, as described in README.md." />
+    <Error Condition="'$(Configuration)' == 'Debug'"
+           Text="NovaSharp must not be published in the Debug configuration: the development asset root embeds a build-machine path." />
   </Target>
 </Project>

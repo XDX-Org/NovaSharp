@@ -35,7 +35,7 @@ NovaSharp aims to be:
 
 * **Focused** — built specifically around C# and modern .NET workflows
 * **Fast** — Monaco owns the latency-sensitive editing path; I/O and expensive analysis run asynchronously on bounded background workers
-* **Cross-platform** — designed to run across major desktop operating systems
+* **Cross-platform** — every target in the [supported platform matrix](docs/delivery-plan.md#supported-platform-matrix) is first-class; no operating system is the reference platform
 * **Extensible** — structured to support additional languages, tools, and integrations
 * **Open source** — developed openly with community contributions welcomed
 
@@ -71,56 +71,75 @@ Expect:
 
 ### Requirements
 
-All platforms require:
+Every supported platform requires:
 
 * Git
 * A [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0); `global.json` accepts the latest installed .NET 10 feature band
-* Internet access for the initial dependency bootstrap
+* A shell that can run the bootstrap entry point for that platform
+* Network access for the initial dependency bootstrap
 * About 1 GB of free space for NuGet packages, Monaco, Node.js, Roslyn/Razor, and web-language services
 
 Node.js and npm are **not** separate prerequisites. The bootstrap downloads a pinned Node.js runtime, verifies its SHA-256, and uses it
 for Monaco and the web-language servers.
 
-Platform requirements:
+### Supported platforms
 
-| Platform | Additional requirements |
-|---|---|
-| Windows 10/11 x64 | Windows PowerShell 5.1+ or PowerShell 7; [WebView2 Evergreen Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/consumer/) |
-| Linux x64/arm64 | GTK 4 and WebKitGTK 6 runtime libraries; Bash, `curl`, `jq`, `unzip`, `tar`, and XZ support |
-| macOS Intel/Apple Silicon | Bash, `curl`, `jq`, `unzip`, and `tar`; the system WebKit runtime |
+NovaSharp treats every runtime identifier below as a first-class target. The table is ordered alphabetically and that ordering carries no
+priority: no operating system is the reference platform, and a feature is not finished while it works on only some of these rows.
 
-PhotinoXDX defines the host requirements as .NET 10, WebView2 on Windows, GTK 4 plus WebKitGTK 6 on Linux, and Intel or Apple Silicon
-on macOS ([PhotinoXDX requirements](https://github.com/XDX-Org/PhotinoXDX#requirements)). Package names vary by Linux distribution.
-For Ubuntu/Debian-family systems, the usual development setup is:
+| Runtime identifier | Host runtime prerequisites | Bootstrap prerequisites | Pinned assets | Automated smoke test |
+|---|---|---|---|---|
+| `linux-arm64` | GTK 4, WebKitGTK 6 | POSIX shell, `curl`, `jq`, `tar`, `unzip`, XZ support | Yes | Pending |
+| `linux-x64` | GTK 4, WebKitGTK 6 | POSIX shell, `curl`, `jq`, `tar`, `unzip`, XZ support | Yes | Pending |
+| `osx-arm64` | System WebKit | POSIX shell, `curl`, `jq`, `tar`, `unzip` | Yes | Pending |
+| `osx-x64` | System WebKit | POSIX shell, `curl`, `jq`, `tar`, `unzip` | Yes | Pending |
+| `win-arm64` | WebView2 Evergreen Runtime | PowerShell 5.1 or later | Not yet pinned | Pending |
+| `win-x64` | WebView2 Evergreen Runtime | PowerShell 5.1 or later | Yes | Pending |
+
+*Pinned assets* means the runtime identifier has verified SHA-256 entries in the language-server asset manifest. *Automated smoke test*
+means a launch-and-edit check runs unattended on that platform in CI. No row is complete until both columns read yes; see the
+[delivery plan](docs/delivery-plan.md) for the parity rule that governs them.
+
+Host runtime prerequisites are inherited from [PhotinoXDX](https://github.com/XDX-Org/PhotinoXDX#requirements). Package names differ
+between operating systems and between Linux distributions, so install the bootstrap prerequisites with whichever package manager the
+platform uses. One example, for Debian and Ubuntu family systems:
 
 ```bash
 sudo apt-get update
 sudo apt-get install curl jq tar unzip xz-utils libgtk-4-1 libwebkitgtk-6.0-4
 ```
 
-On macOS, install `jq` if it is not already available, for example with `brew install jq`.
+Equivalent packages exist for other distributions, for Homebrew or MacPorts on macOS, and through the Windows runtime installer linked
+above. The bootstrap is meant to check its prerequisites before downloading anything; if a check for your platform is missing, that is a
+bug worth reporting rather than a reason to install tools by trial and error.
 
 ### Clone, bootstrap, and run
-
-Windows PowerShell:
-
-```powershell
-git clone https://github.com/XDX-Org/NovaSharp.git
-Set-Location NovaSharp
-powershell -ExecutionPolicy Bypass -File tools/setup.ps1
-dotnet run --project src/NovaSharp/NovaSharp.csproj --no-build
-```
-
-Linux or macOS:
 
 ```bash
 git clone https://github.com/XDX-Org/NovaSharp.git
 cd NovaSharp
-bash tools/setup.sh
+```
+
+Run the bootstrap entry point for your shell. The two entry points are equivalent and produce the same asset tree:
+
+```bash
+# POSIX shell
+./tools/setup.sh
+```
+
+```powershell
+# PowerShell
+pwsh -File tools/setup.ps1
+```
+
+On Windows PowerShell 5.1, or wherever the execution policy blocks local scripts, prefix the invocation with
+`-ExecutionPolicy Bypass`. Then, on every platform:
+
+```bash
 dotnet run --project src/NovaSharp/NovaSharp.csproj --no-build
 ```
 
-The setup command is idempotent. It automatically:
+The bootstrap is idempotent. It automatically:
 
 1. Detects the local runtime identifier.
 2. Downloads and SHA-256 verifies the pinned Roslyn C# language server, matching Razor cohost, and Node.js runtime.
@@ -134,19 +153,46 @@ runtime. Exact versions, sources, hashes, licenses, and update rules are in [lan
 
 To force a clean dependency reacquisition:
 
-```powershell
-powershell -ExecutionPolicy Bypass -File tools/setup.ps1 -ForceAssets
+```bash
+# POSIX shell
+./tools/setup.sh --force
 ```
 
-```bash
-bash tools/setup.sh --force
+```powershell
+# PowerShell
+pwsh -File tools/setup.ps1 -ForceAssets
 ```
 
 Never bypass a hash or lockfile failure. Update the relevant manifest and notices as one reviewed dependency change.
 
+### Publishing
+
+Language-server assets are runtime-identifier specific, so a publish must name one:
+
+```bash
+dotnet publish src/NovaSharp/NovaSharp.csproj -r <runtime-identifier> -c Release
+```
+
+Publishing without `-r` produces an application with no Roslyn, Razor, Node, or web-language payload. Treat a runtime-identifier-less
+publish as a packaging error rather than a supported configuration.
+
+### Tests
+
+`NovaSharp.slnx` contains `tests/NovaSharp.Tests`, which `dotnet test NovaSharp.slnx` runs. A second suite,
+[`tests/editor-host`](tests/editor-host/README.md), drives the packaged editor in a real browser to assert what only a
+browser can show: worker startup, no runtime network access, deterministic disposal, and that the edit batches the host
+produces reconstruct Monaco's text exactly.
+
+[CI](.github/workflows/ci.yml) runs both, plus the bootstrap and the publish gates, on every runtime identifier in the
+[supported platform matrix](docs/delivery-plan.md#supported-platform-matrix) from the same commit. A green run on every
+row, and the recorded performance budgets, are the [quality gates](docs/delivery-plan.md#quality-gates) still
+outstanding.
+
 > [!NOTE]
-> The current branch is still an early editor-shell prototype. Bootstrap makes every planned editor/language dependency reproducibly
-> available now; feature integration remains governed by the phase roadmap.
+> Monaco is mounted and is the only editor, and the document lifecycle around it — asynchronous edit replication, dirty
+> state, safe save and reload, encoding and line-ending handling, and external-change resolution — is in place. Phases
+> 1 and 2 are both in progress rather than complete: their remaining gates are per-platform smoke tests, recorded
+> performance budgets, CI, and, for phase 2, the command registry, configuration service, and structured notifications.
 
 See the [phase documentation](docs/README.md) for current scope and verification gates.
 
@@ -166,7 +212,7 @@ Development follows the detailed [phase roadmap](docs/README.md) and [delivery g
 * Improving performance and reliability
 * Producing signed, tested, recoverable preview packages for supported platforms
 
-The [architecture notes](docs/ide-roadmap-research.md) define the editor boundary and required async/concurrency model. UI callbacks must remain short: file I/O, project evaluation, Roslyn work, search, process streams, and debugger traffic may not block Monaco or the Blazor renderer.
+Each item is delivered for every supported platform at once; a roadmap item is not finished while it works on some and not others. The [architecture notes](docs/ide-roadmap-research.md) define the editor boundary and required async/concurrency model. UI callbacks must remain short: file I/O, project evaluation, Roslyn work, search, process streams, and debugger traffic may not block Monaco or the Blazor renderer.
 
 The roadmap will evolve as the foundations of the IDE mature.
 
@@ -178,7 +224,8 @@ Because NovaSharp is still at an early stage, it is recommended that contributor
 
 When reporting a bug, include:
 
-* Your operating system
+* Your operating system, version, and processor architecture
+* Whether you have reproduced the issue on any other platform
 * Your installed .NET SDK version
 * Steps to reproduce the issue
 * Expected behaviour

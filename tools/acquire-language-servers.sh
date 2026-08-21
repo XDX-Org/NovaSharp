@@ -4,8 +4,19 @@ set -euo pipefail
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 asset_root="$repo/src/NovaSharp/LanguageServers/Assets"
 manifest="$repo/src/NovaSharp/LanguageServers/assets.json"
-rid=${1:-}
-force=${2:-}
+rid=
+force=
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --force) force=--force ;;
+        -*) echo "Unknown argument: $1" >&2; exit 64 ;;
+        *)
+            [[ -z "$rid" ]] || { echo "Runtime identifier already given as $rid" >&2; exit 64; }
+            rid=$1
+            ;;
+    esac
+    shift
+done
 
 if [[ -z "$rid" ]]; then
     case "$(uname -s)-$(uname -m)" in
@@ -48,11 +59,7 @@ work=$(mktemp -d)
 stage="$work/asset"
 mkdir -p "$stage"
 cleanup() {
-    if [[ -d "$work" ]]; then
-        find "$work" -type f -delete
-        find "$work" -type l -delete
-        find "$work" -depth -type d -empty -delete
-    fi
+    [[ -n "${work:-}" && -d "$work" ]] && rm -rf "$work"
 }
 trap cleanup EXIT
 
@@ -100,11 +107,8 @@ case "$output/" in
     "$asset_root"/*/) ;;
     *) echo "Refusing to replace an output outside $asset_root" >&2; exit 5 ;;
 esac
-if [[ -d "$output" ]]; then
-    find "$output" -type f -delete
-    find "$output" -type l -delete
-    find "$output" -depth -type d -empty -delete
-fi
+rm -rf "$output"
 mkdir -p "$asset_root"
 mv "$stage" "$output"
+[[ -f "$output/.source-manifest.sha256" ]] || { echo "Asset replacement did not land at $output" >&2; exit 6; }
 echo "Acquired and verified language servers for $rid in $output."

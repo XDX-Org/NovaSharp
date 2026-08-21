@@ -1,6 +1,7 @@
 param([switch]$ForceAssets)
 
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
 $repo = Split-Path -Parent $PSScriptRoot
 if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
     throw 'The .NET 10 SDK is required. Install it from https://dotnet.microsoft.com/download/dotnet/10.0.'
@@ -45,6 +46,10 @@ try {
     & dotnet build NovaSharp.slnx --no-restore
     if ($LASTEXITCODE -ne 0) {
         throw 'dotnet build failed.'
+    }
+    & dotnet test NovaSharp.slnx --no-build
+    if ($LASTEXITCODE -ne 0) {
+        throw 'dotnet test failed.'
     }
 } finally {
     Pop-Location

@@ -27,5 +27,7 @@ Blazor remains responsible for workbench UI such as Explorer, tabs, Problems, ou
 - Delete the textarea/custom token-row design rather than maintaining two production editors.
 - Do not send full document values or trigger Blazor rendering on each keystroke.
 - Asset building, worker startup, disposal, accessibility, and third-party notices become phase-1/release gates.
+- One host module and one worker-startup path serve every supported platform. A per-platform loader, a per-WebView asset variant, or a
+  fallback enabled on only some operating systems is a violation of this decision, not an accommodation.
 - Each feature has one authority. Disable any Monaco built-in language service that would duplicate the selected NovaSharp/Roslyn provider.
 - Keep integrations on Monaco's versioned public TypeScript API; private VS Code internals are out of scope.

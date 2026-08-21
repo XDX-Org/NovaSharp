@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
+    <PackageReference Include="xunit.v3" Version="3.2.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/NovaSharp/NovaSharp.csproj" />
+  </ItemGroup>
+
+  <!-- Contract tests read these as text. Copying them keeps the tests free of any build-machine path. -->
+  <ItemGroup>
+    <Content Include="../../src/NovaSharp/wwwroot/monaco-editor-host.js"
+             Link="Contracts/monaco-editor-host.js" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../src/NovaSharp/wwwroot/index.html"
+             Link="Contracts/index.html" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../src/NovaSharp/wwwroot/app.css"
+             Link="Contracts/app.css" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../src/NovaSharp/Components/EditorPanel.razor"
+             Link="Contracts/EditorPanel.razor" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

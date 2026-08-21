@@ -6,6 +6,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# Invoke-WebRequest renders a progress bar for every chunk on Windows PowerShell, which dominates the cost of a large download.
+$ProgressPreference = 'SilentlyContinue'
 $repo = Split-Path -Parent $PSScriptRoot
 $assetRoot = Join-Path $repo 'src\NovaSharp\LanguageServers\Assets'
 $manifestPath = Join-Path $repo 'src\NovaSharp\LanguageServers\assets.json'

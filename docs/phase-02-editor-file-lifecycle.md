@@ -17,50 +17,100 @@ Make Monaco-backed opening, editing, saving, and externally changing one file sa
 
 Not included: multiple documents, workspace trees, semantic C# features, custom syntax rendering, or settings UI.
 
-## Ownership and data flow
+## Decisions this phase depends on
 
-```text
-Monaco ITextModel (live text + undo; browser thread)
-        |
-        | ordered UTF-16 edit batches; no synchronous acknowledgement
-        v
-bounded per-document channel
-        |
-        v
-DocumentReplica (single writer; sequence + immutable snapshots)
-        |
-        +--> async save/recovery
-        +--> later Roslyn/search consumers
-```
+[ADR 0002](decisions/0002-document-lifecycle.md) resolves the three questions the delivery plan required before the
+phase started:
 
-- Monaco is authoritative for interactive text and undo/redo while its model is open. `DocumentRecord` owns persistence metadata and leases; `DocumentReplica` is the ordered .NET shadow.
-- Each edit batch carries document ID, base sequence, ordered non-overlapping range edits, and resulting sequence. Validate UTF-16 bounds and ordering before applying it.
-- The JavaScript callback enqueues and returns. A per-document pump coalesces safe changes, keeps at most one interop send in flight, and never waits in the typing path for disk, Roslyn, Blazor rendering, or a .NET version acknowledgement. Queue overflow or a sequence gap triggers one full-snapshot resync.
-- Save and Save As await a replica barrier for the requested Monaco sequence, snapshot once, then write asynchronously. Dirty state compares saved and current sequences; it is not a manually toggled Boolean.
-- Reload, formatting, and other .NET-originated replacements use Monaco edit operations with origin guards and deliberate undo stops. Ordinary updates never use whole-model `setValue`.
-- Monaco handles token colors and editor-local UI. NovaSharp does not render aligned source/token layers or Blazor overlays for Monaco-owned features.
-- Editor buttons, Monaco actions, and shortcuts invoke registered commands; components do not duplicate command behavior.
-- Store settings atomically with user/workspace scope and schema version. Redact source text and sensitive paths from logs by default.
-- File watching is advisory. A dirty model wins until the user explicitly reloads or resolves a conflict.
+- **The edit journal is in memory only.** Nothing about the replica reaches disk, so a crash discards unsaved edits.
+  Crash recovery belongs to [phase 14](phase-14-durable-workbench.md), which owns the persistence service any journal
+  would be built on. The replication protocol is journal-shaped so that phase can persist it unchanged.
+- **Encoding is a catalogue, not a default with an escape hatch.** Every encoding the running framework can round-trip
+  is offered. A byte-order mark decides; otherwise the configured default is tried strictly; a strict failure opens the
+  document with a byte-preserving fallback and says so. Reopening with an encoding and converting to one are separate
+  commands and are never conflated.
+- **Settings are versioned JSON in two scopes**, user and workspace, written through the same replace-in-one-step path
+  as document saves.
 
-## Async and concurrency requirements
+## Line endings and what Monaco can represent
 
-- File reads, writes, flushes, watcher events, dialogs, and conflict checks are cancellation-aware and never synchronously block a UI thread.
-- One consumer mutates each document replica, so ordering needs no coarse lock. Different documents may be processed concurrently within the global worker limit introduced in phase 1.
-- Background work publishes small immutable status snapshots to Blazor. Content changes do not call `StateHasChanged`.
-- Queue depth, replica lag, resync count, save-barrier latency, long UI tasks, and model memory are measurable and bounded.
-- Shutdown stops producers, drains or checkpoints accepted edits to a deadline, then disposes interop/model leases in dependency order.
+Monaco represents a line feed or a carriage-return pair and nothing else. A carriage-return-only document is therefore
+decoded, normalized to line feeds for the editor, and converted back to carriage returns when it is written. The
+conversion happens at those two boundaries only, so an offset in the replica always means what it means in Monaco.
+Mixed endings are recorded as mixed, normalized to the dominant one, and surfaced in the status bar before a save
+rewrites the rest of the file.
+
+## Delivered so far
+
+The document lifecycle: the replication pump, the versioned replica and its save barrier, encoding and line-ending
+resolution, open, save, save-as, reload, reopen-with-encoding, comparison against the file on disk, external-change
+detection with compare/reload/keep, and prompts before anything discards unsaved text.
+
+The three cross-cutting foundations this phase introduces are in place:
+
+- **The command registry.** Stable identifiers, handlers, enablement predicates, platform-neutral keybindings, and
+  palette metadata. It is authoritative: the editor is handed the descriptors and binds what it is given, so a toolbar
+  button, a shortcut, and a notification's action all resolve one command with one enablement rule. A keybinding the
+  editor cannot resolve is returned and reported rather than dropped.
+- **The typed configuration service.** Validated defaults, a user and a workspace scope merged key by key, and atomic
+  versioned JSON storage through the same replace-in-one-step write documents use. A value it cannot use is ignored
+  *and reported*, never silently dropped, and a file written by a newer schema is left alone.
+- **Structured notification and logging.** Severity, identity so a repeated condition replaces itself rather than
+  stacking, actions named as commands, a bounded log, and redaction by default — document text never reaches the log,
+  and a path is reduced to its file name and a digest of its directory.
+
+Still open in this phase, and required before it can be called complete:
+
+- Every per-platform gate. [CI](../.github/workflows/ci.yml) now runs the bootstrap, `dotnet test`, the browser suite,
+  and the publish gates on every supported runtime identifier, but it has not yet been green on every row, the budgets
+  below have not been measured on any named hardware, and the unattended smoke tests do not exist.
+
+## Performance budgets## Performance budgets
+
+Set here because the delivery plan requires the startup, typing, and large-file budgets to exist before this phase is
+implemented. Each is a per-platform figure: a result on one runtime identifier is not a result for the others, and the
+fixture hardware must be named in the record alongside the number.
+
+| Budget | Limit | Fixture |
+|---|---|---|
+| Cold start to an interactive editor | 2,500 ms | This repository's own `NovaSharp.csproj`, opened from a cold page cache |
+| Warm start to an interactive editor | 1,200 ms | The same file, second launch |
+| Idle resident memory, one small file open | 400 MB | `src/NovaSharp/Workbench.cs` |
+| Keystroke to paint, while a background workload runs | p95 16 ms, p99 33 ms | 60 s of sustained typing in a 2,000-line file |
+| Longest UI-thread task during that run | 50 ms | The same run |
+| Edit-replication lag, Monaco sequence to replica | p95 50 ms, p99 150 ms | The same run |
+| Replication queue depth during that run | 25% of capacity | The same run |
+| Save barrier, 1 MB document, typing throughout | p95 120 ms | A generated 1 MB C# file |
+| Save to disk, 1 MB document | p95 250 ms | The same file |
+| Resident memory added by a 10 MB file | 5x the file size | A generated 10 MB C# file |
+| Resident memory after 100 open/close cycles | Baseline + 10%, zero live models | Alternating between two files |
 
 ## Completion criteria
 
-- Core Monaco editing and shortcuts work offline without a custom editor layer.
-- Save preserves the chosen encoding and line endings and cannot corrupt the original on an interrupted write.
-- Dirty state updates from edit sequences and clears only after the matching snapshot reaches disk.
-- External changes offer compare/reload/keep choices and never overwrite dirty text silently.
-- Save during rapid typing writes a sequence-consistent snapshot; a stale or missing edit batch causes resynchronization, not corruption.
-- Monaco models, view instances, document replicas, queued work, event handlers, and interop references are disposed when the file closes.
-- Tests cover IME composition, surrogate pairs, combining characters, bidi text, tabs, CRLF/LF, multi-line/multi-cursor paste, selection replacement, undo grouping, queue saturation, out-of-order callbacks, cancellation, and shutdown.
-- Numeric typing, edit-replication lag, save latency, UI-thread long-task, large-file memory, and repeated-open/close budgets pass on named hardware.
+- **Met.** Core Monaco editing and shortcuts work offline without a custom editor layer. Save and save-as are bound to
+  the platform-neutral modifier through Monaco actions; find, replace, undo, redo, and word wrap remain Monaco's own.
+- **Met.** Save preserves the chosen encoding and line endings and cannot corrupt the original on an interrupted write:
+  the bytes go to a temporary sibling and the original is replaced in one step, or not at all.
+- **Met.** Dirty state updates from edit sequences and clears only after the matching snapshot reaches disk. It is
+  computed from Monaco's alternative version identifier, so undoing back to the saved text clears it.
+- **Met.** External changes offer compare, reload, or keep, and never overwrite dirty text silently. The comparison is
+  a Monaco diff of the file against the editor's live model, so it shows unsaved text and stays editable. A clean
+  document follows the file when the user has asked it to; a dirty one keeps what they typed until they answer.
+- **Met.** Save during rapid typing writes a sequence-consistent snapshot; a stale or missing edit batch causes
+  resynchronization, not corruption. Both paths are covered by tests.
+- **Met.** Monaco models, view instances, document replicas, queued work, event handlers, and interop references are
+  disposed when the file closes.
+- **Met.** Tests cover IME composition, surrogate pairs, combining characters, bidi text, tabs, CRLF/LF/CR,
+  multi-line and multi-cursor edits, selection replacement, undo grouping, queue saturation, out-of-order and stale
+  batches, cancellation, and shutdown, alongside the registry's enablement and failure handling, settings merging and
+  validation, and redaction. 215 assertions run under `dotnet test`; 49 browser gates run in `tests/editor-host`.
+- **Met.** The command registry, the typed configuration service, and structured notification and logging are
+  introduced by this phase and are in place, with the workbench driven through them rather than around them.
+- **Not met.** Numeric typing, edit-replication lag, save latency, UI-thread long-task, large-file memory, and
+  repeated-open/close budgets are recorded above but have not been measured on any named hardware.
+- **Not met.** No criterion above is satisfied by evidence from more than one operating system yet. CI images are now
+  recorded in the supported platform matrix and the gates run on every row; the minimum OS versions, a green run, and
+  the measured budgets are what remain.
 
 ## Next phase
 
