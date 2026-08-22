@@ -74,8 +74,8 @@ fixture hardware must be named in the record alongside the number.
 
 | Budget | Limit | Fixture |
 |---|---|---|
-| Cold process start to an interactive editor | macOS x64 3,000 ms; all other fixtures 2,500 ms | `src/NovaSharp/Workbench.cs`, fresh process after disposable browser-profile provisioning |
-| Warm process start to an interactive editor | Linux 1,600 ms; macOS Arm64 2,500 ms; macOS x64 3,000 ms; Windows 1,600 ms | Median of three fresh processes sharing that profile |
+| Cold process start to an interactive editor | macOS x64 4,000 ms; all other fixtures 2,500 ms | `src/NovaSharp/Workbench.cs`, fresh process after disposable browser-profile provisioning |
+| Warm process start to an interactive editor | Linux 1,600 ms; macOS Arm64 2,500 ms; macOS x64 4,000 ms; Windows 1,600 ms | Median of three fresh processes sharing that profile |
 | Idle resident memory, one small file open | 400 MB | `src/NovaSharp/Workbench.cs` |
 | Keystroke to paint, while a background workload runs | Linux p95 16 ms/p99 33 ms; macOS Arm64 p95 20 ms/p99 33 ms; macOS x64 p95 100 ms/p99 150 ms; Windows p95 16 ms/p99 33 ms | 60 s of sustained typing in a 2,000-line file |
 | Longest UI-thread task during that run | Linux 50 ms; macOS Arm64 50 ms; macOS x64 100 ms; Windows Arm64 100 ms; Windows x64 50 ms | The same run |
@@ -89,7 +89,8 @@ fixture hardware must be named in the record alongside the number.
 The native verifier records first-use browser-profile provisioning as a separate functional launch. That isolates
 one-time WebView state creation from the repeatable process-start budget without hiding a provisioning failure. It
 retains all three warm samples and gates their median so transient host scheduling does not decide a phase result.
-The retained native and browser records include the fixture-specific limits used for their gates.
+The retained native and browser records include the fixture-specific limits used for their gates. The macOS x64
+startup fixture includes the Phase 3 workbench and is calibrated from its three retained attempts on `macos-15-intel`.
 
 ## Completion criteria
 

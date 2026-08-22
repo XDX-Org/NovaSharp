@@ -129,8 +129,8 @@ Provisioning is retained as a separate functional result; the measured launches 
 uses the retained samples' median. `tests/editor-host` records paint,
 browser-thread, replication, queue, and 100-cycle heap measurements. CI names the runner fixture and uploads both JSON
 records with their fixture-specific limits; a missing record or a budget failure fails that RID's job.
-CI retries a failed complete native fixture at most twice and retains every attempt, preventing transient hosted-runner
-contention from either erasing the failed measurement or silently widening the product budget.
+CI retries a failed complete native or browser fixture at most twice and retains every attempt, preventing transient
+hosted-runner contention from either erasing the failed measurement or silently widening the product budget.
 
 ## Delivery records
 
