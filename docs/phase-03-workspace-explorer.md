@@ -2,8 +2,8 @@
 
 ## Status
 
-Implementation complete; cross-platform qualification pending. The phase remains **in progress** until the same commit
-passes the retained gates on all six supported runtime identifiers.
+Complete. [Qualification run 32581336852](https://github.com/XDX-Org/NovaSharp/actions/runs/32581336852)
+passed the retained gates on all six supported runtime identifiers from commit `6dbe097`.
 
 ## Goal
 
@@ -81,10 +81,9 @@ continues to gate Monaco paint, long-task, replication, and queue budgets while 
 
 ## Qualification
 
-Local `win-x64` evidence passes 234 tests, 64 browser gates, the retained Phase 3 verifier, and a clean build. This is
-development evidence only. Update this section and
-the delivery-plan status to complete only after CI retains passing bootstrap, .NET/browser tests, RID publish, native
-smoke, Explorer measurements, cancellation/disposal, and artifact records for all six matrix rows from one commit.
+[Qualification run 32581336852](https://github.com/XDX-Org/NovaSharp/actions/runs/32581336852) passes the bootstrap,
+234 .NET tests, 64 browser gates, RID publish, packaged native smoke, Explorer measurements, cancellation/disposal,
+and retained artifact gates on all six supported runtime identifiers from commit `6dbe097`.
 
 ## Known limitations
 

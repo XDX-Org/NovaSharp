@@ -187,16 +187,16 @@ produces reconstruct Monaco's text exactly.
 [CI](.github/workflows/ci.yml) runs both, plus bootstrap, RID-specific publish, the published native-host smoke, and
 performance measurements on every runtime identifier from the same commit. Each row retains its application and JSON
 evidence. The native verifier records disposable browser-profile provisioning separately before its repeatable process
-startup measurements and gates the median of three warm launches. [Qualification run 32575928633](https://github.com/XDX-Org/NovaSharp/actions/runs/32575928633)
-passes every gate on all six supported runtime identifiers.
+startup measurements and gates the median of three warm launches. [Qualification run 32581336852](https://github.com/XDX-Org/NovaSharp/actions/runs/32581336852)
+passes every gate through Phase 3 on all six supported runtime identifiers.
 
 > [!NOTE]
 > Monaco is mounted and is the only editor, and the document lifecycle around it — asynchronous edit replication, dirty
 > state, safe save and reload, encoding and line-ending handling, and external-change resolution — is in place.
 > The Phase 3 workspace Explorer implementation is also present, with lazy folders, bounded watcher recovery, file
-> operations, accessible incremental tree rendering, and versioned state; its six-platform qualification is pending.
-> Phases 1 and 2 are complete. Their implementation, phase-2 foundations, native host, browser behavior, performance,
-> cancellation, disposal, packaging, and retained-evidence gates pass on every supported runtime identifier.
+> operations, accessible incremental tree rendering, and versioned state. Phases 1–3 are complete: their implementation,
+> foundations, native host, browser behavior, performance, cancellation, disposal, packaging, and retained-evidence
+> gates pass on every supported runtime identifier.
 
 See the [phase documentation](docs/README.md) for current scope and verification gates.
 
