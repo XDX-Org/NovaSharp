@@ -10,8 +10,8 @@ Source control UI, remote development, collaboration, notebooks, AI completion, 
 
 | Phase | Status | Exit evidence |
 |---|---|---|
-| 1. Monaco single-file editor shell | In progress | Monaco is the only editor. `dotnet test` runs 217 assertions; the browser suite runs 64 interaction, worker, bounded-replication, performance, and disposal gates; and the published native application has an unattended cold/warm smoke path. The local `win-x64` upstream-host fixture passes. Outstanding: one green qualification run of the gates on every matrix row |
-| 2. Editor and file lifecycle | In progress | The document lifecycle and all three cross-cutting foundations are implemented. CI contains the native smoke, browser metrics, managed replication/save measurements, six RID-specific publishes, and retained JSON evidence. The named local `win-x64` upstream-host fixture passes every phase-2 budget. Outstanding: one green qualification run of the gates on every matrix row |
+| 1. Monaco single-file editor shell | Complete | [Qualification run 32575928633](https://github.com/XDX-Org/NovaSharp/actions/runs/32575928633) passed the bootstrap, 217 .NET tests, 64 browser gates, RID publish, packaged native smoke, performance, disposal, and retained-evidence gates on all six matrix rows from commit `fd34239` |
+| 2. Editor and file lifecycle | Complete | [Qualification run 32575928633](https://github.com/XDX-Org/NovaSharp/actions/runs/32575928633) passed the document lifecycle, managed replication/save, browser performance, bounded queues, cancellation, disposal, RID publish, and native-host gates on all six matrix rows from commit `fd34239` |
 | 3–17 | Planned | Completion criteria not yet met |
 
 Status values are `planned`, `in progress`, `blocked`, and `complete`. Update this table only from test or release evidence; documentation, packaged dependencies, or partial UI alone does not complete a phase. A phase is never `complete` on evidence from a single operating system.
@@ -59,12 +59,12 @@ Every runtime identifier in this table is a first-class target. Ordering is alph
 
 | Runtime identifier | Pinned assets | Minimum OS version | CI image | Packaging format | Automated smoke test |
 |---|---|---|---|---|---|
-| `linux-arm64` | Yes | Ubuntu 24.04 LTS | `ubuntu-24.04-arm` | Record before phase 17 | Wired; upstream-host run pending |
-| `linux-x64` | Yes | Ubuntu 24.04 LTS | `ubuntu-24.04` | Record before phase 17 | Wired; upstream-host run pending |
-| `osx-arm64` | Yes | macOS 15 | `macos-15` | Record before phase 17 | Wired; upstream-host run pending |
-| `osx-x64` | Yes | macOS 15 | `macos-15-intel` | Record before phase 17 | Wired; upstream-host run pending |
-| `win-arm64` | Yes | Windows 11 24H2 | `windows-11-arm` | Record before phase 17 | Wired; upstream-host run pending |
-| `win-x64` | Yes | Windows 10 version 1809 | `windows-2025` | Record before phase 17 | Wired; upstream-host run pending |
+| `linux-arm64` | Yes | Ubuntu 24.04 LTS | `ubuntu-24.04-arm` | Record before phase 17 | Passing in run 32575928633 |
+| `linux-x64` | Yes | Ubuntu 24.04 LTS | `ubuntu-24.04` | Record before phase 17 | Passing in run 32575928633 |
+| `osx-arm64` | Yes | macOS 15 | `macos-15` | Record before phase 17 | Passing in run 32575928633 |
+| `osx-x64` | Yes | macOS 15 | `macos-15-intel` | Record before phase 17 | Passing in run 32575928633 |
+| `win-arm64` | Yes | Windows 11 24H2 | `windows-11-arm` | Record before phase 17 | Passing in run 32575928633 |
+| `win-x64` | Yes | Windows 10 version 1809 | `windows-2025` | Record before phase 17 | Passing in run 32575928633 |
 
 CI images are the runner labels [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) uses. Every row runs the same
 gates from the same commit: its bootstrap entry point end to end, `dotnet test`, the `tests/editor-host` browser suite,

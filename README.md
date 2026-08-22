@@ -89,12 +89,12 @@ priority: no operating system is the reference platform, and a feature is not fi
 
 | Runtime identifier | Host runtime prerequisites | Bootstrap prerequisites | Pinned assets | Automated smoke test |
 |---|---|---|---|---|
-| `linux-arm64` | GTK 3, libnotify, WebKitGTK 4.1 | POSIX shell, `curl`, `jq`, `tar`, `unzip`, XZ support | Yes | Wired; green run pending |
-| `linux-x64` | GTK 3, libnotify, WebKitGTK 4.1 | POSIX shell, `curl`, `jq`, `tar`, `unzip`, XZ support | Yes | Wired; green run pending |
-| `osx-arm64` | System WebKit | POSIX shell, `curl`, `jq`, `tar`, `unzip` | Yes | Wired; green run pending |
-| `osx-x64` | System WebKit | POSIX shell, `curl`, `jq`, `tar`, `unzip` | Yes | Wired; green run pending |
-| `win-arm64` | WebView2 Evergreen Runtime | PowerShell 5.1 or later | Yes | Wired; green run pending |
-| `win-x64` | WebView2 Evergreen Runtime | PowerShell 5.1 or later | Yes | Wired; green run pending |
+| `linux-arm64` | GTK 3, libnotify, WebKitGTK 4.1 | POSIX shell, `curl`, `jq`, `tar`, `unzip`, XZ support | Yes | Passing in run 32575928633 |
+| `linux-x64` | GTK 3, libnotify, WebKitGTK 4.1 | POSIX shell, `curl`, `jq`, `tar`, `unzip`, XZ support | Yes | Passing in run 32575928633 |
+| `osx-arm64` | System WebKit | POSIX shell, `curl`, `jq`, `tar`, `unzip` | Yes | Passing in run 32575928633 |
+| `osx-x64` | System WebKit | POSIX shell, `curl`, `jq`, `tar`, `unzip` | Yes | Passing in run 32575928633 |
+| `win-arm64` | WebView2 Evergreen Runtime | PowerShell 5.1 or later | Yes | Passing in run 32575928633 |
+| `win-x64` | WebView2 Evergreen Runtime | PowerShell 5.1 or later | Yes | Passing in run 32575928633 |
 
 *Pinned assets* means the runtime identifier has verified SHA-256 entries in the language-server asset manifest. *Automated smoke test*
 means a launch-and-edit check runs unattended on that platform in CI. No row is complete until both columns read yes; see the
@@ -187,14 +187,14 @@ produces reconstruct Monaco's text exactly.
 [CI](.github/workflows/ci.yml) runs both, plus bootstrap, RID-specific publish, the published native-host smoke, and
 performance measurements on every runtime identifier from the same commit. Each row retains its application and JSON
 evidence. The native verifier records disposable browser-profile provisioning separately before its repeatable process
-startup measurements and gates the median of three warm launches. A green run on the new workflow is still outstanding.
+startup measurements and gates the median of three warm launches. [Qualification run 32575928633](https://github.com/XDX-Org/NovaSharp/actions/runs/32575928633)
+passes every gate on all six supported runtime identifiers.
 
 > [!NOTE]
 > Monaco is mounted and is the only editor, and the document lifecycle around it — asynchronous edit replication, dirty
 > state, safe save and reload, encoding and line-ending handling, and external-change resolution — is in place.
-> Phases 1 and 2 remain in progress. Their implementation and automated gates are present, including the phase-2
-> foundations, and the named local `win-x64` Release fixture passes. One green qualification run of the new workflow
-> on every supported runtime identifier is still required before either status can become complete.
+> Phases 1 and 2 are complete. Their implementation, phase-2 foundations, native host, browser behavior, performance,
+> cancellation, disposal, packaging, and retained-evidence gates pass on every supported runtime identifier.
 
 See the [phase documentation](docs/README.md) for current scope and verification gates.
 

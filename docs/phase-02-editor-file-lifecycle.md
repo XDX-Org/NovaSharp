@@ -59,27 +59,12 @@ The three cross-cutting foundations this phase introduces are in place:
   stacking, actions named as commands, a bounded log, and redaction by default — document text never reaches the log,
   and a path is reduced to its file name and a digest of its directory.
 
-Still open in this phase, and required before it can be called complete:
+## Qualification
 
-- [CI](../.github/workflows/ci.yml) now runs the bootstrap, `dotnet test`, 64 browser gates, RID-specific publish, and
-  the published native smoke and performance verifier on every supported runtime identifier. The new workflow has not
-  yet produced one green run on every row.
-- The named local `win-x64` Release fixture passes. [Qualification run 32573129128](https://github.com/XDX-Org/NovaSharp/actions/runs/32573129128)
-  proved that the upstream host opens, measures, and exits correctly on both macOS architectures. [Run 32573700069](https://github.com/XDX-Org/NovaSharp/actions/runs/32573700069)
-  confirmed direct macOS process launch and both Windows rows, then exposed the remaining fixture corrections: the
-  Linux runners need Photino's complete native dependency set, startup and paint limits must name their runner
-  fixture, and the Windows Arm64 runner needs a save budget calibrated to its storage.
-  [Run 32574261005](https://github.com/XDX-Org/NovaSharp/actions/runs/32574261005) made both Linux rows and macOS
-  Arm64 green; its retained macOS x64 and Windows Arm64 records supply the remaining runner-specific browser ceilings.
-  [Run 32574723842](https://github.com/XDX-Org/NovaSharp/actions/runs/32574723842) confirmed those browser ceilings;
-  its macOS x64 warm-start median supplies that fixture's final startup ceiling.
-  [Run 32575161311](https://github.com/XDX-Org/NovaSharp/actions/runs/32575161311) then recorded a host-wide macOS x64
-  slowdown affecting bootstrap, publish, cold, and all three warm samples. Qualification now retries a failed complete
-  native fixture at most twice and retains every attempt instead of widening the product budget for runner contention.
-  [ADR 0003](decisions/0003-desktop-host.md) records the host replacement. The scaffold follows Apple's
-  [bundle layout](https://developer.apple.com/documentation/bundleresources/placing-content-in-a-bundle): the app host
-  remains under `Contents/MacOS`, data is sealed under `Contents/Resources`, and links preserve the app host's expected
-  base directory before qualification is repeated.
+Phase 2 is complete. [Qualification run 32575928633](https://github.com/XDX-Org/NovaSharp/actions/runs/32575928633)
+passes the bootstrap, 217 .NET tests, 64 browser gates, RID-specific publish, packaged native smoke, performance,
+cancellation, disposal, and retained-evidence gates on all six supported runtime identifiers from commit `fd34239`.
+[ADR 0003](decisions/0003-desktop-host.md) records the qualified upstream desktop host.
 
 ## Performance budgets
 
@@ -127,12 +112,13 @@ The retained native and browser records include the fixture-specific limits used
   validation, and redaction. 217 assertions run under `dotnet test`; 64 browser gates run in `tests/editor-host`.
 - **Met.** The command registry, the typed configuration service, and structured notification and logging are
   introduced by this phase and are in place, with the workbench driven through them rather than around them.
-- **Met locally; per-platform qualification pending.** The named local `win-x64` fixture records cold/warm process
+- **Met.** The named local `win-x64` fixture records cold/warm process
   startup at 870/853 ms, 76 MB idle working set, a 51 MB working-set increase for a 10 MB file, paint at p95
   2.7/p99 11.9 ms,
   browser replication at p95 3.8/p99 13.1 ms, managed replication at p95 0.01 ms, 1/256 managed and 6/256 browser
   queue depth, a 0.2 ms 1 MB save barrier, an 18.3 ms 1 MB save, and 17→18 MB heap after 100 lifecycle cycles.
-- **Not met.** The new qualification workflow has not yet been green on every supported runtime identifier.
+  The qualification run retains the equivalent passing record for every supported runtime identifier.
+- **Met.** The qualification workflow is green on every supported runtime identifier from the same commit.
 
 ## Next phase
 

@@ -87,33 +87,31 @@ written to disk in this phase.
 
 ## Completion criteria
 
-Criteria already met are marked. The rest are what still stands between this phase and `complete`.
+Phase 1 is complete. [Qualification run 32575928633](https://github.com/XDX-Org/NovaSharp/actions/runs/32575928633)
+passes every criterion below on all six supported runtime identifiers from commit `fd34239`.
 
-- **Met in automation; qualification pending.** `dotnet test` runs in both bootstraps. CI runs it, 64 browser gates,
-  RID-specific publish, and the published native-host smoke on every supported runtime identifier. A green run of the
-  new workflow on every row is the remaining evidence.
-- **Met in automation; qualification pending.** Clean checkout restore, frontend asset build, `dotnet build`, and a
+- **Met.** `dotnet test` runs in both bootstraps. CI runs it, 64 browser gates, RID-specific publish, and the published
+  native-host smoke on every supported runtime identifier.
+- **Met.** Clean checkout restore, frontend asset build, `dotnet build`, and a
   runtime-identifier-specific `dotnet publish` are gates on every matrix row.
-- **Met locally on `win-x64`; per-platform qualification pending.** NovaSharp opens as a 1200×800 native window and
+- **Met.** NovaSharp opens as a 1200×800 native window and
   Monaco is the only editor. The placeholder text area is deleted, not disabled, and a contract test fails the build
   if one reappears.
-- **Met locally; per-platform qualification pending.** The published native application opens a fixture and reports
+- **Met.** The published native application opens a fixture and reports
   the packaged Monaco version, a real dedicated worker,
   one model, and zero external requests. The macOS rows stage the payload in a minimal ad hoc-signed application bundle
   for native qualification; phase 17 still owns the release packaging and signing decision. The smoke is wired on every
-  matrix row; the first all-green run is pending.
+  matrix row.
 - **Met in code and interaction tests.** Canceling the dialog leaves the current model unchanged; selecting one `.cs` file displays it
   with Monaco C# lexical colors.
 - **Met in code and tests.** Read and permission failures appear over the editor without terminating the app or replacing
   the current model.
-- **Met locally; per-platform qualification pending.** The browser suite covers typing, selection, undo/redo, find,
+- **Met.** The browser suite covers typing, selection, undo/redo, find,
   IME, surrogate pairs, long-line navigation, scrolling, and no overlapping replication interop.
-- **Met locally; per-platform qualification pending.** First-editor latency, typing latency, browser-thread long tasks,
-  worker startup, and idle memory have executable
-  budgets and JSON records. They pass on the named local `win-x64` fixture; every CI fixture still has to pass.
-- **Met locally; per-platform qualification pending.** The browser suite runs 100 create/open/dispose cycles, requires
+- **Met.** First-editor latency, typing latency, browser-thread long tasks, worker startup, and idle memory have
+  executable budgets and retained JSON records on every CI fixture.
+- **Met.** The browser suite runs 100 create/open/dispose cycles, requires
   zero live models, and limits retained heap to 10%.
-- No completion criterion above is complete until the new workflow is green on all six runtime identifiers.
 
 ## Next phase
 
