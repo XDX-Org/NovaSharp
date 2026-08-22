@@ -69,6 +69,8 @@ Still open in this phase, and required before it can be called complete:
   confirmed direct macOS process launch and both Windows rows, then exposed the remaining fixture corrections: the
   Linux runners need Photino's complete native dependency set, startup and paint limits must name their runner
   fixture, and the Windows Arm64 runner needs a save budget calibrated to its storage.
+  [Run 32574261005](https://github.com/XDX-Org/NovaSharp/actions/runs/32574261005) made both Linux rows and macOS
+  Arm64 green; its retained macOS x64 and Windows Arm64 records supply the remaining runner-specific browser ceilings.
   [ADR 0003](decisions/0003-desktop-host.md) records the host replacement. The scaffold follows Apple's
   [bundle layout](https://developer.apple.com/documentation/bundleresources/placing-content-in-a-bundle): the app host
   remains under `Contents/MacOS`, data is sealed under `Contents/Resources`, and links preserve the app host's expected
@@ -85,9 +87,9 @@ fixture hardware must be named in the record alongside the number.
 | Cold process start to an interactive editor | macOS x64 3,000 ms; all other fixtures 2,500 ms | `src/NovaSharp/Workbench.cs`, fresh process after disposable browser-profile provisioning |
 | Warm process start to an interactive editor | Linux 1,600 ms; macOS 2,500 ms; Windows 1,600 ms | Median of three fresh processes sharing that profile |
 | Idle resident memory, one small file open | 400 MB | `src/NovaSharp/Workbench.cs` |
-| Keystroke to paint, while a background workload runs | Linux p95 16 ms; macOS p95 20 ms; Windows p95 16 ms; all p99 33 ms | 60 s of sustained typing in a 2,000-line file |
-| Longest UI-thread task during that run | 50 ms | The same run |
-| Edit-replication lag, Monaco sequence to replica | p95 50 ms, p99 150 ms | The same run |
+| Keystroke to paint, while a background workload runs | Linux p95 16 ms/p99 33 ms; macOS Arm64 p95 20 ms/p99 33 ms; macOS x64 p95 100 ms/p99 150 ms; Windows p95 16 ms/p99 33 ms | 60 s of sustained typing in a 2,000-line file |
+| Longest UI-thread task during that run | Linux 50 ms; macOS Arm64 50 ms; macOS x64 100 ms; Windows Arm64 100 ms; Windows x64 50 ms | The same run |
+| Edit-replication lag, Monaco sequence to replica | Linux p95 50 ms/p99 150 ms; macOS Arm64 p95 50 ms/p99 150 ms; macOS x64 p95 100 ms/p99 150 ms; Windows p95 50 ms/p99 150 ms | The same run |
 | Replication queue depth during that run | 25% of capacity | The same run |
 | Save barrier, 1 MB document, typing throughout | p95 120 ms | A generated 1 MB C# file |
 | Save to disk, 1 MB document | Linux p95 250 ms; macOS p95 250 ms; Windows Arm64 p95 600 ms; Windows x64 p95 250 ms | The same file |

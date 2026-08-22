@@ -172,7 +172,12 @@ function startServer() {
 const results = [];
 let measuredPerformance;
 let measuredLifecycle;
-const paintP95Limit = positiveLimit('NOVASHARP_PAINT_P95_LIMIT', 16);
+const performanceLimits = {
+    paintP95Milliseconds: positiveLimit('NOVASHARP_PAINT_P95_LIMIT', 16),
+    paintP99Milliseconds: positiveLimit('NOVASHARP_PAINT_P99_LIMIT', 33),
+    longTaskMilliseconds: positiveLimit('NOVASHARP_LONG_TASK_LIMIT', 50),
+    replicationP95Milliseconds: positiveLimit('NOVASHARP_REPLICATION_P95_LIMIT', 50),
+};
 
 function positiveLimit(name, defaultValue) {
     const raw = process.env[name];
@@ -455,10 +460,10 @@ try {
             replicationP99: percentile(replication, 0.99),
         };
     });
-    check(`keystroke-to-paint p95 stays within ${paintP95Limit} ms`, measuredPerformance.paintP95 <= paintP95Limit, `${measuredPerformance.paintP95.toFixed(2)} ms`);
-    check('keystroke-to-paint p99 stays within 33 ms', measuredPerformance.paintP99 <= 33, `${measuredPerformance.paintP99.toFixed(2)} ms`);
-    check('the browser thread has no task longer than 50 ms', measuredPerformance.longestTask <= 50, `${measuredPerformance.longestTask.toFixed(2)} ms`);
-    check('edit replication p95 stays within 50 ms', measuredPerformance.replicationP95 <= 50, `${measuredPerformance.replicationP95.toFixed(2)} ms`);
+    check(`keystroke-to-paint p95 stays within ${performanceLimits.paintP95Milliseconds} ms`, measuredPerformance.paintP95 <= performanceLimits.paintP95Milliseconds, `${measuredPerformance.paintP95.toFixed(2)} ms`);
+    check(`keystroke-to-paint p99 stays within ${performanceLimits.paintP99Milliseconds} ms`, measuredPerformance.paintP99 <= performanceLimits.paintP99Milliseconds, `${measuredPerformance.paintP99.toFixed(2)} ms`);
+    check(`the browser thread has no task longer than ${performanceLimits.longTaskMilliseconds} ms`, measuredPerformance.longestTask <= performanceLimits.longTaskMilliseconds, `${measuredPerformance.longestTask.toFixed(2)} ms`);
+    check(`edit replication p95 stays within ${performanceLimits.replicationP95Milliseconds} ms`, measuredPerformance.replicationP95 <= performanceLimits.replicationP95Milliseconds, `${measuredPerformance.replicationP95.toFixed(2)} ms`);
     check('edit replication p99 stays within 150 ms', measuredPerformance.replicationP99 <= 150, `${measuredPerformance.replicationP99.toFixed(2)} ms`);
     const ordinaryQueue = await page.evaluate(() => globalThis.editor.runtimeInfo());
     check('the replication queue stays below 25% of capacity under load',
@@ -633,7 +638,7 @@ if (process.env.NOVASHARP_BROWSER_METRICS) {
         platform: process.platform,
         architecture: process.arch,
         nodeVersion: process.version,
-        limits: { paintP95Milliseconds: paintP95Limit },
+        limits: performanceLimits,
         performance: measuredPerformance,
         lifecycle: measuredLifecycle,
         assertions: results,
