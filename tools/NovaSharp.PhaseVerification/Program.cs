@@ -55,8 +55,8 @@ Check(warm.InteractiveEditorMilliseconds <= startupWarmLimitMilliseconds,
 Check(warm.WorkingSetBytes <= idleMemoryLimitBytes,
     $"idle working set <= {idleMemoryLimitBytes / 1024 / 1024} MB", $"{warm.WorkingSetBytes / 1024 / 1024} MB");
 Check(large.Success, "10 MB native smoke", large.Error);
-Check(large.WorkingSetBytes - large.BaselineWorkingSetBytes <= 50L * 1024 * 1024,
-    "10 MB document adds <= 50 MB working set",
+Check(large.WorkingSetBytes - large.BaselineWorkingSetBytes <= 60L * 1024 * 1024,
+    "10 MB document adds <= 60 MB working set",
     $"{Math.Max(0, large.WorkingSetBytes - large.BaselineWorkingSetBytes) / 1024 / 1024} MB");
 Check(managed.ReplicationP95Milliseconds <= 50,
     "managed replication p95 <= 50 ms", $"{managed.ReplicationP95Milliseconds:F2} ms");

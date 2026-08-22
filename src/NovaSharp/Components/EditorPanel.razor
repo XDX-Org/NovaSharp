@@ -3,9 +3,10 @@
 @using NovaSharp.Commands
 @using NovaSharp.Diagnostics
 @using NovaSharp.Editing
+@using NovaSharp.Platform
 @using NovaSharp.Text
 @using NovaSharp.Verification
-@using PhotinoEx.Core.Models
+@using Photino.NET
 @implements IAsyncDisposable
 @inject IJSRuntime JSRuntime
 
@@ -289,10 +290,10 @@
             return;
         }
 
-        var files = await Program.App.MainWindow.ShowOpenFileDialogAsync(
+        var files = await Program.App.MainWindow.ShowOpenFileAsync(
             title: "Open file",
             multiSelect: false,
-            filterPatterns: [new FileFilter("C# source", "*.cs"), new FileFilter("All files", "*.*")]);
+            filters: [("C# source", ["cs"]), ("All files", ["*"])]);
 
         // Cancelling the dialog leaves the current model exactly as it was.
         if (files is not [var path])
@@ -318,13 +319,13 @@
 
         // The one place NovaSharp writes over a file it knows has changed, and only after the user has been told
         // exactly what would be lost.
-        var answer = await Program.App.MainWindow.ShowMessageDialogAsync(
+        var answer = await Program.App.MainWindow.ShowMessageAsync(
             "NovaSharp",
             $"{_status.DisplayName} changed on disk since it was opened. Overwrite it with what is in the editor?",
-            DialogButtons.YesNo,
-            DialogIcon.Warning);
+            PhotinoDialogButtons.YesNo,
+            PhotinoDialogIcon.Warning);
 
-        if (answer == DialogResult.Yes)
+        if (answer == PhotinoDialogResult.Yes)
         {
             await _session.SaveAsync(overwriteExternalChange: true);
         }
@@ -337,9 +338,9 @@
             return;
         }
 
-        var path = await Program.App.MainWindow.ShowSaveFileDialogAsync(
+        var path = await Program.App.MainWindow.ShowSaveFileAsync(
             title: "Save as",
-            filterPatterns: [new FileFilter("C# source", "*.cs"), new FileFilter("All files", "*.*")]);
+            filters: [("C# source", ["cs"]), ("All files", ["*"])]);
 
         if (string.IsNullOrWhiteSpace(path))
         {
@@ -500,13 +501,13 @@
             return true;
         }
 
-        var answer = await Program.App.MainWindow.ShowMessageDialogAsync(
+        var answer = await Program.App.MainWindow.ShowMessageAsync(
             "NovaSharp",
             $"{_status.DisplayName} has unsaved changes. {action} and lose them?",
-            DialogButtons.YesNo,
-            DialogIcon.Warning);
+            PhotinoDialogButtons.YesNo,
+            PhotinoDialogIcon.Warning);
 
-        return answer == DialogResult.Yes;
+        return answer == PhotinoDialogResult.Yes;
     }
 
     public async ValueTask DisposeAsync()

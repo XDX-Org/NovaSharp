@@ -6,7 +6,7 @@ Prove the desktop host, locally packaged Monaco Editor, and the first complete i
 
 ## Scope
 
-- .NET 10 desktop executable hosted by PhotinoXDX and Blazor.
+- .NET 10 desktop executable hosted by the upstream Photino.NET/Blazor packages.
 - An exact lockfile-pinned Monaco ESM build, C# language definition, CSS/fonts, editor worker, license, and deterministic asset build.
 - One window, toolbar, and Monaco editor instance.
 - Native file dialog restricted to one `.cs` selection.

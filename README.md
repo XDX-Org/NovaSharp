@@ -100,8 +100,9 @@ priority: no operating system is the reference platform, and a feature is not fi
 means a launch-and-edit check runs unattended on that platform in CI. No row is complete until both columns read yes; see the
 [delivery plan](docs/delivery-plan.md) for the parity rule that governs them.
 
-Host runtime prerequisites are inherited from [PhotinoXDX](https://github.com/XDX-Org/PhotinoXDX#requirements). Package names differ
-between operating systems and between Linux distributions, so install the bootstrap prerequisites with whichever package manager the
+Host runtime prerequisites are inherited from
+[Photino.NET](https://github.com/tryphotino/photino.NET#how-to-build-this-repo). Package names differ between operating
+systems and between Linux distributions, so install the bootstrap prerequisites with whichever package manager the
 platform uses. One example, for Debian and Ubuntu family systems:
 
 ```bash

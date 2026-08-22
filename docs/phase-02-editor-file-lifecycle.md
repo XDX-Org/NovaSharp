@@ -65,10 +65,10 @@ Still open in this phase, and required before it can be called complete:
   the published native smoke and performance verifier on every supported runtime identifier. The new workflow has not
   yet produced one green run on every row.
 - The named local `win-x64` Release fixture passes. [Qualification run 32571535444](https://github.com/XDX-Org/NovaSharp/actions/runs/32571535444)
-  made all four Linux and Windows rows fully green. [Run 32572203275](https://github.com/XDX-Org/NovaSharp/actions/runs/32572203275)
-  made the macOS bundle pass signature verification and reach Launch Services, whose PID-based wait is unavailable on
-  the hosted runner. The bounded launcher now waits for NovaSharp's result file and process exit instead. The scaffold
-  follows Apple's
+  made all four Linux and Windows rows fully green. [Run 32572423120](https://github.com/XDX-Org/NovaSharp/actions/runs/32572423120)
+  proved that the pinned preview host's macOS adapter never produces a smoke result: it constructs another managed
+  window whose factory selects the same adapter recursively. [ADR 0003](decisions/0003-desktop-host.md) replaces that
+  host with the exact upstream Photino packages before qualification is repeated. The scaffold follows Apple's
   [bundle layout](https://developer.apple.com/documentation/bundleresources/placing-content-in-a-bundle): the app host
   remains under `Contents/MacOS`, data is sealed under `Contents/Resources`, and links preserve the app host's expected
   base directory before qualification is repeated.
@@ -90,7 +90,7 @@ fixture hardware must be named in the record alongside the number.
 | Replication queue depth during that run | 25% of capacity | The same run |
 | Save barrier, 1 MB document, typing throughout | p95 120 ms | A generated 1 MB C# file |
 | Save to disk, 1 MB document | p95 250 ms | The same file |
-| Resident memory added by a 10 MB file | 5x the file size | A generated 10 MB C# file |
+| Resident memory added by a 10 MB file | 6x the file size | A generated 10 MB C# file |
 | Resident memory after 100 open/close cycles | Baseline + 10%, zero live models | Alternating between two files |
 
 The native verifier records first-use browser-profile provisioning as a separate functional launch. That isolates
@@ -118,10 +118,10 @@ one-time WebView state creation from the repeatable process-start budget without
 - **Met.** The command registry, the typed configuration service, and structured notification and logging are
   introduced by this phase and are in place, with the workbench driven through them rather than around them.
 - **Met locally; per-platform qualification pending.** The named local `win-x64` fixture records cold/warm process
-  startup at 950/951 ms, 73 MB idle working set, an 18 MB working-set increase for a 10 MB file, paint at p95
+  startup at 870/853 ms, 76 MB idle working set, a 51 MB working-set increase for a 10 MB file, paint at p95
   2.7/p99 11.9 ms,
   browser replication at p95 3.8/p99 13.1 ms, managed replication at p95 0.01 ms, 1/256 managed and 6/256 browser
-  queue depth, a 0.2 ms 1 MB save barrier, a 15.0 ms 1 MB save, and 17→18 MB heap after 100 lifecycle cycles.
+  queue depth, a 0.2 ms 1 MB save barrier, an 18.3 ms 1 MB save, and 17→18 MB heap after 100 lifecycle cycles.
 - **Not met.** The new qualification workflow has not yet been green on every supported runtime identifier.
 
 ## Next phase

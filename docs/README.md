@@ -4,7 +4,7 @@ NovaSharp is being built in small, runnable phases. Each phase must leave the ap
 
 ## Phases
 
-1. [Monaco single-file editor shell](phase-01-single-file-editor.md) — PhotinoXDX, locally packaged Monaco and its worker, and opening one `.cs` file.
+1. [Monaco single-file editor shell](phase-01-single-file-editor.md) — Photino, locally packaged Monaco and its worker, and opening one `.cs` file.
 2. [Editor and file lifecycle](phase-02-editor-file-lifecycle.md) — Monaco-backed models, asynchronous edit replication, safe save/reload, dirty state, and shortcuts.
 3. [Workspace explorer](phase-03-workspace-explorer.md) — folder/project tree, file operations, and scalable tree behavior.
 4. [Documents and movable tabs](phase-04-documents-tabs.md) — multiple files, tab ordering, close flows, and document identity.
@@ -29,6 +29,8 @@ The sequence is dependency order, not a promise that every phase has equal size.
 - [Monaco decision](decisions/0001-monaco-editor.md) for editor ownership, packaging, and integration boundaries.
 - [Document lifecycle decision](decisions/0002-document-lifecycle.md) for the edit-journal boundary, the text-encoding
   catalogue and its fallback, and where settings are stored.
+- [Desktop host decision](decisions/0003-desktop-host.md) for the pinned cross-platform window host and why the
+  preview fork was replaced.
 - [Supported platform matrix](delivery-plan.md#supported-platform-matrix) and its parity rule, which govern every phase equally.
 - [Language-server assets](language-server-assets.md) for automatic acquisition, pinned versions, hashes, and runtime policy.
 

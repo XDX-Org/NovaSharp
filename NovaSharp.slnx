@@ -4,6 +4,7 @@
     <File Path=".gitattributes" />
     <File Path="AGENTS.md" />
     <File Path="Directory.Build.targets" />
+    <File Path="docs/decisions/0003-desktop-host.md" />
     <File Path="global.json" />
     <File Path="package.json" />
     <File Path="tools/packaging/macos/Info.plist" />

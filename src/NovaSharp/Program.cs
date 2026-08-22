@@ -1,5 +1,6 @@
-using PhotinoEx.Blazor;
-using PhotinoEx.Core.Models;
+using Photino.Blazor;
+using Photino.NET;
+using NovaSharp.Platform;
 using NovaSharp.Verification;
 
 namespace NovaSharp;
@@ -8,7 +9,7 @@ internal static class Program
 {
     private static int _closeConfirmed;
 
-    internal static PhotinoExBlazorApp App { get; private set; } = null!;
+    internal static PhotinoBlazorApp App { get; private set; } = null!;
 
     /// <remarks>
     /// This must stay a synchronous method. The compiler does not carry <see cref="STAThreadAttribute"/> onto the
@@ -18,7 +19,7 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
-        var builder = PhotinoExBlazorAppBuilder.CreateDefault(NativeSmokeTest.Configure(args));
+        var builder = PhotinoBlazorAppBuilder.CreateDefault(NativeSmokeTest.Configure(args));
         builder.RootComponents.Add<App>("app");
 
         App = builder.Build();
@@ -56,7 +57,7 @@ internal static class Program
     /// close, asks in the background, and closes again once the user has said to — which is the only shape that both
     /// keeps the prompt honest and avoids blocking the window's own message loop on it.
     /// </remarks>
-    private static bool OnWindowClosing(object sender, EventArgs? e)
+    private static bool OnWindowClosing(object sender, EventArgs e)
     {
         var document = Workbench.ActiveDocument;
         if (document is null || !document.HasUnsavedChanges || Volatile.Read(ref _closeConfirmed) != 0)
@@ -70,13 +71,13 @@ internal static class Program
 
     private static async Task ConfirmCloseAsync(Editing.DocumentSession document)
     {
-        var answer = await App.MainWindow.ShowMessageDialogAsync(
+        var answer = await App.MainWindow.ShowMessageAsync(
             "NovaSharp",
             $"{document.Status.DisplayName} has unsaved changes. Close without saving?",
-            DialogButtons.YesNo,
-            DialogIcon.Warning).ConfigureAwait(false);
+            PhotinoDialogButtons.YesNo,
+            PhotinoDialogIcon.Warning).ConfigureAwait(false);
 
-        if (answer != DialogResult.Yes)
+        if (answer != PhotinoDialogResult.Yes)
         {
             return;
         }

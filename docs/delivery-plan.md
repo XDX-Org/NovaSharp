@@ -10,8 +10,8 @@ Source control UI, remote development, collaboration, notebooks, AI completion, 
 
 | Phase | Status | Exit evidence |
 |---|---|---|
-| 1. Monaco single-file editor shell | In progress | Monaco is the only editor. `dotnet test` runs 217 assertions; the browser suite runs 64 interaction, worker, bounded-replication, performance, and disposal gates; and the published native application now has an unattended cold/warm smoke path. All four Linux and Windows rows pass. Outstanding: one green qualification run of the gates on every matrix row |
-| 2. Editor and file lifecycle | In progress | The document lifecycle and all three cross-cutting foundations are implemented. CI contains the native smoke, browser metrics, managed replication/save measurements, six RID-specific publishes, and retained JSON evidence. All four Linux and Windows rows pass every phase-2 budget. Outstanding: one green qualification run of the gates on every matrix row |
+| 1. Monaco single-file editor shell | In progress | Monaco is the only editor. `dotnet test` runs 217 assertions; the browser suite runs 64 interaction, worker, bounded-replication, performance, and disposal gates; and the published native application has an unattended cold/warm smoke path. The local `win-x64` upstream-host fixture passes. Outstanding: one green qualification run of the gates on every matrix row |
+| 2. Editor and file lifecycle | In progress | The document lifecycle and all three cross-cutting foundations are implemented. CI contains the native smoke, browser metrics, managed replication/save measurements, six RID-specific publishes, and retained JSON evidence. The named local `win-x64` upstream-host fixture passes every phase-2 budget. Outstanding: one green qualification run of the gates on every matrix row |
 | 3–17 | Planned | Completion criteria not yet met |
 
 Status values are `planned`, `in progress`, `blocked`, and `complete`. Update this table only from test or release evidence; documentation, packaged dependencies, or partial UI alone does not complete a phase. A phase is never `complete` on evidence from a single operating system.
@@ -35,7 +35,12 @@ These are not separate feature phases. Introduce each boundary by the indicated 
 | Process service | 10 | Argument arrays, explicit environment/working directory, process-tree ownership |
 | Capability/extension boundary | 7 | Internal provider contracts that can later be exposed selectively by phase 16 |
 
-Record decisions that constrain multiple phases as short ADRs under `docs/decisions/`. The editor decision is fixed by [ADR 0001](decisions/0001-monaco-editor.md), and the document lifecycle — replication durability, text encoding, and settings storage — by [ADR 0002](decisions/0002-document-lifecycle.md). Decide C# language-service hosting before phase 6, terminal engine before phase 11, and debug adapter before phase 12. A dependency that presupposes one of those answers must not be added to a project file before its ADR exists.
+Record decisions that constrain multiple phases as short ADRs under `docs/decisions/`. The editor decision is fixed by
+[ADR 0001](decisions/0001-monaco-editor.md), the document lifecycle — replication durability, text encoding, and
+settings storage — by [ADR 0002](decisions/0002-document-lifecycle.md), and the desktop host by
+[ADR 0003](decisions/0003-desktop-host.md). Decide C# language-service hosting before phase 6, terminal engine before
+phase 11, and debug adapter before phase 12. A dependency that presupposes one of those answers must not be added to a
+project file before its ADR exists.
 
 ## Required execution model
 
@@ -54,12 +59,12 @@ Every runtime identifier in this table is a first-class target. Ordering is alph
 
 | Runtime identifier | Pinned assets | Minimum OS version | CI image | Packaging format | Automated smoke test |
 |---|---|---|---|---|---|
-| `linux-arm64` | Yes | Ubuntu 24.04 LTS | `ubuntu-24.04-arm` | Record before phase 17 | Passing in run 32571195908 |
-| `linux-x64` | Yes | Ubuntu 24.04 LTS | `ubuntu-24.04` | Record before phase 17 | Passing in run 32571195908 |
-| `osx-arm64` | Yes | macOS 15 | `macos-15` | Record before phase 17 | Wired; green run pending |
-| `osx-x64` | Yes | macOS 15 | `macos-15-intel` | Record before phase 17 | Wired; green run pending |
-| `win-arm64` | Yes | Windows 11 24H2 | `windows-11-arm` | Record before phase 17 | Passing in run 32571535444 |
-| `win-x64` | Yes | Windows 10 version 1809 | `windows-2025` | Record before phase 17 | Passing in run 32571535444 |
+| `linux-arm64` | Yes | Ubuntu 24.04 LTS | `ubuntu-24.04-arm` | Record before phase 17 | Wired; upstream-host run pending |
+| `linux-x64` | Yes | Ubuntu 24.04 LTS | `ubuntu-24.04` | Record before phase 17 | Wired; upstream-host run pending |
+| `osx-arm64` | Yes | macOS 15 | `macos-15` | Record before phase 17 | Wired; upstream-host run pending |
+| `osx-x64` | Yes | macOS 15 | `macos-15-intel` | Record before phase 17 | Wired; upstream-host run pending |
+| `win-arm64` | Yes | Windows 11 24H2 | `windows-11-arm` | Record before phase 17 | Wired; upstream-host run pending |
+| `win-x64` | Yes | Windows 10 version 1809 | `windows-2025` | Record before phase 17 | Wired; upstream-host run pending |
 
 CI images are the runner labels [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) uses. Every row runs the same
 gates from the same commit: its bootstrap entry point end to end, `dotnet test`, the `tests/editor-host` browser suite,
@@ -136,7 +141,7 @@ For an active phase, track an owner, target release, dependencies, risks, and li
 | Upstream executable assets change or disappear | Pin versions and hashes per RID, fail closed on mismatch, retain notices, and mirror only through an audited manifest change |
 | Duplicate Monaco models diverge across split views | One model per document URI with explicit view/model leases |
 | Unbounded background parallelism makes the IDE slower | Bounded priority queues, cancellation, measurements, and single-writer mutation boundaries |
-| PhotinoXDX/WebView platform differences | Run host smoke tests on every supported OS from phase 1 onward |
+| Photino/WebView platform differences | Run host smoke tests on every supported OS from phase 1 onward |
 | Development converges on one operating system and the others rot | Keep the platform matrix, both bootstrap entry points, and CI green together; treat a single-platform result as no result |
 | Dependencies commit to an architecture before its ADR exists | Project files may not reference a language-service, terminal, or debugger implementation until the governing decision is recorded |
 | Roslyn/MSBuild state diverges from dirty buffers | One workspace coordinator with versioned mappings and fixture solutions |
