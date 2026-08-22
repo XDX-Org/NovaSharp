@@ -65,8 +65,10 @@ Still open in this phase, and required before it can be called complete:
   the published native smoke and performance verifier on every supported runtime identifier. The new workflow has not
   yet produced one green run on every row.
 - The named local `win-x64` Release fixture passes. [Qualification run 32571535444](https://github.com/XDX-Org/NovaSharp/actions/runs/32571535444)
-  made all four Linux and Windows rows fully green. Both macOS rows reached bundle verification, where managed publish
-  data under `Contents/MacOS` was correctly rejected as unsigned nested code. The CI scaffold now follows Apple's
+  made all four Linux and Windows rows fully green. [Run 32571974955](https://github.com/XDX-Org/NovaSharp/actions/runs/32571974955)
+  then made the macOS bundle pass signature verification; directly invoking its inner executable reached Photino but
+  returned before Cocoa's application loop wrote a result. The CI scaffold now launches the bundle through Launch
+  Services and follows Apple's
   [bundle layout](https://developer.apple.com/documentation/bundleresources/placing-content-in-a-bundle): the app host
   remains under `Contents/MacOS`, data is sealed under `Contents/Resources`, and links preserve the app host's expected
   base directory before qualification is repeated.

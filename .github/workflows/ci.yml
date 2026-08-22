@@ -65,7 +65,7 @@ jobs:
             shell: bash
             node-bin: src/NovaSharp/LanguageServers/Assets/osx-arm64/node/bin
             npm-cli: src/NovaSharp/LanguageServers/Assets/osx-arm64/node/lib/node_modules/npm/bin/npm-cli.js
-            application: artifacts/publish/osx-arm64/NovaSharp.app/Contents/MacOS/NovaSharp
+            application: tools/packaging/macos/launch-app.sh
             publish-directory: artifacts/publish/osx-arm64/NovaSharp.app/Contents/Resources
             bundle: artifacts/publish/osx-arm64/NovaSharp.app
             host-packages: ''
@@ -77,7 +77,7 @@ jobs:
             shell: bash
             node-bin: src/NovaSharp/LanguageServers/Assets/osx-x64/node/bin
             npm-cli: src/NovaSharp/LanguageServers/Assets/osx-x64/node/lib/node_modules/npm/bin/npm-cli.js
-            application: artifacts/publish/osx-x64/NovaSharp.app/Contents/MacOS/NovaSharp
+            application: tools/packaging/macos/launch-app.sh
             publish-directory: artifacts/publish/osx-x64/NovaSharp.app/Contents/Resources
             bundle: artifacts/publish/osx-x64/NovaSharp.app
             host-packages: ''
@@ -234,6 +234,7 @@ jobs:
           # This changes only the disposable CI process; packaged applications retain the production sandbox.
           WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: ${{ matrix.webkit-disable-sandbox }}
           GTK_A11Y: ${{ matrix.gtk-a11y }}
+          NOVASHARP_APP_BUNDLE: ${{ matrix.bundle }}
         run: |
           set -euo pipefail
           command=(

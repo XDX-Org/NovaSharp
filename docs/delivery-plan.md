@@ -71,7 +71,8 @@ For native qualification only, the macOS rows stage the RID publish in a minimal
 required by the pinned window host. This test scaffold does not decide the release packaging or signing format owned by
 phase 17. The app host remains under `Contents/MacOS`; publish data is sealed under `Contents/Resources` and linked into
 the host's base directory. Unused npm command-shim directories receive resource-safe names because Apple otherwise
-interprets their dotted names as nested bundles during signing.
+interprets their dotted names as nested bundles during signing. The smoke launches that bundle through Launch Services
+and waits for the application instance; it does not invoke the inner executable directly.
 
 ### Parity rule
 
