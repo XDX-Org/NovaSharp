@@ -206,8 +206,8 @@ jobs:
           if [[ -n "${{ matrix.bundle }}" ]]; then
             mkdir -p "${{ matrix.bundle }}/Contents"
             cp tools/packaging/macos/Info.plist "${{ matrix.bundle }}/Contents/Info.plist"
-            codesign --force --deep --sign - "${{ matrix.bundle }}"
-            codesign --verify --deep --strict "${{ matrix.bundle }}"
+            codesign --force --sign - "${{ matrix.bundle }}"
+            codesign --verify --strict "${{ matrix.bundle }}"
           fi
 
       - name: Native host smoke and phase budgets

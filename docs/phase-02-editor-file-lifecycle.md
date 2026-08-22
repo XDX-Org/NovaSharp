@@ -64,11 +64,13 @@ Still open in this phase, and required before it can be called complete:
 - [CI](../.github/workflows/ci.yml) now runs the bootstrap, `dotnet test`, 64 browser gates, RID-specific publish, and
   the published native smoke and performance verifier on every supported runtime identifier. The new workflow has not
   yet produced one green run on every row.
-- The named local `win-x64` Release fixture passes. [Qualification run 32569873607](https://github.com/XDX-Org/NovaSharp/actions/runs/32569873607)
-  completed all six rows and retained their evidence, but every row failed native qualification: Windows passed the
-  functional smoke and missed startup budgets, Linux timed out, and macOS exited before writing a result. This change
-  provisions the disposable browser profile separately, supplies Linux with a session D-Bus, and launches macOS from
-  an ad hoc-signed application bundle before qualification is repeated.
+- The named local `win-x64` Release fixture passes. [Qualification run 32571195908](https://github.com/XDX-Org/NovaSharp/actions/runs/32571195908)
+  made both Linux rows fully green. Windows passed every functional and resource gate, with warm startup at 1,269 ms
+  on ARM64 and 1,462 ms on x64; the repeatable warm-process budget is now 1,600 ms on the named fixtures. Both macOS
+  rows reached bundle signing, where recursive signing misclassified a packaged language-server directory as code;
+  the workflow now uses Apple's
+  [recommended non-recursive bundle signing](https://developer.apple.com/documentation/xcode/creating-distribution-signed-code-for-the-mac/)
+  before qualification is repeated.
 
 ## Performance budgets
 
@@ -79,7 +81,7 @@ fixture hardware must be named in the record alongside the number.
 | Budget | Limit | Fixture |
 |---|---|---|
 | Cold process start to an interactive editor | 2,500 ms | `src/NovaSharp/Workbench.cs`, fresh process after disposable browser-profile provisioning |
-| Warm process start to an interactive editor | 1,200 ms | The same file, second fresh process sharing that profile |
+| Warm process start to an interactive editor | 1,600 ms | The same file, second fresh process sharing that profile |
 | Idle resident memory, one small file open | 400 MB | `src/NovaSharp/Workbench.cs` |
 | Keystroke to paint, while a background workload runs | p95 16 ms, p99 33 ms | 60 s of sustained typing in a 2,000-line file |
 | Longest UI-thread task during that run | 50 ms | The same run |

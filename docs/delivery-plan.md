@@ -10,8 +10,8 @@ Source control UI, remote development, collaboration, notebooks, AI completion, 
 
 | Phase | Status | Exit evidence |
 |---|---|---|
-| 1. Monaco single-file editor shell | In progress | Monaco is the only editor. `dotnet test` runs 217 assertions; the browser suite runs 64 interaction, worker, bounded-replication, performance, and disposal gates; and the published native application now has an unattended cold/warm smoke path. Local `win-x64` phase-1 budgets pass. Outstanding: one green qualification run of the new gates on every matrix row |
-| 2. Editor and file lifecycle | In progress | The document lifecycle and all three cross-cutting foundations are implemented. CI now contains the native smoke, browser metrics, managed replication/save measurements, six RID-specific publishes, and retained JSON evidence. The named local `win-x64` Release fixture passes every phase-2 budget. Outstanding: one green qualification run of the new gates on every matrix row |
+| 1. Monaco single-file editor shell | In progress | Monaco is the only editor. `dotnet test` runs 217 assertions; the browser suite runs 64 interaction, worker, bounded-replication, performance, and disposal gates; and the published native application now has an unattended cold/warm smoke path. Both Linux rows and the local `win-x64` fixture pass. Outstanding: one green qualification run of the gates on every matrix row |
+| 2. Editor and file lifecycle | In progress | The document lifecycle and all three cross-cutting foundations are implemented. CI contains the native smoke, browser metrics, managed replication/save measurements, six RID-specific publishes, and retained JSON evidence. Both Linux rows and the named local `win-x64` Release fixture pass every phase-2 budget. Outstanding: one green qualification run of the gates on every matrix row |
 | 3–17 | Planned | Completion criteria not yet met |
 
 Status values are `planned`, `in progress`, `blocked`, and `complete`. Update this table only from test or release evidence; documentation, packaged dependencies, or partial UI alone does not complete a phase. A phase is never `complete` on evidence from a single operating system.
@@ -54,8 +54,8 @@ Every runtime identifier in this table is a first-class target. Ordering is alph
 
 | Runtime identifier | Pinned assets | Minimum OS version | CI image | Packaging format | Automated smoke test |
 |---|---|---|---|---|---|
-| `linux-arm64` | Yes | Ubuntu 24.04 LTS | `ubuntu-24.04-arm` | Record before phase 17 | Wired; green run pending |
-| `linux-x64` | Yes | Ubuntu 24.04 LTS | `ubuntu-24.04` | Record before phase 17 | Wired; green run pending |
+| `linux-arm64` | Yes | Ubuntu 24.04 LTS | `ubuntu-24.04-arm` | Record before phase 17 | Passing in run 32571195908 |
+| `linux-x64` | Yes | Ubuntu 24.04 LTS | `ubuntu-24.04` | Record before phase 17 | Passing in run 32571195908 |
 | `osx-arm64` | Yes | macOS 15 | `macos-15` | Record before phase 17 | Wired; green run pending |
 | `osx-x64` | Yes | macOS 15 | `macos-15-intel` | Record before phase 17 | Wired; green run pending |
 | `win-arm64` | Yes | Windows 11 24H2 | `windows-11-arm` | Record before phase 17 | Wired; green run pending |

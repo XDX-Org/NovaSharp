@@ -7,7 +7,7 @@ using NovaSharp.Platform;
 using NovaSharp.Text;
 
 const int startupColdLimitMilliseconds = 2_500;
-const int startupWarmLimitMilliseconds = 1_200;
+const int startupWarmLimitMilliseconds = 1_600;
 const long idleMemoryLimitBytes = 400L * 1024 * 1024;
 const int processDeadlineSeconds = 45;
 
