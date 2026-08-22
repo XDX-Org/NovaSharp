@@ -6,6 +6,7 @@
     <File Path="Directory.Build.targets" />
     <File Path="global.json" />
     <File Path="package.json" />
+    <File Path="tools/packaging/macos/Info.plist" />
   </Folder>
   <Project Path="src/NovaSharp/NovaSharp.csproj" />
   <Project Path="tests/NovaSharp.Tests/NovaSharp.Tests.csproj" />

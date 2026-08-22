@@ -185,7 +185,8 @@ produces reconstruct Monaco's text exactly.
 
 [CI](.github/workflows/ci.yml) runs both, plus bootstrap, RID-specific publish, the published native-host smoke, and
 performance measurements on every runtime identifier from the same commit. Each row retains its application and JSON
-evidence. A green run on the new workflow is still outstanding.
+evidence. The native verifier records disposable browser-profile provisioning separately before its repeatable process
+startup measurements. A green run on the new workflow is still outstanding.
 
 > [!NOTE]
 > Monaco is mounted and is the only editor, and the document lifecycle around it — asynchronous edit replication, dirty

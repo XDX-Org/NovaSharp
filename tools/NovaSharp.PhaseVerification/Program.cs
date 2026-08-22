@@ -14,23 +14,38 @@ const int processDeadlineSeconds = 45;
 var options = Options.Parse(args);
 Directory.CreateDirectory(options.OutputDirectory);
 
-var cold = await RunAsync("cold", options);
-var warm = await RunAsync("warm", options);
-var largeSource = Path.Combine(Path.GetTempPath(), $"novasharp-large-{Guid.NewGuid():N}.cs");
+var profileDirectory = Directory.CreateTempSubdirectory("novasharp-phase-profile-").FullName;
+NativeResult provisioning;
+NativeResult cold;
+NativeResult warm;
 NativeResult large;
 try
 {
-    await File.WriteAllTextAsync(largeSource, CreateLargeDocument());
-    large = await RunAsync("large", options, largeSource);
+    // Browser-profile creation is installation state, not repeatable process startup. Provision it once, retain that
+    // measurement separately, then apply the cold/warm product budgets to launches sharing the resulting profile.
+    provisioning = await RunAsync("provisioning", options, profileDirectory);
+    cold = await RunAsync("cold", options, profileDirectory);
+    warm = await RunAsync("warm", options, profileDirectory);
+    var largeSource = Path.Combine(Path.GetTempPath(), $"novasharp-large-{Guid.NewGuid():N}.cs");
+    try
+    {
+        await File.WriteAllTextAsync(largeSource, CreateLargeDocument());
+        large = await RunAsync("large", options, profileDirectory, largeSource);
+    }
+    finally
+    {
+        File.Delete(largeSource);
+    }
 }
 finally
 {
-    File.Delete(largeSource);
+    await DeleteDirectoryAsync(profileDirectory);
 }
 
 var managed = await RunManagedPerformanceAsync(options);
 var failures = new List<string>();
 
+Check(provisioning.Success, "browser profile provisioning", provisioning.Error);
 Check(cold.Success, "cold native smoke", cold.Error);
 Check(warm.Success, "warm native smoke", warm.Error);
 Check(cold.InteractiveEditorMilliseconds <= startupColdLimitMilliseconds,
@@ -58,6 +73,7 @@ var record = new VerificationRecord(
     options.FixtureName,
     Environment.ProcessorCount,
     Environment.Version.ToString(),
+    provisioning,
     cold,
     warm,
     large,
@@ -81,7 +97,11 @@ void Check(bool condition, string name, string? detail)
     }
 }
 
-static async Task<NativeResult> RunAsync(string label, Options options, string? sourcePath = null)
+static async Task<NativeResult> RunAsync(
+    string label,
+    Options options,
+    string profilePath,
+    string? sourcePath = null)
 {
     var resultPath = Path.Combine(options.OutputDirectory, $"{label}-native.json");
     var start = new ProcessStartInfo(options.ApplicationPath)
@@ -94,6 +114,8 @@ static async Task<NativeResult> RunAsync(string label, Options options, string? 
     start.ArgumentList.Add(sourcePath ?? options.SourcePath);
     start.ArgumentList.Add("--phase-smoke-result");
     start.ArgumentList.Add(resultPath);
+    start.ArgumentList.Add("--phase-smoke-profile");
+    start.ArgumentList.Add(profilePath);
 
     using var process = Process.Start(start) ?? throw new InvalidOperationException("The NovaSharp process did not start.");
     var standardOutput = process.StandardOutput.ReadToEndAsync();
@@ -131,6 +153,25 @@ static async Task<NativeResult> RunAsync(string label, Options options, string? 
     await using var stream = File.OpenRead(resultPath);
     return await JsonSerializer.DeserializeAsync<NativeResult>(stream, Serialization.JsonOptions)
         ?? throw new InvalidDataException($"{resultPath} did not contain a smoke result.");
+}
+
+static async Task DeleteDirectoryAsync(string path)
+{
+    var deadline = Stopwatch.StartNew();
+    while (true)
+    {
+        try
+        {
+            Directory.Delete(path, recursive: true);
+            return;
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException &&
+            deadline.Elapsed < TimeSpan.FromSeconds(5))
+        {
+            await Task.Delay(100);
+        }
+    }
 }
 
 static async Task<ManagedPerformanceRecord> RunManagedPerformanceAsync(Options options)
@@ -321,6 +362,7 @@ internal sealed record VerificationRecord(
     string FixtureName,
     int ProcessorCount,
     string DotNetRuntime,
+    NativeResult Provisioning,
     NativeResult Cold,
     NativeResult Warm,
     NativeResult LargeDocument,

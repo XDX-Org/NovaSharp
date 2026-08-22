@@ -64,9 +64,11 @@ Still open in this phase, and required before it can be called complete:
 - [CI](../.github/workflows/ci.yml) now runs the bootstrap, `dotnet test`, 64 browser gates, RID-specific publish, and
   the published native smoke and performance verifier on every supported runtime identifier. The new workflow has not
   yet produced one green run on every row.
-- The named local `win-x64` Release fixture passes. [Qualification run 32568881427](https://github.com/XDX-Org/NovaSharp/actions/runs/32568881427)
-  exercised all six rows and exposed CI-fixture defects in the Linux WebKit sandbox setup and browser workload plus
-  `win-x64` startup misses; those gates are being corrected before qualification is repeated.
+- The named local `win-x64` Release fixture passes. [Qualification run 32569873607](https://github.com/XDX-Org/NovaSharp/actions/runs/32569873607)
+  completed all six rows and retained their evidence, but every row failed native qualification: Windows passed the
+  functional smoke and missed startup budgets, Linux timed out, and macOS exited before writing a result. This change
+  provisions the disposable browser profile separately, supplies Linux with a session D-Bus, and launches macOS from
+  an ad hoc-signed application bundle before qualification is repeated.
 
 ## Performance budgets
 
@@ -76,8 +78,8 @@ fixture hardware must be named in the record alongside the number.
 
 | Budget | Limit | Fixture |
 |---|---|---|
-| Cold start to an interactive editor | 2,500 ms | `src/NovaSharp/Workbench.cs`, opened from a cold page cache |
-| Warm start to an interactive editor | 1,200 ms | The same file, second launch |
+| Cold process start to an interactive editor | 2,500 ms | `src/NovaSharp/Workbench.cs`, fresh process after disposable browser-profile provisioning |
+| Warm process start to an interactive editor | 1,200 ms | The same file, second fresh process sharing that profile |
 | Idle resident memory, one small file open | 400 MB | `src/NovaSharp/Workbench.cs` |
 | Keystroke to paint, while a background workload runs | p95 16 ms, p99 33 ms | 60 s of sustained typing in a 2,000-line file |
 | Longest UI-thread task during that run | 50 ms | The same run |
@@ -87,6 +89,9 @@ fixture hardware must be named in the record alongside the number.
 | Save to disk, 1 MB document | p95 250 ms | The same file |
 | Resident memory added by a 10 MB file | 5x the file size | A generated 10 MB C# file |
 | Resident memory after 100 open/close cycles | Baseline + 10%, zero live models | Alternating between two files |
+
+The native verifier records first-use browser-profile provisioning as a separate functional launch. That isolates
+one-time WebView state creation from the repeatable process-start budget without hiding a provisioning failure.
 
 ## Completion criteria
 
@@ -109,10 +114,11 @@ fixture hardware must be named in the record alongside the number.
   validation, and redaction. 217 assertions run under `dotnet test`; 64 browser gates run in `tests/editor-host`.
 - **Met.** The command registry, the typed configuration service, and structured notification and logging are
   introduced by this phase and are in place, with the workbench driven through them rather than around them.
-- **Met locally; per-platform qualification pending.** The named local `win-x64` fixture records cold/warm startup at
-  2,190/978 ms, 74 MB idle working set, a 19 MB working-set increase for a 10 MB file, paint at p95 2.7/p99 11.9 ms,
+- **Met locally; per-platform qualification pending.** The named local `win-x64` fixture records cold/warm process
+  startup at 950/951 ms, 73 MB idle working set, an 18 MB working-set increase for a 10 MB file, paint at p95
+  2.7/p99 11.9 ms,
   browser replication at p95 3.8/p99 13.1 ms, managed replication at p95 0.01 ms, 1/256 managed and 6/256 browser
-  queue depth, a 0.2 ms 1 MB save barrier, a 17.6 ms 1 MB save, and 17→18 MB heap after 100 lifecycle cycles.
+  queue depth, a 0.2 ms 1 MB save barrier, a 15.0 ms 1 MB save, and 17→18 MB heap after 100 lifecycle cycles.
 - **Not met.** The new qualification workflow has not yet been green on every supported runtime identifier.
 
 ## Next phase

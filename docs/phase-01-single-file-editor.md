@@ -94,11 +94,14 @@ Criteria already met are marked. The rest are what still stands between this pha
   new workflow on every row is the remaining evidence.
 - **Met in automation; qualification pending.** Clean checkout restore, frontend asset build, `dotnet build`, and a
   runtime-identifier-specific `dotnet publish` are gates on every matrix row.
-- **Met locally on `win-x64`; per-platform qualification pending.** NovaSharp opens as a 1200×800 native window and Monaco is the only editor. The placeholder
-  text area is deleted, not disabled, and a contract test fails the build if one reappears.
+- **Met locally on `win-x64`; per-platform qualification pending.** NovaSharp opens as a 1200×800 native window and
+  Monaco is the only editor. The placeholder text area is deleted, not disabled, and a contract test fails the build
+  if one reappears.
 - **Met locally; per-platform qualification pending.** The published native application opens a fixture and reports
   the packaged Monaco version, a real dedicated worker,
-  one model, and zero external requests. The smoke is wired on every matrix row; the first all-green run is pending.
+  one model, and zero external requests. The macOS rows stage the payload in a minimal ad hoc-signed application bundle
+  for native qualification; phase 17 still owns the release packaging and signing decision. The smoke is wired on every
+  matrix row; the first all-green run is pending.
 - **Met in code and interaction tests.** Canceling the dialog leaves the current model unchanged; selecting one `.cs` file displays it
   with Monaco C# lexical colors.
 - **Met in code and tests.** Read and permission failures appear over the editor without terminating the app or replacing

@@ -7,7 +7,7 @@ using NovaSharp.Editing;
 
 namespace NovaSharp.Verification;
 
-internal sealed record NativeSmokeTestOptions(string SourcePath, string ResultPath);
+internal sealed record NativeSmokeTestOptions(string SourcePath, string ResultPath, string ProfilePath);
 
 internal sealed record NativeSmokeTestResult(
     bool Success,
@@ -26,6 +26,7 @@ internal static class NativeSmokeTest
 {
     private const string SourceOption = "--phase-smoke-source";
     private const string ResultOption = "--phase-smoke-result";
+    private const string ProfileOption = "--phase-smoke-profile";
 
     private static readonly Stopwatch Startup = Stopwatch.StartNew();
     private static NativeSmokeTestOptions? _options;
@@ -33,16 +34,19 @@ internal static class NativeSmokeTest
 
     internal static bool IsEnabled => _options is not null;
 
+    internal static string? ProfilePath => _options?.ProfilePath;
+
     internal static string[] Configure(string[] args)
     {
         string? source = null;
         string? result = null;
+        string? profile = null;
         var remaining = new List<string>(args.Length);
 
         for (var index = 0; index < args.Length; index++)
         {
             var argument = args[index];
-            if (argument is not SourceOption and not ResultOption)
+            if (argument is not SourceOption and not ResultOption and not ProfileOption)
             {
                 remaining.Add(argument);
                 continue;
@@ -57,20 +61,32 @@ internal static class NativeSmokeTest
             {
                 source = args[index];
             }
-            else
+            else if (argument == ResultOption)
             {
                 result = args[index];
             }
+            else
+            {
+                profile = args[index];
+            }
         }
 
-        if ((source is null) != (result is null))
+        if (source is null || result is null || profile is null)
         {
-            throw new ArgumentException($"{SourceOption} and {ResultOption} must be supplied together.", nameof(args));
+            if (source is not null || result is not null || profile is not null)
+            {
+                throw new ArgumentException(
+                    $"{SourceOption}, {ResultOption}, and {ProfileOption} must be supplied together.",
+                    nameof(args));
+            }
         }
 
-        if (source is not null && result is not null)
+        if (source is not null && result is not null && profile is not null)
         {
-            _options = new NativeSmokeTestOptions(Path.GetFullPath(source), Path.GetFullPath(result));
+            _options = new NativeSmokeTestOptions(
+                Path.GetFullPath(source),
+                Path.GetFullPath(result),
+                Path.GetFullPath(profile));
         }
 
         return [.. remaining];

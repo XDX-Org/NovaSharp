@@ -41,9 +41,11 @@ jobs:
             shell: bash
             node-bin: src/NovaSharp/LanguageServers/Assets/linux-arm64/node/bin
             npm-cli: src/NovaSharp/LanguageServers/Assets/linux-arm64/node/lib/node_modules/npm/bin/npm-cli.js
-            executable: NovaSharp
-            host-packages: libgtk-4-1 libwebkitgtk-6.0-4 xvfb
-            virtual-display: xvfb-run --auto-servernum
+            application: artifacts/publish/linux-arm64/NovaSharp
+            publish-directory: artifacts/publish/linux-arm64
+            bundle: ''
+            host-packages: dbus-x11 libgtk-4-1 libwebkitgtk-6.0-4 xvfb
+            virtual-display: dbus-run-session -- xvfb-run --auto-servernum
             webkit-disable-sandbox: '1'
             gtk-a11y: 'none'
           - rid: linux-x64
@@ -51,9 +53,11 @@ jobs:
             shell: bash
             node-bin: src/NovaSharp/LanguageServers/Assets/linux-x64/node/bin
             npm-cli: src/NovaSharp/LanguageServers/Assets/linux-x64/node/lib/node_modules/npm/bin/npm-cli.js
-            executable: NovaSharp
-            host-packages: libgtk-4-1 libwebkitgtk-6.0-4 xvfb
-            virtual-display: xvfb-run --auto-servernum
+            application: artifacts/publish/linux-x64/NovaSharp
+            publish-directory: artifacts/publish/linux-x64
+            bundle: ''
+            host-packages: dbus-x11 libgtk-4-1 libwebkitgtk-6.0-4 xvfb
+            virtual-display: dbus-run-session -- xvfb-run --auto-servernum
             webkit-disable-sandbox: '1'
             gtk-a11y: 'none'
           - rid: osx-arm64
@@ -61,7 +65,9 @@ jobs:
             shell: bash
             node-bin: src/NovaSharp/LanguageServers/Assets/osx-arm64/node/bin
             npm-cli: src/NovaSharp/LanguageServers/Assets/osx-arm64/node/lib/node_modules/npm/bin/npm-cli.js
-            executable: NovaSharp
+            application: artifacts/publish/osx-arm64/NovaSharp.app/Contents/MacOS/NovaSharp
+            publish-directory: artifacts/publish/osx-arm64/NovaSharp.app/Contents/MacOS
+            bundle: artifacts/publish/osx-arm64/NovaSharp.app
             host-packages: ''
             virtual-display: ''
             webkit-disable-sandbox: ''
@@ -71,7 +77,9 @@ jobs:
             shell: bash
             node-bin: src/NovaSharp/LanguageServers/Assets/osx-x64/node/bin
             npm-cli: src/NovaSharp/LanguageServers/Assets/osx-x64/node/lib/node_modules/npm/bin/npm-cli.js
-            executable: NovaSharp
+            application: artifacts/publish/osx-x64/NovaSharp.app/Contents/MacOS/NovaSharp
+            publish-directory: artifacts/publish/osx-x64/NovaSharp.app/Contents/MacOS
+            bundle: artifacts/publish/osx-x64/NovaSharp.app
             host-packages: ''
             virtual-display: ''
             webkit-disable-sandbox: ''
@@ -81,7 +89,9 @@ jobs:
             shell: pwsh
             node-bin: src/NovaSharp/LanguageServers/Assets/win-arm64/node
             npm-cli: src/NovaSharp/LanguageServers/Assets/win-arm64/node/node_modules/npm/bin/npm-cli.js
-            executable: NovaSharp.exe
+            application: artifacts/publish/win-arm64/NovaSharp.exe
+            publish-directory: artifacts/publish/win-arm64
+            bundle: ''
             host-packages: ''
             virtual-display: ''
             webkit-disable-sandbox: ''
@@ -91,7 +101,9 @@ jobs:
             shell: pwsh
             node-bin: src/NovaSharp/LanguageServers/Assets/win-x64/node
             npm-cli: src/NovaSharp/LanguageServers/Assets/win-x64/node/node_modules/npm/bin/npm-cli.js
-            executable: NovaSharp.exe
+            application: artifacts/publish/win-x64/NovaSharp.exe
+            publish-directory: artifacts/publish/win-x64
+            bundle: ''
             host-packages: ''
             virtual-display: ''
             webkit-disable-sandbox: ''
@@ -189,7 +201,14 @@ jobs:
           dotnet publish src/NovaSharp/NovaSharp.csproj \
             --configuration Release \
             --runtime ${{ matrix.rid }} \
-            --output "artifacts/publish/${{ matrix.rid }}"
+            --output "${{ matrix.publish-directory }}"
+
+          if [[ -n "${{ matrix.bundle }}" ]]; then
+            mkdir -p "${{ matrix.bundle }}/Contents"
+            cp tools/packaging/macos/Info.plist "${{ matrix.bundle }}/Contents/Info.plist"
+            codesign --force --deep --sign - "${{ matrix.bundle }}"
+            codesign --verify --deep --strict "${{ matrix.bundle }}"
+          fi
 
       - name: Native host smoke and phase budgets
         shell: bash
@@ -202,7 +221,7 @@ jobs:
           set -euo pipefail
           command=(
             dotnet run --project tools/NovaSharp.PhaseVerification/NovaSharp.PhaseVerification.csproj --no-build --
-            --application "artifacts/publish/${{ matrix.rid }}/${{ matrix.executable }}"
+            --application "${{ matrix.application }}"
             --source src/NovaSharp/Workbench.cs
             --output "artifacts/verification/${{ matrix.rid }}"
             --fixture-name "${{ matrix.runner }} / ${{ matrix.rid }}"

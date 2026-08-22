@@ -31,6 +31,11 @@ internal static class Program
             .SetMinWidth(640)
             .SetMinHeight(480);
 
+        if (NativeSmokeTest.ProfilePath is { } profilePath)
+        {
+            App.MainWindow.SetTemporaryFilesPath(profilePath);
+        }
+
         App.MainWindow.WindowClosing += OnWindowClosing;
 
         try

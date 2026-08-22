@@ -67,6 +67,10 @@ RID-specific publish, and the published native-host smoke and budgets. The workf
 measurement records per RID. Minimum OS versions are conservative product support boundaries, not aliases for runner
 images; lowering one requires an equivalent smoke fixture on that older host.
 
+For native qualification only, the macOS rows stage the RID publish in a minimal ad hoc-signed application bundle, as
+required by the pinned window host. This test scaffold does not decide the release packaging or signing format owned by
+phase 17.
+
 ### Parity rule
 
 - A platform is supported only when its host prerequisites, bootstrap route, packaging format, and unattended smoke test are all
@@ -109,10 +113,11 @@ Budgets must be measured on named fixture hardware and repositories. Set numeric
 | Debug step/evaluate latency | 12 |
 | Crash recovery and full-workbench memory | 14 |
 
-`tools/NovaSharp.PhaseVerification` launches the published application cold, warm, and with a generated 10 MB file,
-then measures managed replication and a 1 MB atomic save. `tests/editor-host` records paint, browser-thread, replication,
-queue, and 100-cycle heap measurements. CI names the runner fixture and uploads both JSON records; a missing record or a
-budget failure fails that RID's job.
+`tools/NovaSharp.PhaseVerification` first provisions a disposable browser profile, then launches fresh processes for
+the cold, warm, and generated 10 MB fixtures before measuring managed replication and a 1 MB atomic save. Provisioning
+is retained as a separate functional result; the measured launches share its profile. `tests/editor-host` records paint,
+browser-thread, replication, queue, and 100-cycle heap measurements. CI names the runner fixture and uploads both JSON
+records; a missing record or a budget failure fails that RID's job.
 
 ## Delivery records
 
