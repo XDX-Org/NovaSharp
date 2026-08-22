@@ -66,7 +66,7 @@ jobs:
             node-bin: src/NovaSharp/LanguageServers/Assets/osx-arm64/node/bin
             npm-cli: src/NovaSharp/LanguageServers/Assets/osx-arm64/node/lib/node_modules/npm/bin/npm-cli.js
             application: artifacts/publish/osx-arm64/NovaSharp.app/Contents/MacOS/NovaSharp
-            publish-directory: artifacts/publish/osx-arm64/NovaSharp.app/Contents/MacOS
+            publish-directory: artifacts/publish/osx-arm64/NovaSharp.app/Contents/Resources
             bundle: artifacts/publish/osx-arm64/NovaSharp.app
             host-packages: ''
             virtual-display: ''
@@ -78,7 +78,7 @@ jobs:
             node-bin: src/NovaSharp/LanguageServers/Assets/osx-x64/node/bin
             npm-cli: src/NovaSharp/LanguageServers/Assets/osx-x64/node/lib/node_modules/npm/bin/npm-cli.js
             application: artifacts/publish/osx-x64/NovaSharp.app/Contents/MacOS/NovaSharp
-            publish-directory: artifacts/publish/osx-x64/NovaSharp.app/Contents/MacOS
+            publish-directory: artifacts/publish/osx-x64/NovaSharp.app/Contents/Resources
             bundle: artifacts/publish/osx-x64/NovaSharp.app
             host-packages: ''
             virtual-display: ''
@@ -204,7 +204,24 @@ jobs:
             --output "${{ matrix.publish-directory }}"
 
           if [[ -n "${{ matrix.bundle }}" ]]; then
-            mkdir -p "${{ matrix.bundle }}/Contents"
+            macos_directory="${{ matrix.bundle }}/Contents/MacOS"
+            resources_directory="${{ matrix.bundle }}/Contents/Resources"
+            mkdir -p "$macos_directory"
+            mv "$resources_directory/NovaSharp" "$macos_directory/NovaSharp"
+
+            # npm command shims are not runtime inputs. A dotted directory is interpreted as a nested bundle by
+            # codesign even under Resources, so give those retained shims a resource-safe name in this CI scaffold.
+            while IFS= read -r -d '' shim_directory; do
+              mv "$shim_directory" "$(dirname "$shim_directory")/_bin-shims"
+            done < <(find "$resources_directory/LanguageServers" -type d -name .bin -prune -print0)
+
+            shopt -s dotglob nullglob
+            for resource in "$resources_directory"/*; do
+              name="$(basename "$resource")"
+              ln -s "../Resources/$name" "$macos_directory/$name"
+            done
+            shopt -u dotglob nullglob
+
             cp tools/packaging/macos/Info.plist "${{ matrix.bundle }}/Contents/Info.plist"
             codesign --force --sign - "${{ matrix.bundle }}"
             codesign --verify --strict "${{ matrix.bundle }}"

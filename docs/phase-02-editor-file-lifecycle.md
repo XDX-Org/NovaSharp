@@ -64,13 +64,12 @@ Still open in this phase, and required before it can be called complete:
 - [CI](../.github/workflows/ci.yml) now runs the bootstrap, `dotnet test`, 64 browser gates, RID-specific publish, and
   the published native smoke and performance verifier on every supported runtime identifier. The new workflow has not
   yet produced one green run on every row.
-- The named local `win-x64` Release fixture passes. [Qualification run 32571195908](https://github.com/XDX-Org/NovaSharp/actions/runs/32571195908)
-  made both Linux rows fully green. Windows passed every functional and resource gate, with warm startup at 1,269 ms
-  on ARM64 and 1,462 ms on x64; the repeatable warm-process budget is now 1,600 ms on the named fixtures. Both macOS
-  rows reached bundle signing, where recursive signing misclassified a packaged language-server directory as code;
-  the workflow now uses Apple's
-  [recommended non-recursive bundle signing](https://developer.apple.com/documentation/xcode/creating-distribution-signed-code-for-the-mac/)
-  before qualification is repeated.
+- The named local `win-x64` Release fixture passes. [Qualification run 32571535444](https://github.com/XDX-Org/NovaSharp/actions/runs/32571535444)
+  made all four Linux and Windows rows fully green. Both macOS rows reached bundle verification, where managed publish
+  data under `Contents/MacOS` was correctly rejected as unsigned nested code. The CI scaffold now follows Apple's
+  [bundle layout](https://developer.apple.com/documentation/bundleresources/placing-content-in-a-bundle): the app host
+  remains under `Contents/MacOS`, data is sealed under `Contents/Resources`, and links preserve the app host's expected
+  base directory before qualification is repeated.
 
 ## Performance budgets
 
