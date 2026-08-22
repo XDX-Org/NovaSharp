@@ -72,7 +72,8 @@ required by the pinned window host. This test scaffold does not decide the relea
 phase 17. The app host remains under `Contents/MacOS`; publish data is sealed under `Contents/Resources` and linked into
 the host's base directory. Unused npm command-shim directories receive resource-safe names because Apple otherwise
 interprets their dotted names as nested bundles during signing. The smoke launches that bundle through Launch Services
-and waits for the application instance; it does not invoke the inner executable directly.
+and waits on NovaSharp's bounded result-file/process contract; it does not depend on Launch Services returning a process
+identifier or invoke the inner executable directly.
 
 ### Parity rule
 
