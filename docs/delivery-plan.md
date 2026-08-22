@@ -12,7 +12,8 @@ Source control UI, remote development, collaboration, notebooks, AI completion, 
 |---|---|---|
 | 1. Monaco single-file editor shell | Complete | [Qualification run 32575928633](https://github.com/XDX-Org/NovaSharp/actions/runs/32575928633) passed the bootstrap, 217 .NET tests, 64 browser gates, RID publish, packaged native smoke, performance, disposal, and retained-evidence gates on all six matrix rows from commit `fd34239` |
 | 2. Editor and file lifecycle | Complete | [Qualification run 32575928633](https://github.com/XDX-Org/NovaSharp/actions/runs/32575928633) passed the document lifecycle, managed replication/save, browser performance, bounded queues, cancellation, disposal, RID publish, and native-host gates on all six matrix rows from commit `fd34239` |
-| 3–17 | Planned | Completion criteria not yet met |
+| 3. Workspace explorer | In progress | Implementation, 234 local tests, 64 browser gates, and retained measurements pass on `win-x64`; six-row qualification evidence is still required |
+| 4–17 | Planned | Completion criteria not yet met |
 
 Status values are `planned`, `in progress`, `blocked`, and `complete`. Update this table only from test or release evidence; documentation, packaged dependencies, or partial UI alone does not complete a phase. A phase is never `complete` on evidence from a single operating system.
 
@@ -114,7 +115,7 @@ Budgets must be measured on named fixture hardware and repositories. Set numeric
 |---|---:|---|
 | Startup time and idle memory | 2 | [Phase 2](phase-02-editor-file-lifecycle.md#performance-budgets) |
 | Typing/render latency and large-file memory | 2 | [Phase 2](phase-02-editor-file-lifecycle.md#performance-budgets) |
-| Explorer expansion and watcher recovery | 3 |
+| Explorer expansion and watcher recovery | 3 | [Phase 3](phase-03-workspace-explorer.md#performance-budgets) |
 | Solution load, Roslyn snapshot count, completion first result | 6 |
 | Search throughput/result memory | 9 |
 | Build cancellation/process cleanup | 10 |

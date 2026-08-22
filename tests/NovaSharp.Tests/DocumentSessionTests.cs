@@ -149,6 +149,24 @@ public sealed class DocumentSessionTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task RelocateAsync_RetainsDirtyTextAndEditorState()
+    {
+        var oldPath = await OpenAsync("old.cs", "class Old;\n");
+        _host.Type("// dirty\n");
+        await WaitForAsync(() => _session.Status.IsDirty);
+        var newPath = Path("new.cs");
+        File.Move(oldPath, newPath);
+
+        await _session.RelocateAsync(oldPath, newPath, new WorkspacePaths().ToDocumentUri(newPath));
+
+        Assert.Equal(newPath, _session.Status.Path);
+        Assert.Equal("new.cs", _session.Status.DisplayName);
+        Assert.True(_session.Status.IsDirty);
+        Assert.Equal("class Old;\n// dirty\n", _host.Text);
+        Assert.Equal(newPath, _watcher.Watching);
+    }
+
+    [Fact]
     public async Task SaveWithEncodingAsync_RefusesRatherThanLosingCharacters()
     {
         var path = await OpenAsync("music.cs", "// 𝄞\n");

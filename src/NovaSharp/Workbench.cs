@@ -4,6 +4,7 @@ using NovaSharp.Configuration;
 using NovaSharp.Diagnostics;
 using NovaSharp.Editing;
 using NovaSharp.Platform;
+using NovaSharp.Workspace;
 
 namespace NovaSharp;
 
@@ -41,6 +42,11 @@ internal static class Workbench
     internal static ConfigurationService Configuration { get; } =
         new(new ApplicationPaths(), Files, BackgroundWork);
 
+    internal static WorkspacePersistenceService WorkspacePersistence { get; } =
+        new(new ApplicationPaths(), Files, BackgroundWork);
+
+    internal static WorkspaceExplorerService Explorer { get; } = CreateExplorer();
+
     /// <summary>Reads documents off the UI thread, through the bounded background queue.</summary>
     internal static DocumentLoader Loader { get; } = new(Paths, Files, Codec, BackgroundWork);
 
@@ -66,6 +72,17 @@ internal static class Workbench
             BackgroundWork,
             Notifications,
             static () => Configuration.Current.Settings);
+
+    private static WorkspaceExplorerService CreateExplorer()
+    {
+        var watcher = new FileSystemWorkspaceWatcher(Paths);
+        return new WorkspaceExplorerService(
+            Paths,
+            new WorkspaceFileSystem(Paths, BackgroundWork),
+            watcher,
+            WorkspacePersistence,
+            Notifications);
+    }
 
     /// <summary>Reads both settings scopes and reports anything that had to be ignored.</summary>
     /// <remarks>
@@ -121,6 +138,7 @@ internal static class Workbench
     {
         // The result is deliberately discarded: the queue applies its own deadline first, and a wait that still
         // overruns means the process should exit anyway rather than hang on a stuck worker.
+        _ = Explorer.DisposeAsync().AsTask().Wait(ShutdownDeadline);
         _ = BackgroundWork.DisposeAsync().AsTask().Wait(ShutdownDeadline);
     }
 }

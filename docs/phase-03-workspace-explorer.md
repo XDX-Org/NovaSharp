@@ -1,5 +1,10 @@
 # Phase 3: workspace explorer
 
+## Status
+
+Implementation complete; cross-platform qualification pending. The phase remains **in progress** until the same commit
+passes the retained gates on all six supported runtime identifiers.
+
 ## Goal
 
 Open a folder and navigate its contents through a resizable Explorer panel.
@@ -35,6 +40,57 @@ Solution/project semantics and source-control decorations are deferred. The tree
 - Renaming an open dirty file retains its text, dirty state, and selection.
 - Invalid paths, permissions, symlink loops, and watcher overflow produce recoverable UI errors.
 - Expanding/canceling rapidly under watcher load stays within queue, worker, latency, and memory budgets without delaying Monaco input.
+
+## Delivered implementation
+
+- One canonical workspace root, lazy immutable tree snapshots, selection, expansion/collapse, refresh, active-file reveal,
+  configurable ignores, and explicit reveal of ignored files.
+- Supported, unknown, directory, and symbolic-link node kinds. Directory links are visible but are never traversed, so
+  neither an outside-workspace link nor a cycle can escape the tree.
+- A 1,024-event watcher channel with 50 ms path coalescing. Normal batches rescan only expanded affected parents;
+  overflow rescans expanded branches and raises a recoverable warning.
+- A single-writer, 32-operation mutation queue for create, rename, move, and confirmed delete. A rename or move updates
+  an open document's URI, path, disk state, and watcher without replacing its Monaco model, text, dirty sequence, or view.
+- A live collapsible Explorer tool window with a keyboard-adjustable 160–520 px width, accessible tree semantics,
+  keyboard activation/expand/collapse/rename/delete, and incremental rendering in batches of 250 rows.
+- Versioned `workspace-state.json` persistence in the platform configuration directory. Workspace identity is stored as
+  a canonical root; expansion, selection, and active-document paths are separator-neutral paths relative to that root.
+  Writes are atomic. Invalid JSON is retained, copied to `.invalid`, reported, and treated as empty state.
+
+Settings schema version 2 adds `workspaceIgnoredPaths`. Version 1 needs no rewrite: the absent field resolves to an
+empty additional-ignore list, while `.git`, `bin`, and `obj` remain built-in. Rooted or escaping ignore patterns are
+reported and ignored.
+
+## Performance budgets
+
+These gates run per supported runtime identifier and are retained in `phase-01-03-native.json` with the runner/RID
+fixture name. A result on one row is not evidence for another.
+
+| Budget | Limit | Fixture |
+|---|---:|---|
+| Enumerate and publish one expanded directory | 2,000 ms | Generated workspace with 20,000 C# files |
+| Added managed memory for that tree | 48 MB | Same fixture after a compacting collection |
+| External create to updated expanded branch | 2,000 ms | Same fixture through the real filesystem watcher |
+| Watcher backlog | 1,024 events | Bounded channel; overflow rescans expanded branches |
+| Initial rendered rows per expanded directory | 250 | Remaining rows exposed in 250-row incremental batches |
+
+The .NET suite covers lazy expansion, default/configured ignores, explicit ignored-file reveal, branch-scoped watcher
+updates, overflow recovery, selection preservation, serialized mutations, dirty open-file relocation, link
+non-traversal, corruption fallback, portable state, and the 20,000-entry fixture. The existing browser typing workload
+continues to gate Monaco paint, long-task, replication, and queue budgets while these services are present.
+
+## Qualification
+
+Local `win-x64` evidence passes 234 tests, 64 browser gates, the retained Phase 3 verifier, and a clean build. This is
+development evidence only. Update this section and
+the delivery-plan status to complete only after CI retains passing bootstrap, .NET/browser tests, RID publish, native
+smoke, Explorer measurements, cancellation/disposal, and artifact records for all six matrix rows from one commit.
+
+## Known limitations
+
+- Phase 3 intentionally supports one folder. Multi-root workspaces and solution/project semantics are deferred.
+- Links are shown but cannot be expanded. Allowing trusted in-workspace links would require an explicit policy change.
+- Delete is permanent after confirmation; platform trash/recycle-bin integration belongs behind a later dialog/filesystem seam.
 
 ## Next phase
 

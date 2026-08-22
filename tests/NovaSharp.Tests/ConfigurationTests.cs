@@ -107,6 +107,18 @@ public sealed class SettingsResolverTests
         Assert.Equal(LineEndingStyle.CrLf, resolution.Settings.DefaultLineEnding);
         Assert.False(resolution.Settings.ReloadUnmodifiedFiles);
     }
+
+    [Fact]
+    public void Resolve_ValidatesWorkspaceIgnorePatterns()
+    {
+        var resolution = Resolve(new SettingsDocument
+        {
+            WorkspaceIgnoredPaths = ["generated", "artifacts/*.tmp", "../outside"],
+        });
+
+        Assert.Equal(["generated", "artifacts/*.tmp"], resolution.Settings.WorkspaceIgnoredPaths);
+        Assert.Contains(resolution.Problems, problem => problem.Message.Contains("../outside"));
+    }
 }
 
 public sealed class ConfigurationServiceTests : IAsyncDisposable

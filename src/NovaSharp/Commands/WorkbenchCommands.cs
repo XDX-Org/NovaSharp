@@ -40,6 +40,12 @@ public static class WorkbenchCommands
     /// <summary>Choose the line ending a save writes.</summary>
     public const string ChooseLineEnding = "novasharp.document.chooseLineEnding";
 
+    public const string OpenWorkspace = "novasharp.workspace.open";
+    public const string CloseWorkspace = "novasharp.workspace.close";
+    public const string RefreshWorkspace = "novasharp.workspace.refresh";
+    public const string ToggleExplorer = "novasharp.workspace.toggleExplorer";
+    public const string RevealActiveFile = "novasharp.workspace.revealActiveFile";
+
     /// <summary>Returns the descriptor for <paramref name="id"/>, with its title and default bindings.</summary>
     /// <remarks>
     /// Reload, compare, and the two choosers carry no default binding on purpose: phase 2 has no keybinding
@@ -57,6 +63,11 @@ public static class WorkbenchCommands
         KeepEditorText => new CommandDescriptor(KeepEditorText, "Keep The Editor's Text", Category, [], ShowInPalette: false),
         ChooseEncoding => new CommandDescriptor(ChooseEncoding, "Change File Encoding…", Category, [], ShowInPalette: true),
         ChooseLineEnding => new CommandDescriptor(ChooseLineEnding, "Change Line Ending…", Category, [], ShowInPalette: true),
+        OpenWorkspace => new CommandDescriptor(OpenWorkspace, "Open Folder…", "Workspace", ["CtrlCmd+Shift+O"], ShowInPalette: true),
+        CloseWorkspace => new CommandDescriptor(CloseWorkspace, "Close Folder", "Workspace", [], ShowInPalette: true),
+        RefreshWorkspace => new CommandDescriptor(RefreshWorkspace, "Refresh Explorer", "Workspace", [], ShowInPalette: true),
+        ToggleExplorer => new CommandDescriptor(ToggleExplorer, "Toggle Explorer", "View", ["CtrlCmd+B"], ShowInPalette: true),
+        RevealActiveFile => new CommandDescriptor(RevealActiveFile, "Reveal Active File in Explorer", "Workspace", [], ShowInPalette: true),
         _ => throw new ArgumentOutOfRangeException(nameof(id), id, "There is no descriptor for this command."),
     };
 
@@ -64,5 +75,6 @@ public static class WorkbenchCommands
     public static IReadOnlyList<string> All { get; } =
     [
         Open, Save, SaveAs, Reload, Compare, EndCompare, KeepEditorText, ChooseEncoding, ChooseLineEnding,
+        OpenWorkspace, CloseWorkspace, RefreshWorkspace, ToggleExplorer, RevealActiveFile,
     ];
 }

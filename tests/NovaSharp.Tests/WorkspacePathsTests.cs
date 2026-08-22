@@ -65,4 +65,17 @@ public sealed class WorkspacePathsTests
 
         Assert.False(_paths.IsSameDocument(left, right));
     }
+
+    [Fact]
+    public void WorkspaceRelativePaths_ArePortableAndCannotEscape()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "workspace");
+        var file = Path.Combine(root, "src", "Widget.cs");
+
+        var relative = _paths.ToWorkspaceRelativePath(root, file);
+
+        Assert.Equal("src/Widget.cs", relative);
+        Assert.Equal(_paths.Canonicalize(file), _paths.ResolveWorkspaceRelativePath(root, relative));
+        Assert.Throws<ArgumentException>(() => _paths.ResolveWorkspaceRelativePath(root, "../outside.cs"));
+    }
 }

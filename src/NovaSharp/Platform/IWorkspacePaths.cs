@@ -9,6 +9,9 @@ namespace NovaSharp.Platform;
 /// </remarks>
 public interface IWorkspacePaths
 {
+    /// <summary>Normalizes a path without assuming a separator, drive shape, or casing policy.</summary>
+    string Canonicalize(string path);
+
     /// <summary>Returns the canonical <c>file:</c> URI that identifies the document at <paramref name="path"/>.</summary>
     Uri ToDocumentUri(string path);
 
@@ -17,4 +20,16 @@ public interface IWorkspacePaths
 
     /// <summary>Returns whether two document URIs identify the same document.</summary>
     bool IsSameDocument(Uri left, Uri right);
+
+    /// <summary>Returns whether two canonical paths identify the same spelling.</summary>
+    bool IsSamePath(string left, string right);
+
+    /// <summary>Returns whether <paramref name="path"/> is inside <paramref name="root"/>.</summary>
+    bool IsDescendantOrSelf(string root, string path);
+
+    /// <summary>Creates a portable, separator-neutral path for persisted workspace state.</summary>
+    string ToWorkspaceRelativePath(string root, string path);
+
+    /// <summary>Resolves a persisted workspace-relative path and rejects escapes.</summary>
+    string ResolveWorkspaceRelativePath(string root, string relativePath);
 }

@@ -142,6 +142,26 @@ public static class SettingsResolver
             current = current with { ReloadUnmodifiedFiles = reload };
         }
 
+        if (document.WorkspaceIgnoredPaths is { } ignored)
+        {
+            var valid = ignored
+                .Where(static value => !string.IsNullOrWhiteSpace(value))
+                .Select(static value => value.Trim().Replace('\\', '/'))
+                .Where(value =>
+                {
+                    if (Path.IsPathRooted(value) || value.Split('/').Contains("..", StringComparer.Ordinal))
+                    {
+                        problems.Add(new SettingsProblem(
+                            scope, path, $"'{value}' is not a workspace-relative ignore pattern and was ignored."));
+                        return false;
+                    }
+                    return true;
+                })
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            current = current with { WorkspaceIgnoredPaths = valid };
+        }
+
         return current;
     }
 

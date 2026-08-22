@@ -6,6 +6,7 @@
 @using NovaSharp.Platform
 @using NovaSharp.Text
 @using NovaSharp.Verification
+@using NovaSharp.Workspace
 @using Photino.NET
 @implements IAsyncDisposable
 @inject IJSRuntime JSRuntime
@@ -25,6 +26,8 @@
         <span class="file-name" title="@_status.Path">@_status.DisplayName@(_status.IsDirty ? " •" : null)</span>
     </header>
 
+    <div class="workbench-body">
+    <WorkspaceExplorer OpenFile="OpenWorkspaceFileAsync" />
     <section class="editor-panel">
         @if (_notifications.Count > 0)
         {
@@ -56,6 +59,7 @@
             <div class="editor-host" @ref="_diffContainer"></div>
         }
     </section>
+    </div>
 
     <footer class="status-bar">
         @if (_status.IsComparing)
@@ -132,6 +136,7 @@
     /// <summary>The commands the toolbar offers, in order.</summary>
     private static readonly string[] ToolbarCommands =
     [
+        WorkbenchCommands.ToggleExplorer,
         WorkbenchCommands.Open,
         WorkbenchCommands.Save,
         WorkbenchCommands.SaveAs,
@@ -301,6 +306,12 @@
             return;
         }
 
+        await _session.OpenAsync(path);
+    }
+
+    private async Task OpenWorkspaceFileAsync(string path)
+    {
+        if (_session is null || !await ConfirmDiscardAsync("Open another file")) return;
         await _session.OpenAsync(path);
     }
 

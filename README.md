@@ -193,6 +193,8 @@ passes every gate on all six supported runtime identifiers.
 > [!NOTE]
 > Monaco is mounted and is the only editor, and the document lifecycle around it — asynchronous edit replication, dirty
 > state, safe save and reload, encoding and line-ending handling, and external-change resolution — is in place.
+> The Phase 3 workspace Explorer implementation is also present, with lazy folders, bounded watcher recovery, file
+> operations, accessible incremental tree rendering, and versioned state; its six-platform qualification is pending.
 > Phases 1 and 2 are complete. Their implementation, phase-2 foundations, native host, browser behavior, performance,
 > cancellation, disposal, packaging, and retained-evidence gates pass on every supported runtime identifier.
 

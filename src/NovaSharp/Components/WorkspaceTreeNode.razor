@@ -1,0 +1,97 @@
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.JSInterop
+@using NovaSharp.Workspace
+@inject IJSRuntime JSRuntime
+
+<div role="treeitem"
+     aria-expanded="@(Node.CanExpand ? Node.IsExpanded : null)"
+     aria-selected="@(Node.Id == SelectedId)"
+     class="tree-item @(Node.Id == SelectedId ? "selected" : null)"
+     data-node-id="@Node.Id">
+    <button type="button" class="tree-row" style="padding-left: @(8 + Level * 16)px"
+            tabindex="0"
+            @onclick="ActivateAsync"
+            @onkeydown="OnKeyDownAsync" @oncontextmenu="SelectAsync" @oncontextmenu:preventDefault>
+        <span class="tree-twist" aria-hidden="true">@(Node.CanExpand ? Node.IsLoading ? "…" : Node.IsExpanded ? "▾" : "▸" : "")</span>
+        <span class="tree-icon" aria-hidden="true">@Icon(Node.Kind)</span>
+        <span class="tree-name">@Node.Name</span>
+    </button>
+    @if (Node.Error is not null)
+    {
+        <div class="tree-error" style="padding-left: @(28 + Level * 16)px" role="alert">@Node.Error</div>
+    }
+    @if (Node.IsExpanded && Node.Children is not null)
+    {
+        <div role="group">
+            @foreach (var child in Node.Children.Take(_visibleChildren))
+            {
+                <WorkspaceTreeNode Node="child" Level="@(Level + 1)" SelectedId="SelectedId"
+                    OnSelect="OnSelect" OnActivate="OnActivate" OnExpand="OnExpand" OnCollapse="OnCollapse"
+                    OnRename="OnRename" OnDelete="OnDelete" />
+            }
+            @if (Node.Children.Count > _visibleChildren)
+            {
+                <button type="button" class="tree-more" style="margin-left: @(24 + Level * 16)px" @onclick="ShowMore">
+                    Show next @Math.Min(250, Node.Children.Count - _visibleChildren) of @(Node.Children.Count - _visibleChildren)
+                </button>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public WorkspaceNode Node { get; set; } = null!;
+    [Parameter] public int Level { get; set; }
+    [Parameter] public string? SelectedId { get; set; }
+    [Parameter] public EventCallback<WorkspaceNode> OnSelect { get; set; }
+    [Parameter] public EventCallback<WorkspaceNode> OnActivate { get; set; }
+    [Parameter] public EventCallback<WorkspaceNode> OnExpand { get; set; }
+    [Parameter] public EventCallback<WorkspaceNode> OnCollapse { get; set; }
+    [Parameter] public EventCallback<WorkspaceNode> OnRename { get; set; }
+    [Parameter] public EventCallback<WorkspaceNode> OnDelete { get; set; }
+
+    private int _visibleChildren = 250;
+
+    private void ShowMore() => _visibleChildren += 250;
+
+    private async Task SelectAsync()
+    {
+        await OnSelect.InvokeAsync(Node);
+    }
+
+    private async Task ActivateAsync()
+    {
+        await OnSelect.InvokeAsync(Node);
+        if (Node.CanExpand)
+        {
+            await (Node.IsExpanded ? OnCollapse : OnExpand).InvokeAsync(Node);
+        }
+        else if (Node.Kind != WorkspaceNodeKind.SymbolicLink)
+        {
+            await OnActivate.InvokeAsync(Node);
+        }
+    }
+
+    private async Task OnKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (args.Key is "Enter" or " ") await ActivateAsync();
+        else if (args.Key == "ArrowRight" && Node.CanExpand && !Node.IsExpanded) await OnExpand.InvokeAsync(Node);
+        else if (args.Key == "ArrowLeft" && Node.CanExpand && Node.IsExpanded) await OnCollapse.InvokeAsync(Node);
+        else if (args.Key == "ArrowLeft") await JSRuntime.InvokeVoidAsync("NovaWorkspace.focus", Node.Id, "parent");
+        else if (args.Key == "ArrowRight" && Node.CanExpand && Node.IsExpanded) await JSRuntime.InvokeVoidAsync("NovaWorkspace.focus", Node.Id, "child");
+        else if (args.Key == "ArrowDown") await JSRuntime.InvokeVoidAsync("NovaWorkspace.focus", Node.Id, "next");
+        else if (args.Key == "ArrowUp") await JSRuntime.InvokeVoidAsync("NovaWorkspace.focus", Node.Id, "previous");
+        else if (args.Key == "Home") await JSRuntime.InvokeVoidAsync("NovaWorkspace.focus", Node.Id, "first");
+        else if (args.Key == "End") await JSRuntime.InvokeVoidAsync("NovaWorkspace.focus", Node.Id, "last");
+        else if (args.Key == "F2") await OnRename.InvokeAsync(Node);
+        else if (args.Key == "Delete") await OnDelete.InvokeAsync(Node);
+    }
+
+    private static string Icon(WorkspaceNodeKind kind) => kind switch
+    {
+        WorkspaceNodeKind.Directory => "▰",
+        WorkspaceNodeKind.SupportedFile => "◆",
+        WorkspaceNodeKind.SymbolicLink => "↗",
+        _ => "◇",
+    };
+}

@@ -187,4 +187,25 @@ public sealed class EditorContractTests
         Assert.Contains("status-bar", markup, StringComparison.Ordinal);
         Assert.Contains("Encoding?.DisplayName", markup, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void WorkspaceTree_IsAccessibleAndIncrementallyRendered()
+    {
+        var explorer = ReadContract("WorkspaceExplorer.razor");
+        var node = ReadContract("WorkspaceTreeNode.razor");
+
+        Assert.Contains("role=\"tree\"", explorer, StringComparison.Ordinal);
+        Assert.Contains("role=\"treeitem\"", node, StringComparison.Ordinal);
+        Assert.Contains("aria-expanded", node, StringComparison.Ordinal);
+        Assert.Contains("@onkeydown", node, StringComparison.Ordinal);
+        Assert.Contains("ArrowRight", node, StringComparison.Ordinal);
+        Assert.Contains("ArrowDown", node, StringComparison.Ordinal);
+        Assert.Contains("F2", node, StringComparison.Ordinal);
+        Assert.Contains("Delete", node, StringComparison.Ordinal);
+        Assert.Contains("Take(_visibleChildren)", node, StringComparison.Ordinal);
+        var navigation = ReadContract("workspace-explorer.js");
+        Assert.DoesNotContain("http://", navigation, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("https://", navigation, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("target?.focus()", navigation, StringComparison.Ordinal);
+    }
 }

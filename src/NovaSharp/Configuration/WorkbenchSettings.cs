@@ -20,19 +20,21 @@ public sealed record WorkbenchSettings(
     TextEncodingProfile DefaultEncoding,
     TextEncodingProfile FallbackEncoding,
     LineEndingStyle DefaultLineEnding,
-    bool ReloadUnmodifiedFiles)
+    bool ReloadUnmodifiedFiles,
+    IReadOnlyList<string> WorkspaceIgnoredPaths)
 {
     /// <summary>The schema version written to, and expected in, a settings file.</summary>
     /// <remarks>
     /// Present from the first release rather than added when it is first needed, because a file written without a
     /// version is a file no later migration can identify.
     /// </remarks>
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 2;
 
     /// <summary>What NovaSharp uses when nothing has been configured.</summary>
     public static WorkbenchSettings Defaults { get; } = new(
         TextEncodings.Utf8,
         TextEncodings.Latin1,
         LineEndingStyle.Lf,
-        ReloadUnmodifiedFiles: true);
+        ReloadUnmodifiedFiles: true,
+        WorkspaceIgnoredPaths: []);
 }

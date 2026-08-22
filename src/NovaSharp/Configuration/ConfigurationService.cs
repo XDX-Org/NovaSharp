@@ -207,6 +207,7 @@ public sealed class ConfigurationService
                     FallbackEncoding = document.FallbackEncoding,
                     DefaultLineEnding = document.DefaultLineEnding,
                     ReloadUnmodifiedFiles = document.ReloadUnmodifiedFiles,
+                    WorkspaceIgnoredPaths = document.WorkspaceIgnoredPaths,
                 }
                 : document;
 

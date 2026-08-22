@@ -3,6 +3,12 @@ namespace NovaSharp.Platform;
 /// <inheritdoc cref="IWorkspacePaths"/>
 public sealed class WorkspacePaths : IWorkspacePaths
 {
+    public string Canonicalize(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        return Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+    }
+
     /// <inheritdoc />
     public Uri ToDocumentUri(string path)
     {
@@ -10,7 +16,7 @@ public sealed class WorkspacePaths : IWorkspacePaths
 
         // GetFullPath resolves relative segments and the current directory using the rules of the running platform;
         // the Uri constructor then applies that platform's file-URI form. Neither step needs an operating-system check.
-        var absolute = Path.GetFullPath(path);
+        var absolute = Canonicalize(path);
         return new Uri(absolute, UriKind.Absolute);
     }
 
@@ -35,5 +41,42 @@ public sealed class WorkspacePaths : IWorkspacePaths
         ArgumentNullException.ThrowIfNull(right);
 
         return string.Equals(left.AbsoluteUri, right.AbsoluteUri, StringComparison.Ordinal);
+    }
+
+    public bool IsSamePath(string left, string right) =>
+        string.Equals(Canonicalize(left), Canonicalize(right), StringComparison.Ordinal);
+
+    public bool IsDescendantOrSelf(string root, string path)
+    {
+        var relative = Path.GetRelativePath(Canonicalize(root), Canonicalize(path));
+        return relative == "."
+            || (!Path.IsPathRooted(relative)
+                && relative != ".."
+                && !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+                && !relative.StartsWith(".." + Path.AltDirectorySeparatorChar, StringComparison.Ordinal));
+    }
+
+    public string ToWorkspaceRelativePath(string root, string path)
+    {
+        if (!IsDescendantOrSelf(root, path))
+        {
+            throw new ArgumentException("The path is outside the workspace.", nameof(path));
+        }
+
+        var relative = Path.GetRelativePath(Canonicalize(root), Canonicalize(path));
+        return relative == "." ? string.Empty : relative.Replace(Path.DirectorySeparatorChar, '/');
+    }
+
+    public string ResolveWorkspaceRelativePath(string root, string relativePath)
+    {
+        ArgumentNullException.ThrowIfNull(relativePath);
+        var platformRelative = relativePath.Replace('/', Path.DirectorySeparatorChar);
+        var resolved = Canonicalize(Path.Combine(Canonicalize(root), platformRelative));
+        if (!IsDescendantOrSelf(root, resolved))
+        {
+            throw new ArgumentException("The persisted path escapes the workspace.", nameof(relativePath));
+        }
+
+        return resolved;
     }
 }

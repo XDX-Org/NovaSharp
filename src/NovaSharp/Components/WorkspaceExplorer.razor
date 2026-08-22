@@ -1,0 +1,273 @@
+@using NovaSharp.Commands
+@using NovaSharp.Platform
+@using NovaSharp.Workspace
+@implements IDisposable
+
+@if (_snapshot.SidebarVisible)
+{
+    <aside class="explorer" style="width: @(_snapshot.SidebarWidth)px" aria-label="Explorer">
+        <header class="explorer-header">
+            <strong>Explorer</strong>
+            <button type="button" title="Open folder" aria-label="Open folder" @onclick="OpenFolderAsync">＋</button>
+            <button type="button" title="Refresh" aria-label="Refresh Explorer" disabled="@(!_snapshot.IsOpen)" @onclick="RefreshAsync">↻</button>
+            <button type="button" title="Close Explorer" aria-label="Close Explorer" @onclick="ToggleAsync">×</button>
+        </header>
+        @if (_snapshot.Root is null)
+        {
+            <button type="button" class="open-folder" @onclick="OpenFolderAsync">Open Folder</button>
+        }
+        else
+        {
+            <div class="workspace-path" title="@_snapshot.RootPath">@_snapshot.RootPath</div>
+            <div role="tree" aria-label="Workspace files" class="workspace-tree">
+                <WorkspaceTreeNode Node="_snapshot.Root" SelectedId="_snapshot.SelectedId"
+                    OnSelect="SelectAsync" OnActivate="ActivateAsync" OnExpand="ExpandAsync" OnCollapse="CollapseAsync"
+                    OnRename="BeginRename" OnDelete="DeleteAsync" />
+            </div>
+            <div class="explorer-actions" aria-label="Explorer actions">
+                <button type="button" @onclick="() => BeginCreate(false)" disabled="@(SelectedDirectory is null)">New file</button>
+                <button type="button" @onclick="() => BeginCreate(true)" disabled="@(SelectedDirectory is null)">New folder</button>
+                <button type="button" @onclick="BeginMove" disabled="@(SelectedNode is null || SelectedNode == _snapshot.Root)">Move</button>
+                <button type="button" @onclick="() => BeginRename(SelectedNode)" disabled="@(SelectedNode is null || SelectedNode == _snapshot.Root)">Rename</button>
+                <button type="button" @onclick="() => DeleteAsync(SelectedNode)" disabled="@(SelectedNode is null || SelectedNode == _snapshot.Root)">Delete</button>
+            </div>
+        }
+        <label class="explorer-resize">Explorer width
+            <input type="range" min="160" max="520" value="@_snapshot.SidebarWidth" @onchange="ResizeAsync" />
+        </label>
+    </aside>
+}
+
+@if (_dialogMode is not null)
+{
+    <div class="workspace-dialog" role="dialog" aria-modal="true" aria-label="@DialogTitle">
+        <h2>@DialogTitle</h2>
+        <label>@DialogLabel <input @bind="_dialogValue" @onkeydown="DialogKeyDownAsync" autofocus /></label>
+        <div class="picker-actions">
+            <button type="button" @onclick="ApplyDialogAsync">Apply</button>
+            <button type="button" @onclick="CancelDialog">Cancel</button>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public EventCallback<string> OpenFile { get; set; }
+
+    private readonly List<IDisposable> _registrations = [];
+    private WorkspaceSnapshot _snapshot = Workbench.Explorer.Snapshot;
+    private string? _dialogMode;
+    private string _dialogValue = string.Empty;
+    private WorkspaceNode? _dialogNode;
+    private bool _started;
+
+    protected override void OnInitialized()
+    {
+        Workbench.Explorer.Changed += OnChanged;
+        Workbench.Explorer.Relocated += OnRelocatedAsync;
+        RegisterCommands();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _started) return;
+        _started = true;
+        Workbench.Explorer.SetIgnoredPaths(Workbench.Configuration.Current.Settings.WorkspaceIgnoredPaths);
+        await Workbench.Explorer.RestoreAsync();
+        if (Workbench.Explorer.Snapshot.RootPath is { } root)
+        {
+            Workbench.Configuration.SetWorkspaceRoot(root);
+            await Workbench.LoadConfigurationAsync();
+            Workbench.Explorer.SetIgnoredPaths(Workbench.Configuration.Current.Settings.WorkspaceIgnoredPaths);
+        }
+    }
+
+    private void RegisterCommands()
+    {
+        void Register(string id, Func<CancellationToken, Task> handler, Func<bool>? enabled = null) =>
+            _registrations.Add(Workbench.Commands.Register(WorkbenchCommands.Describe(id), handler, enabled));
+        Register(WorkbenchCommands.OpenWorkspace, _ => OpenFolderAsync());
+        Register(WorkbenchCommands.CloseWorkspace, token => CloseFolderAsync(token), () => _snapshot.IsOpen);
+        Register(WorkbenchCommands.RefreshWorkspace, token => RefreshAsync(token), () => _snapshot.IsOpen);
+        Register(WorkbenchCommands.ToggleExplorer, _ => ToggleAsync());
+        Register(WorkbenchCommands.RevealActiveFile, token => RevealAsync(token), () => _snapshot.IsOpen && Workbench.ActiveDocument?.Status.IsOpen == true);
+    }
+
+    private async Task OpenFolderAsync()
+    {
+        var folders = await Program.App.MainWindow.ShowOpenFolderAsync("Open folder", _snapshot.RootPath ?? string.Empty, false);
+        if (folders is not [var root]) return;
+        await Workbench.Explorer.OpenAsync(root);
+        Workbench.Configuration.SetWorkspaceRoot(root);
+        await Workbench.LoadConfigurationAsync();
+        Workbench.Explorer.SetIgnoredPaths(Workbench.Configuration.Current.Settings.WorkspaceIgnoredPaths);
+    }
+
+    private async Task CloseFolderAsync(CancellationToken cancellationToken)
+    {
+        await Workbench.Explorer.CloseAsync(cancellationToken);
+        Workbench.Configuration.SetWorkspaceRoot(null);
+        await Workbench.LoadConfigurationAsync(cancellationToken);
+    }
+
+    private Task RefreshAsync() => RefreshAsync(CancellationToken.None);
+    private Task RefreshAsync(CancellationToken token) => _snapshot.RootPath is null
+        ? Task.CompletedTask
+        : Workbench.Explorer.ExpandAsync(_snapshot.RootPath, cancellationToken: token);
+
+    private Task ToggleAsync() => Workbench.Explorer.SetSidebarAsync(!_snapshot.SidebarVisible, _snapshot.SidebarWidth);
+
+    private Task RevealAsync(CancellationToken token) => Workbench.ActiveDocument?.Status.Path is { Length: > 0 } path
+        ? Workbench.Explorer.RevealAsync(path, token)
+        : Task.CompletedTask;
+
+    private Task SelectAsync(WorkspaceNode node) => Workbench.Explorer.SelectAsync(node.Path);
+    private Task ExpandAsync(WorkspaceNode node) => Workbench.Explorer.ExpandAsync(node.Path);
+    private Task CollapseAsync(WorkspaceNode node) => Workbench.Explorer.CollapseAsync(node.Path);
+
+    private async Task ActivateAsync(WorkspaceNode node)
+    {
+        await OpenFile.InvokeAsync(node.Path);
+        await Workbench.Explorer.RevealAsync(node.Path);
+    }
+
+    private void BeginCreate(bool directory)
+    {
+        _dialogMode = directory ? "create-folder" : "create-file";
+        _dialogValue = string.Empty;
+        _dialogNode = SelectedDirectory;
+    }
+
+    private void BeginRename(WorkspaceNode? node)
+    {
+        if (node is null || node == _snapshot.Root) return;
+        _dialogMode = "rename";
+        _dialogValue = node.Name;
+        _dialogNode = node;
+    }
+
+    private void BeginMove()
+    {
+        if (SelectedNode is null) return;
+        _dialogMode = "move";
+        _dialogValue = string.Empty;
+        _dialogNode = SelectedNode;
+    }
+
+    private async Task ApplyDialogAsync()
+    {
+        var mode = _dialogMode;
+        var node = _dialogNode;
+        var value = _dialogValue;
+        CancelDialog();
+        if (node is null) return;
+        if (mode == "create-file") await Workbench.Explorer.CreateAsync(node.Path, value, false);
+        else if (mode == "create-folder") await Workbench.Explorer.CreateAsync(node.Path, value, true);
+        else if (mode == "rename") await Workbench.Explorer.RenameAsync(node.Path, value);
+        else if (mode == "move" && _snapshot.RootPath is { } root)
+        {
+            try
+            {
+                var target = Workbench.Paths.ResolveWorkspaceRelativePath(root, value);
+                await Workbench.Explorer.MoveAsync(node.Path, target);
+            }
+            catch (ArgumentException exception)
+            {
+                Workbench.Notifications.Raise("novasharp.workspace.move", NovaSharp.Diagnostics.NotificationSeverity.Error, exception.Message);
+            }
+        }
+    }
+
+    private async Task DeleteAsync(WorkspaceNode? node)
+    {
+        if (node is null || node == _snapshot.Root) return;
+        var answer = await Program.App.MainWindow.ShowMessageAsync(
+            "NovaSharp", $"Delete {node.Name}? This cannot be undone.",
+            Photino.NET.PhotinoDialogButtons.YesNo, Photino.NET.PhotinoDialogIcon.Warning);
+        if (answer == Photino.NET.PhotinoDialogResult.Yes) await Workbench.Explorer.DeleteAsync(node.Path);
+    }
+
+    private async Task ResizeAsync(ChangeEventArgs args)
+    {
+        if (int.TryParse(args.Value?.ToString(), out var width))
+            await Workbench.Explorer.SetSidebarAsync(true, width);
+    }
+
+    private async Task DialogKeyDownAsync(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter") await ApplyDialogAsync();
+        else if (args.Key == "Escape") CancelDialog();
+    }
+
+    private void CancelDialog()
+    {
+        _dialogMode = null;
+        _dialogNode = null;
+        _dialogValue = string.Empty;
+    }
+
+    private WorkspaceNode? SelectedNode => _snapshot.Root is null ? null : Find(_snapshot.Root, _snapshot.SelectedId);
+    private WorkspaceNode? SelectedDirectory => SelectedNode is { Kind: WorkspaceNodeKind.Directory } directory
+        ? directory
+        : SelectedNode is null ? _snapshot.Root : FindParent(_snapshot.Root!, SelectedNode.Id);
+
+    private string DialogTitle => _dialogMode switch
+    {
+        "create-file" => "Create file",
+        "create-folder" => "Create folder",
+        "rename" => "Rename item",
+        _ => "Move item",
+    };
+    private string DialogLabel => _dialogMode == "move" ? "Destination folder, relative to the workspace" : "Name";
+
+    private static WorkspaceNode? Find(WorkspaceNode node, string? id)
+    {
+        if (node.Id == id) return node;
+        if (node.Children is null) return null;
+        foreach (var child in node.Children)
+        {
+            var found = Find(child, id);
+            if (found is not null) return found;
+        }
+        return null;
+    }
+
+    private static WorkspaceNode? FindParent(WorkspaceNode node, string id)
+    {
+        if (node.Children?.Any(child => child.Id == id) == true) return node;
+        if (node.Children is null) return null;
+        foreach (var child in node.Children)
+        {
+            var found = FindParent(child, id);
+            if (found is not null) return found;
+        }
+        return null;
+    }
+
+    private void OnChanged(WorkspaceSnapshot snapshot) => _ = InvokeAsync(() =>
+    {
+        _snapshot = snapshot;
+        StateHasChanged();
+    });
+
+    private async Task OnRelocatedAsync(WorkspaceRelocation relocation)
+    {
+        var session = Workbench.ActiveDocument;
+        if (session?.Status.Path is not { } openPath) return;
+        string? target = null;
+        if (Workbench.Paths.IsSamePath(relocation.OldPath, openPath)) target = relocation.NewPath;
+        else if (relocation.IsDirectory && Workbench.Paths.IsDescendantOrSelf(relocation.OldPath, openPath))
+        {
+            var relative = Workbench.Paths.ToWorkspaceRelativePath(relocation.OldPath, openPath);
+            target = Workbench.Paths.ResolveWorkspaceRelativePath(relocation.NewPath, relative);
+        }
+        if (target is not null) await session.RelocateAsync(openPath, target, Workbench.Paths.ToDocumentUri(target));
+    }
+
+    public void Dispose()
+    {
+        Workbench.Explorer.Changed -= OnChanged;
+        Workbench.Explorer.Relocated -= OnRelocatedAsync;
+        foreach (var registration in _registrations) registration.Dispose();
+        _registrations.Clear();
+    }
+}

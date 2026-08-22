@@ -3,8 +3,10 @@ using System.Text;
 using System.Text.Json;
 using NovaSharp.Async;
 using NovaSharp.Editing;
+using NovaSharp.Diagnostics;
 using NovaSharp.Platform;
 using NovaSharp.Text;
+using NovaSharp.Workspace;
 
 const long idleMemoryLimitBytes = 400L * 1024 * 1024;
 const int processDeadlineSeconds = 45;
@@ -48,6 +50,7 @@ finally
 }
 
 var managed = await RunManagedPerformanceAsync(options);
+var workspace = await RunWorkspacePerformanceAsync();
 var failures = new List<string>();
 
 Check(provisioning.Success, "browser profile provisioning", provisioning.Error);
@@ -74,6 +77,14 @@ Check(managed.SaveBarrierP95Milliseconds <= 120,
     "1 MB save barrier p95 <= 120 ms", $"{managed.SaveBarrierP95Milliseconds:F2} ms");
 Check(managed.SaveP95Milliseconds <= options.SaveLimitMilliseconds,
     $"1 MB save p95 <= {options.SaveLimitMilliseconds} ms", $"{managed.SaveP95Milliseconds:F2} ms");
+Check(workspace.ExpansionMilliseconds <= 2_000,
+    "20,000-entry Explorer expansion <= 2,000 ms", $"{workspace.ExpansionMilliseconds:F2} ms");
+Check(workspace.ManagedMemoryIncreaseBytes <= 48L * 1024 * 1024,
+    "20,000-entry Explorer managed memory <= 48 MB", $"{workspace.ManagedMemoryIncreaseBytes / 1024 / 1024} MB");
+Check(workspace.WatcherRecoveryMilliseconds <= 2_000,
+    "Explorer watcher recovery <= 2,000 ms", $"{workspace.WatcherRecoveryMilliseconds:F2} ms");
+Check(workspace.WatcherCapacity == 1_024,
+    "Explorer watcher queue capacity is 1,024", workspace.WatcherCapacity.ToString());
 
 var record = new VerificationRecord(
     options.FixtureName,
@@ -88,8 +99,9 @@ var record = new VerificationRecord(
     warmSamples,
     large,
     managed,
+    workspace,
     failures);
-var recordPath = Path.Combine(options.OutputDirectory, "phase-01-02-native.json");
+var recordPath = Path.Combine(options.OutputDirectory, "phase-01-03-native.json");
 await File.WriteAllTextAsync(
     recordPath,
     JsonSerializer.Serialize(record, Serialization.JsonOptions),
@@ -293,6 +305,79 @@ static async Task<ManagedPerformanceRecord> RunManagedPerformanceAsync(Options o
     }
 }
 
+static async Task<WorkspacePerformanceRecord> RunWorkspacePerformanceAsync()
+{
+    const int entryCount = 20_000;
+    var fixture = Directory.CreateTempSubdirectory("novasharp-explorer-fixture-").FullName;
+    var state = Directory.CreateTempSubdirectory("novasharp-explorer-state-").FullName;
+    try
+    {
+        for (var index = 0; index < entryCount; index++)
+        {
+            await using var stream = new FileStream(
+                Path.Combine(fixture, $"file-{index:D5}.cs"),
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.Read,
+                1,
+                useAsync: true);
+        }
+
+        GC.Collect(2, GCCollectionMode.Aggressive, blocking: true, compacting: true);
+        var memoryBefore = GC.GetTotalMemory(forceFullCollection: true);
+        var paths = new WorkspacePaths();
+        var store = new DocumentFileStore();
+        await using var queue = new BoundedWorkQueue(32, 2);
+        await using var watcher = new FileSystemWorkspaceWatcher(paths, 1_024);
+        var persistence = new WorkspacePersistenceService(new VerificationApplicationPaths(state), store, queue);
+        var notifications = new NotificationService(new BoundedWorkbenchLog());
+        await using var explorer = new WorkspaceExplorerService(
+            paths,
+            new WorkspaceFileSystem(paths, queue),
+            watcher,
+            persistence,
+            notifications);
+
+        var expansionStarted = Stopwatch.GetTimestamp();
+        await explorer.OpenAsync(fixture);
+        var expansionMilliseconds = Stopwatch.GetElapsedTime(expansionStarted).TotalMilliseconds;
+        if (explorer.Snapshot.Root?.Children?.Count != entryCount)
+        {
+            throw new InvalidOperationException("The 20,000-entry Explorer fixture was not fully enumerated.");
+        }
+
+        var memoryAfter = GC.GetTotalMemory(forceFullCollection: true);
+        // Watcher subscription is provisioning, like browser-profile creation above. Let the native watcher reach its
+        // steady state before measuring an event that happens after it is ready.
+        await Task.Delay(500);
+        var external = Path.Combine(fixture, "external.cs");
+        var watcherStarted = Stopwatch.GetTimestamp();
+        await File.WriteAllTextAsync(external, "class External;\n");
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        while (DateTime.UtcNow < deadline
+            && explorer.Snapshot.Root?.Children?.Any(node => node.Name == "external.cs") != true)
+        {
+            await Task.Delay(10);
+        }
+        if (explorer.Snapshot.Root?.Children?.Any(node => node.Name == "external.cs") != true)
+        {
+            throw new TimeoutException("The Explorer did not recover the external create event.");
+        }
+
+        return new WorkspacePerformanceRecord(
+            entryCount,
+            expansionMilliseconds,
+            Math.Max(0, memoryAfter - memoryBefore),
+            Stopwatch.GetElapsedTime(watcherStarted).TotalMilliseconds,
+            watcher.Capacity);
+    }
+    finally
+    {
+        await DeleteDirectoryAsync(fixture);
+        await DeleteDirectoryAsync(state);
+    }
+}
+
 static string CreateLargeDocument()
 {
     const int length = 10 * 1024 * 1024;
@@ -403,6 +488,7 @@ internal sealed record VerificationRecord(
     IReadOnlyList<NativeResult> WarmSamples,
     NativeResult LargeDocument,
     ManagedPerformanceRecord ManagedPerformance,
+    WorkspacePerformanceRecord WorkspacePerformance,
     IReadOnlyList<string> Failures);
 
 internal sealed record ManagedPerformanceRecord(
@@ -412,6 +498,18 @@ internal sealed record ManagedPerformanceRecord(
     int MaximumReplicationQueueDepth,
     double SaveBarrierP95Milliseconds,
     double SaveP95Milliseconds);
+
+internal sealed record WorkspacePerformanceRecord(
+    int EntryCount,
+    double ExpansionMilliseconds,
+    long ManagedMemoryIncreaseBytes,
+    double WatcherRecoveryMilliseconds,
+    int WatcherCapacity);
+
+internal sealed class VerificationApplicationPaths(string directory) : IApplicationPaths
+{
+    public string ConfigurationDirectory { get; } = directory;
+}
 
 internal static class Serialization
 {

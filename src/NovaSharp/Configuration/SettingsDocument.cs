@@ -30,6 +30,9 @@ public sealed class SettingsDocument
     /// <summary>Whether a clean document follows its file when something else changes it.</summary>
     public bool? ReloadUnmodifiedFiles { get; init; }
 
+    /// <summary>Additional Explorer names or workspace-relative glob patterns to hide.</summary>
+    public string[]? WorkspaceIgnoredPaths { get; init; }
+
     /// <summary>How this file is read and written.</summary>
     /// <remarks>
     /// Indented and case-insensitive because the workspace scope is a source-controlled file that people edit and

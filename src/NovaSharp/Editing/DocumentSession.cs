@@ -113,6 +113,34 @@ public sealed class DocumentSession : IAsyncDisposable
     /// </remarks>
     public DocumentReplica? Replica => _replica;
 
+    /// <summary>Updates the file identity after an Explorer rename without touching Monaco text or view state.</summary>
+    public async Task RelocateAsync(string oldPath, string newPath, Uri newUri)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(oldPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(newPath);
+        ArgumentNullException.ThrowIfNull(newUri);
+
+        lock (_gate)
+        {
+            if (_record is null || !string.Equals(_record.Path, oldPath, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _record = _record with
+            {
+                Path = newPath,
+                Uri = newUri,
+                DisplayName = Path.GetFileName(newPath),
+                Disk = _store.GetState(newPath),
+            };
+            _externalChangeAcknowledged = false;
+        }
+
+        _watcher.Watch(newPath);
+        await PublishAsync(BuildStatus()).ConfigureAwait(false);
+    }
+
     /// <summary>Opens <paramref name="path"/>, replacing whatever document was open.</summary>
     /// <param name="path">The file to open.</param>
     /// <param name="encoding">The encoding to try, or <see langword="null"/> for the configured default.</param>
