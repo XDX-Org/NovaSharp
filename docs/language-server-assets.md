@@ -35,7 +35,7 @@ alphabetically; the ordering carries no priority.
 | `linux-x64` | `linux-x64` | `.tar.xz` | Yes |
 | `osx-arm64` | `darwin-arm64` | `.tar.gz` | Yes |
 | `osx-x64` | `darwin-x64` | `.tar.gz` | Yes |
-| `win-arm64` | — | — | No; see the [supported platform matrix](delivery-plan.md#supported-platform-matrix) |
+| `win-arm64` | `win32-arm64` | `.zip` | Yes |
 | `win-x64` | `win32-x64` | `.zip` | Yes |
 
 Adding a runtime identifier means adding its payload hash, its Node hash, its extraction path, and its notices in one change. Extraction

@@ -13,6 +13,8 @@ editor:
 - a line-ending change asks for a resynchronization rather than sending offsets into text the shadow does not have;
 - a NovaSharp-driven replacement stays undoable and sends no batches, and replication resumes cleanly after it;
 - a read-only editor refuses edits, and the save shortcut reaches the command identifier .NET registers.
+- find, long-line navigation, scrolling, typing/replication latency, browser-thread long tasks, bounded overflow
+  recovery, and 100 create/open/dispose cycles stay within their phase budgets.
 
 The shadow in the harness is a deliberate second implementation of `DocumentReplica`'s apply rule. Agreement between
 two independent implementations of the same protocol is what makes the replication contract a gate rather than a
@@ -36,11 +38,13 @@ executable and skip `npx playwright install`.
 
 The suite runs in [CI](../../.github/workflows/ci.yml) on every runtime identifier in the
 [supported platform matrix](../../docs/delivery-plan.md#supported-platform-matrix), against the Chromium build pinned
-by the Playwright version in `package-lock.json`.
+by the Playwright version in `package-lock.json`. CI sets `NOVASHARP_BROWSER_METRICS` and
+`NOVASHARP_FIXTURE_NAME`, causing the suite to write the measured values and all 64 assertions to the RID's retained
+JSON evidence.
 
 It is deliberately not part of the bootstrap. The bootstrap acquires only hash-pinned assets, and adding a browser
 download to it would put an unpinned dependency in the one place the repository guarantees there are none. CI installs
 the browser through the same lockfile that pins everything else.
 
-Until the workflow has been green on every row, this suite proves the editor contract on the machines it has actually
-run on, not on every supported platform.
+Until the new workflow has been green on every row, this suite proves the editor contract on the machines it has
+actually run on, not on every supported platform.

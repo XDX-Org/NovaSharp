@@ -89,12 +89,12 @@ priority: no operating system is the reference platform, and a feature is not fi
 
 | Runtime identifier | Host runtime prerequisites | Bootstrap prerequisites | Pinned assets | Automated smoke test |
 |---|---|---|---|---|
-| `linux-arm64` | GTK 4, WebKitGTK 6 | POSIX shell, `curl`, `jq`, `tar`, `unzip`, XZ support | Yes | Pending |
-| `linux-x64` | GTK 4, WebKitGTK 6 | POSIX shell, `curl`, `jq`, `tar`, `unzip`, XZ support | Yes | Pending |
-| `osx-arm64` | System WebKit | POSIX shell, `curl`, `jq`, `tar`, `unzip` | Yes | Pending |
-| `osx-x64` | System WebKit | POSIX shell, `curl`, `jq`, `tar`, `unzip` | Yes | Pending |
-| `win-arm64` | WebView2 Evergreen Runtime | PowerShell 5.1 or later | Not yet pinned | Pending |
-| `win-x64` | WebView2 Evergreen Runtime | PowerShell 5.1 or later | Yes | Pending |
+| `linux-arm64` | GTK 4, WebKitGTK 6 | POSIX shell, `curl`, `jq`, `tar`, `unzip`, XZ support | Yes | Wired; green run pending |
+| `linux-x64` | GTK 4, WebKitGTK 6 | POSIX shell, `curl`, `jq`, `tar`, `unzip`, XZ support | Yes | Wired; green run pending |
+| `osx-arm64` | System WebKit | POSIX shell, `curl`, `jq`, `tar`, `unzip` | Yes | Wired; green run pending |
+| `osx-x64` | System WebKit | POSIX shell, `curl`, `jq`, `tar`, `unzip` | Yes | Wired; green run pending |
+| `win-arm64` | WebView2 Evergreen Runtime | PowerShell 5.1 or later | Yes | Wired; green run pending |
+| `win-x64` | WebView2 Evergreen Runtime | PowerShell 5.1 or later | Yes | Wired; green run pending |
 
 *Pinned assets* means the runtime identifier has verified SHA-256 entries in the language-server asset manifest. *Automated smoke test*
 means a launch-and-edit check runs unattended on that platform in CI. No row is complete until both columns read yes; see the
@@ -183,16 +183,16 @@ publish as a packaging error rather than a supported configuration.
 browser can show: worker startup, no runtime network access, deterministic disposal, and that the edit batches the host
 produces reconstruct Monaco's text exactly.
 
-[CI](.github/workflows/ci.yml) runs both, plus the bootstrap and the publish gates, on every runtime identifier in the
-[supported platform matrix](docs/delivery-plan.md#supported-platform-matrix) from the same commit. A green run on every
-row, and the recorded performance budgets, are the [quality gates](docs/delivery-plan.md#quality-gates) still
-outstanding.
+[CI](.github/workflows/ci.yml) runs both, plus bootstrap, RID-specific publish, the published native-host smoke, and
+performance measurements on every runtime identifier from the same commit. Each row retains its application and JSON
+evidence. A green run on the new workflow is still outstanding.
 
 > [!NOTE]
 > Monaco is mounted and is the only editor, and the document lifecycle around it — asynchronous edit replication, dirty
-> state, safe save and reload, encoding and line-ending handling, and external-change resolution — is in place. Phases
-> 1 and 2 are both in progress rather than complete: their remaining gates are per-platform smoke tests, recorded
-> performance budgets, CI, and, for phase 2, the command registry, configuration service, and structured notifications.
+> state, safe save and reload, encoding and line-ending handling, and external-change resolution — is in place.
+> Phases 1 and 2 remain in progress. Their implementation and automated gates are present, including the phase-2
+> foundations, and the named local `win-x64` Release fixture passes. One green qualification run of the new workflow
+> on every supported runtime identifier is still required before either status can become complete.
 
 See the [phase documentation](docs/README.md) for current scope and verification gates.
 

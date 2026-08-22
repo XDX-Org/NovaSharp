@@ -9,7 +9,7 @@
 // Requires a Chromium build for Playwright. See tests/editor-host/README.md.
 
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -47,6 +47,9 @@ const HARNESS_PAGE = `<!DOCTYPE html>
             resyncs: 0,
             concurrentCalls: 0,
             maxConcurrentCalls: 0,
+            replicationLatencies: [],
+            holdReplication: false,
+            releaseReplication: null,
             problems: [],
         };
         globalThis.shadow = shadow;
@@ -79,6 +82,7 @@ const HARNESS_PAGE = `<!DOCTYPE html>
 
         globalThis.bridge = {
             async invokeMethodAsync(name, ...args) {
+                const started = performance.now();
                 shadow.concurrentCalls += 1;
                 shadow.maxConcurrentCalls = Math.max(shadow.maxConcurrentCalls, shadow.concurrentCalls);
                 try {
@@ -87,10 +91,15 @@ const HARNESS_PAGE = `<!DOCTYPE html>
                     await new Promise(resolve => setTimeout(resolve, 0));
 
                     if (name === 'ReplicateEdits') {
+                        if (shadow.holdReplication) {
+                            await new Promise(resolve => { shadow.releaseReplication = resolve; });
+                        }
+
                         for (const batch of args[0]) {
                             applyBatch(batch);
                         }
 
+                        shadow.replicationLatencies.push(performance.now() - started);
                         return true;
                     }
 
@@ -120,6 +129,7 @@ const HARNESS_PAGE = `<!DOCTYPE html>
         };
 
         const module = await import('/monaco-editor-host.js');
+        globalThis.createEditor = module.createEditor;
         globalThis.editor = module.createEditor(document.getElementById('host'), globalThis.bridge);
         globalThis.editorReady = true;
     </script>
@@ -160,6 +170,8 @@ function startServer() {
 }
 
 const results = [];
+let measuredPerformance;
+let measuredLifecycle;
 function check(name, condition, detail = '') {
     results.push({ name, ok: Boolean(condition), detail });
     process.stdout.write(`  ${condition ? 'PASS' : 'FAIL'}  ${name}${condition || !detail ? '' : ` — ${detail}`}\n`);
@@ -339,6 +351,114 @@ try {
     replicated = await shadow();
     check('replication resumes cleanly after a replacement', replicated.text === await modelText(), replicated.problems.join('; '));
 
+    // Find, long lines, and scrolling exercise Monaco's own interaction and viewport paths. NovaSharp contributes no
+    // second renderer or find UI.
+    const LARGE_SOURCE = `${Array.from({ length: 2_000 }, (_, index) => `// line ${index}`).join('\n')}\n${'x'.repeat(100_000)} needle\n`;
+    await page.evaluate(source => globalThis.editor.replaceDocument(source, '\n'), LARGE_SOURCE);
+    await page.evaluate(() => globalThis.adoptSnapshot());
+    await page.evaluate(() => {
+        const editor = globalThis.NovaMonaco.editor.getEditors()[0];
+        editor.setPosition({ lineNumber: 2_001, column: 90_000 });
+        editor.revealPositionInCenter({ lineNumber: 2_001, column: 90_000 });
+        editor.focus();
+    });
+    check('a 100,000-character line retains navigation at a distant column', await page.evaluate(() => {
+        const editor = globalThis.NovaMonaco.editor.getEditors()[0];
+        return editor.getPosition().lineNumber === 2_001 && editor.getPosition().column === 90_000;
+    }));
+    check('a 2,000-line document scrolls vertically',
+        await page.evaluate(() => globalThis.NovaMonaco.editor.getEditors()[0].getScrollTop()) > 0);
+
+    await page.evaluate(async () => {
+        const editor = globalThis.NovaMonaco.editor.getEditors()[0];
+        editor.setSelection(new globalThis.NovaMonaco.Range(1, 1, 1, 1));
+        await editor.getAction('actions.find').run();
+    });
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label')?.startsWith('Find'));
+    await page.keyboard.type('needle');
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('Escape');
+    check('Monaco find selects the matching text', await page.evaluate(() => {
+        const editor = globalThis.NovaMonaco.editor.getEditors()[0];
+        return editor.getModel().getValueInRange(editor.getSelection()) === 'needle';
+    }));
+
+    // Measure paint and long tasks while an independent worker is busy. The worker represents background analysis:
+    // it may consume CPU, but it must not put that work on the browser thread.
+    await page.evaluate(() => {
+        const editor = globalThis.NovaMonaco.editor.getEditors()[0];
+        const paints = [];
+        const longTasks = [];
+        const subscription = editor.getModel().onDidChangeContent(() => {
+            const changedAt = performance.now();
+            requestAnimationFrame(() => paints.push(performance.now() - changedAt));
+        });
+        const observer = new PerformanceObserver(entries => {
+            longTasks.push(...entries.getEntries().map(entry => entry.duration));
+        });
+        observer.observe({ type: 'longtask', buffered: false });
+        const worker = new Worker(URL.createObjectURL(new Blob([
+            'const end = performance.now() + 10000; while (performance.now() < end) { Math.sqrt(Math.random()); }',
+        ], { type: 'text/javascript' })));
+        globalThis.performanceRun = { paints, longTasks, subscription, observer, worker };
+        editor.focus();
+    });
+    await page.keyboard.type('a'.repeat(300), { delay: 2 });
+    await settle();
+    await page.waitForFunction(() => globalThis.performanceRun.paints.length >= 300);
+    measuredPerformance = await page.evaluate(() => {
+        const run = globalThis.performanceRun;
+        run.subscription.dispose();
+        run.observer.disconnect();
+        run.worker.terminate();
+        const percentile = (values, value) => {
+            const ordered = [...values].sort((left, right) => left - right);
+            return ordered[Math.min(ordered.length - 1, Math.ceil(ordered.length * value) - 1)] ?? 0;
+        };
+        const replication = globalThis.shadow.replicationLatencies;
+        return {
+            paintP95: percentile(run.paints, 0.95),
+            paintP99: percentile(run.paints, 0.99),
+            longestTask: Math.max(0, ...run.longTasks),
+            replicationP95: percentile(replication, 0.95),
+            replicationP99: percentile(replication, 0.99),
+        };
+    });
+    check('keystroke-to-paint p95 stays within 16 ms', measuredPerformance.paintP95 <= 16, `${measuredPerformance.paintP95.toFixed(2)} ms`);
+    check('keystroke-to-paint p99 stays within 33 ms', measuredPerformance.paintP99 <= 33, `${measuredPerformance.paintP99.toFixed(2)} ms`);
+    check('the browser thread has no task longer than 50 ms', measuredPerformance.longestTask <= 50, `${measuredPerformance.longestTask.toFixed(2)} ms`);
+    check('edit replication p95 stays within 50 ms', measuredPerformance.replicationP95 <= 50, `${measuredPerformance.replicationP95.toFixed(2)} ms`);
+    check('edit replication p99 stays within 150 ms', measuredPerformance.replicationP99 <= 150, `${measuredPerformance.replicationP99.toFixed(2)} ms`);
+    const ordinaryQueue = await page.evaluate(() => globalThis.editor.runtimeInfo());
+    check('the replication queue stays below 25% of capacity under load',
+        ordinaryQueue.replicationMaximumQueueDepth <= ordinaryQueue.replicationCapacity * 0.25,
+        `${ordinaryQueue.replicationMaximumQueueDepth}/${ordinaryQueue.replicationCapacity}`);
+
+    // Stop the receiver, generate more than one full queue, then release it. Overflow must retain a fixed bound and
+    // recover once through a snapshot; it must not create an unbounded browser backlog or overlap interop sends.
+    const resyncsBeforeOverflow = (await shadow()).resyncs;
+    await page.evaluate(() => {
+        globalThis.shadow.holdReplication = true;
+        const model = globalThis.NovaMonaco.editor.getModels()[0];
+        for (let index = 0; index < 300; index++) {
+            model.applyEdits([{ range: model.getFullModelRange().collapseToEnd(), text: 'z' }]);
+        }
+    });
+    const saturated = await page.evaluate(() => globalThis.editor.runtimeInfo());
+    check('the browser replication queue is bounded',
+        saturated.replicationMaximumQueueDepth === saturated.replicationCapacity,
+        `${saturated.replicationMaximumQueueDepth}/${saturated.replicationCapacity}`);
+    check('queue overflow is observable', saturated.replicationOverflowCount === 1, String(saturated.replicationOverflowCount));
+    await page.evaluate(() => {
+        globalThis.shadow.holdReplication = false;
+        globalThis.shadow.releaseReplication?.();
+    });
+    await page.waitForFunction(expected => globalThis.shadow.resyncs > expected, resyncsBeforeOverflow);
+    await page.evaluate(() => globalThis.adoptSnapshot());
+    replicated = await shadow();
+    check('overflow recovers through one full snapshot', replicated.text === await modelText(), replicated.problems.join('; '));
+    check('overflow never overlaps interop sends', replicated.maxConcurrentCalls <= 1, String(replicated.maxConcurrentCalls));
+
     // A read-only document refuses edits, which is how a file that cannot be written is presented.
     await page.evaluate(() => globalThis.editor.setReadOnly(true));
     const readOnlyBefore = await modelText();
@@ -440,6 +560,32 @@ try {
         }
     });
     check('a disposed editor rejects further use', disposedCallFailed);
+
+    // Warm Monaco before taking a heap baseline, then repeat the complete create/open/dispose lifecycle 100 times.
+    const runLifecycleCycles = count => page.evaluate(cycles => {
+        for (let index = 0; index < cycles; index++) {
+            const host = document.createElement('div');
+            host.style.cssText = 'position:absolute;inset:0;';
+            document.body.appendChild(host);
+            const editor = globalThis.createEditor(host, globalThis.bridge);
+            editor.openDocument(`file:///workspace/cycle-${index}.cs`, 'csharp', 'class Cycle;\n', '\n', false);
+            editor.dispose();
+            host.remove();
+        }
+    }, count);
+    await runLifecycleCycles(10);
+    await cdp.send('HeapProfiler.collectGarbage');
+    const heapUsed = async () => (await cdp.send('Runtime.getHeapUsage')).usedSize;
+    const heapBeforeCycles = await heapUsed();
+    await runLifecycleCycles(100);
+    await cdp.send('HeapProfiler.collectGarbage');
+    const heapAfterCycles = await heapUsed();
+    measuredLifecycle = { heapBeforeCycles, heapAfterCycles, cycles: 100 };
+    check('100 open/close cycles leave zero live models',
+        await page.evaluate(() => globalThis.NovaMonaco.editor.getModels().length) === 0);
+    check('100 open/close cycles retain no more than 10% heap',
+        heapAfterCycles <= heapBeforeCycles * 1.10,
+        `${Math.round(heapBeforeCycles / 1024 / 1024)} MB -> ${Math.round(heapAfterCycles / 1024 / 1024)} MB`);
 } finally {
     await browser.close();
     server.close();
@@ -447,4 +593,19 @@ try {
 
 const failed = results.filter(result => !result.ok);
 process.stdout.write(`\n${results.length - failed.length} passed, ${failed.length} failed\n`);
+
+if (process.env.NOVASHARP_BROWSER_METRICS) {
+    const metricsPath = path.resolve(process.env.NOVASHARP_BROWSER_METRICS);
+    await mkdir(path.dirname(metricsPath), { recursive: true });
+    await writeFile(metricsPath, `${JSON.stringify({
+        fixtureName: process.env.NOVASHARP_FIXTURE_NAME ?? 'unrecorded',
+        platform: process.platform,
+        architecture: process.arch,
+        nodeVersion: process.version,
+        performance: measuredPerformance,
+        lifecycle: measuredLifecycle,
+        assertions: results,
+    }, null, 2)}\n`);
+}
+
 process.exit(failed.length === 0 ? 0 : 1);

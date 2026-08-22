@@ -4,6 +4,7 @@
 @using NovaSharp.Diagnostics
 @using NovaSharp.Editing
 @using NovaSharp.Text
+@using NovaSharp.Verification
 @using PhotinoEx.Core.Models
 @implements IAsyncDisposable
 @inject IJSRuntime JSRuntime
@@ -205,6 +206,11 @@
             }
 
             await Workbench.LoadConfigurationAsync();
+
+            if (NativeSmokeTest.IsEnabled)
+            {
+                await NativeSmokeTest.RunAsync(session, host);
+            }
         }
         catch (Exception exception) when (exception is JSException or JSDisconnectedException)
         {

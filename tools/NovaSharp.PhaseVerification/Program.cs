@@ -1,0 +1,342 @@
+using System.Diagnostics;
+using System.Text;
+using System.Text.Json;
+using NovaSharp.Async;
+using NovaSharp.Editing;
+using NovaSharp.Platform;
+using NovaSharp.Text;
+
+const int startupColdLimitMilliseconds = 2_500;
+const int startupWarmLimitMilliseconds = 1_200;
+const long idleMemoryLimitBytes = 400L * 1024 * 1024;
+const int processDeadlineSeconds = 45;
+
+var options = Options.Parse(args);
+Directory.CreateDirectory(options.OutputDirectory);
+
+var cold = await RunAsync("cold", options);
+var warm = await RunAsync("warm", options);
+var largeSource = Path.Combine(Path.GetTempPath(), $"novasharp-large-{Guid.NewGuid():N}.cs");
+NativeResult large;
+try
+{
+    await File.WriteAllTextAsync(largeSource, CreateLargeDocument());
+    large = await RunAsync("large", options, largeSource);
+}
+finally
+{
+    File.Delete(largeSource);
+}
+
+var managed = await RunManagedPerformanceAsync(options);
+var failures = new List<string>();
+
+Check(cold.Success, "cold native smoke", cold.Error);
+Check(warm.Success, "warm native smoke", warm.Error);
+Check(cold.InteractiveEditorMilliseconds <= startupColdLimitMilliseconds,
+    $"cold startup <= {startupColdLimitMilliseconds} ms", $"{cold.InteractiveEditorMilliseconds} ms");
+Check(warm.InteractiveEditorMilliseconds <= startupWarmLimitMilliseconds,
+    $"warm startup <= {startupWarmLimitMilliseconds} ms", $"{warm.InteractiveEditorMilliseconds} ms");
+Check(warm.WorkingSetBytes <= idleMemoryLimitBytes,
+    $"idle working set <= {idleMemoryLimitBytes / 1024 / 1024} MB", $"{warm.WorkingSetBytes / 1024 / 1024} MB");
+Check(large.Success, "10 MB native smoke", large.Error);
+Check(large.WorkingSetBytes - large.BaselineWorkingSetBytes <= 50L * 1024 * 1024,
+    "10 MB document adds <= 50 MB working set",
+    $"{Math.Max(0, large.WorkingSetBytes - large.BaselineWorkingSetBytes) / 1024 / 1024} MB");
+Check(managed.ReplicationP95Milliseconds <= 50,
+    "managed replication p95 <= 50 ms", $"{managed.ReplicationP95Milliseconds:F2} ms");
+Check(managed.ReplicationP99Milliseconds <= 150,
+    "managed replication p99 <= 150 ms", $"{managed.ReplicationP99Milliseconds:F2} ms");
+Check(managed.MaximumReplicationQueueDepth <= managed.ReplicationCapacity * 0.25,
+    "managed replication queue <= 25% capacity", $"{managed.MaximumReplicationQueueDepth}/{managed.ReplicationCapacity}");
+Check(managed.SaveBarrierP95Milliseconds <= 120,
+    "1 MB save barrier p95 <= 120 ms", $"{managed.SaveBarrierP95Milliseconds:F2} ms");
+Check(managed.SaveP95Milliseconds <= 250,
+    "1 MB save p95 <= 250 ms", $"{managed.SaveP95Milliseconds:F2} ms");
+
+var record = new VerificationRecord(
+    options.FixtureName,
+    Environment.ProcessorCount,
+    Environment.Version.ToString(),
+    cold,
+    warm,
+    large,
+    managed,
+    failures);
+var recordPath = Path.Combine(options.OutputDirectory, "phase-01-02-native.json");
+await File.WriteAllTextAsync(
+    recordPath,
+    JsonSerializer.Serialize(record, Serialization.JsonOptions),
+    CancellationToken.None);
+
+Console.WriteLine($"Verification record: {recordPath}");
+return failures.Count == 0 ? 0 : 1;
+
+void Check(bool condition, string name, string? detail)
+{
+    Console.WriteLine($"  {(condition ? "PASS" : "FAIL")}  {name}{(string.IsNullOrWhiteSpace(detail) ? string.Empty : $" — {detail}")}");
+    if (!condition)
+    {
+        failures.Add(string.IsNullOrWhiteSpace(detail) ? name : $"{name}: {detail}");
+    }
+}
+
+static async Task<NativeResult> RunAsync(string label, Options options, string? sourcePath = null)
+{
+    var resultPath = Path.Combine(options.OutputDirectory, $"{label}-native.json");
+    var start = new ProcessStartInfo(options.ApplicationPath)
+    {
+        UseShellExecute = false,
+        RedirectStandardOutput = true,
+        RedirectStandardError = true,
+    };
+    start.ArgumentList.Add("--phase-smoke-source");
+    start.ArgumentList.Add(sourcePath ?? options.SourcePath);
+    start.ArgumentList.Add("--phase-smoke-result");
+    start.ArgumentList.Add(resultPath);
+
+    using var process = Process.Start(start) ?? throw new InvalidOperationException("The NovaSharp process did not start.");
+    var standardOutput = process.StandardOutput.ReadToEndAsync();
+    var standardError = process.StandardError.ReadToEndAsync();
+    using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(processDeadlineSeconds));
+
+    try
+    {
+        await process.WaitForExitAsync(deadline.Token);
+    }
+    catch (OperationCanceledException) when (deadline.IsCancellationRequested)
+    {
+        process.Kill(entireProcessTree: true);
+        await process.WaitForExitAsync();
+        throw new TimeoutException($"NovaSharp did not finish its {label} native smoke test in {processDeadlineSeconds} seconds.");
+    }
+
+    var output = await standardOutput;
+    var error = await standardError;
+    if (!string.IsNullOrWhiteSpace(output))
+    {
+        Console.WriteLine(output.TrimEnd());
+    }
+
+    if (!string.IsNullOrWhiteSpace(error))
+    {
+        Console.Error.WriteLine(error.TrimEnd());
+    }
+
+    if (!File.Exists(resultPath))
+    {
+        throw new InvalidOperationException($"NovaSharp exited with {process.ExitCode} without writing {resultPath}.");
+    }
+
+    await using var stream = File.OpenRead(resultPath);
+    return await JsonSerializer.DeserializeAsync<NativeResult>(stream, Serialization.JsonOptions)
+        ?? throw new InvalidDataException($"{resultPath} did not contain a smoke result.");
+}
+
+static async Task<ManagedPerformanceRecord> RunManagedPerformanceAsync(Options options)
+{
+    const int replicationCapacity = 256;
+    var replicationSamples = new double[1_000];
+    var replica = new DocumentReplica(string.Empty, sequence: 1, alternativeSequence: 1);
+    await using (var pump = new DocumentReplicationPump(
+        replica,
+        _ => Task.FromResult(replica.Snapshot()),
+        replicationCapacity))
+    {
+        var maximumQueueDepth = 0;
+        for (var index = 0; index < replicationSamples.Length; index++)
+        {
+            var sequence = index + 2L;
+            var started = Stopwatch.GetTimestamp();
+            if (!pump.TryEnqueue(new TextEditBatch(
+                options.SourcePath,
+                sequence - 1,
+                sequence,
+                sequence,
+                EditOrigins.User,
+                [new TextEdit(index, index, "x")])))
+            {
+                throw new InvalidOperationException("The managed replication benchmark overflowed.");
+            }
+
+            maximumQueueDepth = Math.Max(maximumQueueDepth, pump.QueueDepth);
+            await pump.WaitForSequenceAsync(sequence, CancellationToken.None);
+            replicationSamples[index] = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+        }
+
+        var barrierSamples = new double[20];
+        var barrierReplica = new DocumentReplica(new string('x', 1024 * 1024), sequence: 1, alternativeSequence: 1);
+        await using (var barrierPump = new DocumentReplicationPump(
+            barrierReplica,
+            _ => Task.FromResult(barrierReplica.Snapshot()),
+            replicationCapacity))
+        {
+            for (var index = 0; index < barrierSamples.Length; index++)
+            {
+                var sequence = index + 2L;
+                var started = Stopwatch.GetTimestamp();
+                if (!barrierPump.TryEnqueue(new TextEditBatch(
+                    options.SourcePath,
+                    sequence - 1,
+                    sequence,
+                    sequence,
+                    EditOrigins.User,
+                    [new TextEdit(barrierReplica.Length, barrierReplica.Length, "x")])))
+                {
+                    throw new InvalidOperationException("The save-barrier benchmark overflowed.");
+                }
+
+                await barrierPump.WaitForSequenceAsync(sequence, CancellationToken.None);
+                barrierSamples[index] = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+            }
+        }
+
+        var benchmarkDirectory = Path.Combine(Path.GetTempPath(), $"novasharp-phase-verification-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(benchmarkDirectory);
+        try
+        {
+            var target = Path.Combine(benchmarkDirectory, "one-megabyte.cs");
+            var text = new string('x', 1024 * 1024 - 1) + "\n";
+            await File.WriteAllTextAsync(target, text);
+            var store = new DocumentFileStore();
+            var paths = new WorkspacePaths();
+            await using var queue = new BoundedWorkQueue(capacity: 4, workerCount: 1);
+            var saver = new DocumentSaver(paths, store, new DocumentTextCodec(), queue);
+            var record = new DocumentRecord(
+                paths.ToDocumentUri(target),
+                target,
+                Path.GetFileName(target),
+                TextEncodings.Utf8,
+                LineEndingStyle.Lf,
+                LineEndingsWereMixed: false,
+                DecodedWithFallback: false,
+                store.GetState(target),
+                SavedSequence: 1);
+            var snapshot = new DocumentSnapshot(text, Sequence: 2, AlternativeSequence: 2);
+            var saveSamples = new double[20];
+            for (var index = 0; index < saveSamples.Length; index++)
+            {
+                var started = Stopwatch.GetTimestamp();
+                var result = await saver.SaveAsync(record, snapshot, cancellationToken: CancellationToken.None);
+                saveSamples[index] = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+                if (result.Status != DocumentSaveStatus.Saved)
+                {
+                    throw new InvalidOperationException($"The managed save benchmark failed: {result.Message}");
+                }
+
+                record = result.Record;
+            }
+
+            return new ManagedPerformanceRecord(
+                Percentile(replicationSamples, 0.95),
+                Percentile(replicationSamples, 0.99),
+                replicationCapacity,
+                maximumQueueDepth,
+                Percentile(barrierSamples, 0.95),
+                Percentile(saveSamples, 0.95));
+        }
+        finally
+        {
+            Directory.Delete(benchmarkDirectory, recursive: true);
+        }
+    }
+}
+
+static string CreateLargeDocument()
+{
+    const int length = 10 * 1024 * 1024;
+    const string line = "// 0123456789abcdef0123456789abcdef0123456789abcdef0123456789ab\n";
+    var text = new StringBuilder(length);
+    while (text.Length + line.Length <= length)
+    {
+        text.Append(line);
+    }
+
+    var remaining = length - text.Length;
+    if (remaining > 0)
+    {
+        text.Append('/', remaining - 1).Append('\n');
+    }
+
+    return text.ToString();
+}
+
+static double Percentile(double[] values, double percentile)
+{
+    Array.Sort(values);
+    return values[Math.Min(values.Length - 1, (int)Math.Ceiling(values.Length * percentile) - 1)];
+}
+
+internal sealed record Options(string ApplicationPath, string SourcePath, string OutputDirectory, string FixtureName)
+{
+    internal static Options Parse(string[] arguments)
+    {
+        var values = new Dictionary<string, string>(StringComparer.Ordinal);
+        for (var index = 0; index < arguments.Length; index += 2)
+        {
+            if (index + 1 >= arguments.Length || !arguments[index].StartsWith("--", StringComparison.Ordinal))
+            {
+                throw new ArgumentException("Options must be supplied as --name value pairs.");
+            }
+
+            values.Add(arguments[index], arguments[index + 1]);
+        }
+
+        string Required(string name) => values.TryGetValue(name, out var value) && !string.IsNullOrWhiteSpace(value)
+            ? value
+            : throw new ArgumentException($"Missing {name}.");
+
+        return new Options(
+            Path.GetFullPath(Required("--application")),
+            Path.GetFullPath(Required("--source")),
+            Path.GetFullPath(Required("--output")),
+            Required("--fixture-name"));
+    }
+}
+
+internal sealed record EditorInfo(
+    string MonacoVersion,
+    bool DedicatedWorker,
+    int ModelCount,
+    int ExternalRequestCount,
+    int DocumentLength,
+    int ReplicationCapacity,
+    int ReplicationQueueDepth,
+    int ReplicationMaximumQueueDepth,
+    int ReplicationOverflowCount);
+
+internal sealed record NativeResult(
+    bool Success,
+    string RuntimeIdentifier,
+    string OsDescription,
+    string Architecture,
+    long InteractiveEditorMilliseconds,
+    long BaselineWorkingSetBytes,
+    long WorkingSetBytes,
+    EditorInfo? Editor,
+    int DocumentLength,
+    string? Error);
+
+internal sealed record VerificationRecord(
+    string FixtureName,
+    int ProcessorCount,
+    string DotNetRuntime,
+    NativeResult Cold,
+    NativeResult Warm,
+    NativeResult LargeDocument,
+    ManagedPerformanceRecord ManagedPerformance,
+    IReadOnlyList<string> Failures);
+
+internal sealed record ManagedPerformanceRecord(
+    double ReplicationP95Milliseconds,
+    double ReplicationP99Milliseconds,
+    int ReplicationCapacity,
+    int MaximumReplicationQueueDepth,
+    double SaveBarrierP95Milliseconds,
+    double SaveP95Milliseconds);
+
+internal static class Serialization
+{
+    internal static JsonSerializerOptions JsonOptions { get; } =
+        new(JsonSerializerDefaults.Web) { WriteIndented = true };
+}

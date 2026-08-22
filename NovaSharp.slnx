@@ -3,9 +3,11 @@
     <File Path=".editorconfig" />
     <File Path=".gitattributes" />
     <File Path="AGENTS.md" />
+    <File Path="Directory.Build.targets" />
     <File Path="global.json" />
     <File Path="package.json" />
   </Folder>
   <Project Path="src/NovaSharp/NovaSharp.csproj" />
   <Project Path="tests/NovaSharp.Tests/NovaSharp.Tests.csproj" />
+  <Project Path="tools/NovaSharp.PhaseVerification/NovaSharp.PhaseVerification.csproj" />
 </Solution>

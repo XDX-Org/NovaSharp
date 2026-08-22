@@ -18,6 +18,9 @@ import { monaco } from './monaco/monaco.js';
 /** How long a probe waits for a worker to report a load failure before treating it as healthy. */
 const WORKER_PROBE_TIMEOUT_MS = 250;
 
+/** Maximum edit batches retained while the previous interop send is in flight. */
+const REPLICATION_CAPACITY = 256;
+
 // Where an edit batch came from. Mirrors NovaSharp.Editing.EditOrigins.
 //
 // Only the user's origin is ever sent in phase 2: the one change NovaSharp itself makes to a model is a reload, and
@@ -246,7 +249,7 @@ export function createEditor(container, bridge) {
         fontFamily: '"JetBrains Mono", "Cascadia Code", "Droid Sans Mono", monospace',
         fontSize: 14,
         lineHeight: 22,
-        minimap: { enabled: true },
+        minimap: { enabled: false },
         renderWhitespace: 'selection',
         scrollBeyondLastLine: false,
         tabSize: 4,
@@ -269,6 +272,10 @@ export function createEditor(container, bridge) {
     let sentSequence = 0;
     let queued = [];
     let sending = false;
+    let resyncing = false;
+    let resyncRequestPending = false;
+    let maximumQueueDepth = 0;
+    let overflowCount = 0;
     let suppressed = false;
 
     const ensureLive = () => {
@@ -277,9 +284,35 @@ export function createEditor(container, bridge) {
         }
     };
 
-    /** Sends what is queued, keeping at most one call in flight. */
+    function scheduleResync() {
+        queued = [];
+        resyncing = true;
+        resyncRequestPending = true;
+        if (!sending) {
+            void requestResync();
+        }
+    }
+
+    /** Requests a snapshot without overlapping the edit send that may already be in flight. */
+    async function requestResync() {
+        if (sending || !resyncRequestPending || disposed) {
+            return;
+        }
+
+        sending = true;
+        resyncRequestPending = false;
+        try {
+            await bridge.invokeMethodAsync('RequestResync');
+        } catch {
+            // The page is going away. A later open reconstructs the shadow from the file and a fresh model.
+        } finally {
+            sending = false;
+        }
+    }
+
+    /** Sends what is queued, keeping at most one interop call in flight. */
     async function flush() {
-        if (sending || queued.length === 0 || disposed) {
+        if (sending || queued.length === 0 || disposed || resyncing) {
             return;
         }
 
@@ -293,6 +326,7 @@ export function createEditor(container, bridge) {
                 // .NET dropped a batch and is fetching a snapshot instead. Anything still queued describes edits that
                 // the snapshot will already contain, so sending it would only ask for a second recovery.
                 queued = [];
+                resyncing = true;
             }
         } catch {
             // The page is being torn down, or .NET is gone. Neither is worth interrupting the user's typing over, and
@@ -300,7 +334,9 @@ export function createEditor(container, bridge) {
             queued = [];
         } finally {
             sending = false;
-            if (queued.length > 0) {
+            if (resyncRequestPending) {
+                void requestResync();
+            } else if (queued.length > 0 && !resyncing) {
                 void flush();
             }
         }
@@ -314,9 +350,12 @@ export function createEditor(container, bridge) {
         if (event.isEolChange) {
             // A line-ending change rewrites every line in the model at once and no range edit describes it. The queue
             // is dropped and .NET rebuilds from a snapshot rather than being sent offsets into text it does not have.
-            queued = [];
             sentSequence = currentModel.getVersionId();
-            void bridge.invokeMethodAsync('RequestResync');
+            scheduleResync();
+            return;
+        }
+
+        if (resyncing) {
             return;
         }
 
@@ -332,16 +371,24 @@ export function createEditor(container, bridge) {
             });
         }
 
-        queued.push({
+        const batch = {
             documentUri: currentModel.uri.toString(),
             baseSequence: sentSequence,
             resultSequence: event.versionId,
             alternativeSequence: currentModel.getAlternativeVersionId(),
             origin: ORIGIN_USER,
             edits,
-        });
+        };
 
         sentSequence = event.versionId;
+        if (queued.length === REPLICATION_CAPACITY) {
+            overflowCount += 1;
+            scheduleResync();
+            return;
+        }
+
+        queued.push(batch);
+        maximumQueueDepth = Math.max(maximumQueueDepth, queued.length);
         void flush();
     }
 
@@ -375,10 +422,12 @@ export function createEditor(container, bridge) {
         editor.setModel(model);
         sentSequence = model.getVersionId();
         queued = [];
+        resyncing = false;
+        resyncRequestPending = false;
         contentSubscription = model.onDidChangeContent(onContentChanged);
     }
 
-    return {
+    const handle = {
         /**
          * Replaces the editor's actions with the ones NovaSharp's command registry describes.
          *
@@ -504,6 +553,12 @@ export function createEditor(container, bridge) {
             return readSequence(currentModel);
         },
 
+        /** Opens text streamed as UTF-8 so a large initial document does not need a second JSON-sized interop buffer. */
+        async openDocumentStream(uriString, languageId, textStream, lineEnding, readOnly) {
+            const text = new TextDecoder().decode(await textStream.arrayBuffer());
+            return handle.openDocument(uriString, languageId, text, lineEnding, readOnly);
+        },
+
         /**
          * Replaces the whole text of the open model, as a reload does.
          *
@@ -531,10 +586,18 @@ export function createEditor(container, bridge) {
             } finally {
                 suppressed = false;
                 queued = [];
+                resyncing = false;
+                resyncRequestPending = false;
                 sentSequence = model.getVersionId();
             }
 
             return readSequence(model);
+        },
+
+        /** Replaces text streamed as UTF-8; ordinary incremental edits never use this whole-document path. */
+        async replaceDocumentStream(textStream, lineEnding) {
+            const text = new TextDecoder().decode(await textStream.arrayBuffer());
+            return handle.replaceDocument(text, lineEnding);
         },
 
         /** Reads the model's text and sequence together, for a resynchronization. */
@@ -548,6 +611,8 @@ export function createEditor(container, bridge) {
             // The queue is cleared with the same certainty the snapshot is taken: everything in it is text the
             // snapshot already contains.
             queued = [];
+            resyncing = false;
+            resyncRequestPending = false;
             sentSequence = model.getVersionId();
 
             return {
@@ -573,13 +638,18 @@ export function createEditor(container, bridge) {
         /** Reports what the host observes about itself, so the phase gates can be asserted rather than claimed. */
         async runtimeInfo() {
             ensureLive();
-            workerVerified ??= await probeWorker();
+            workerVerified ??= workerFactory.state.observed || await probeWorker();
 
             return {
                 monacoVersion: await readMonacoVersion(),
                 dedicatedWorker: workerVerified || workerFactory.state.observed,
                 modelCount: monaco.editor.getModels().length,
+                documentLength: currentModel?.getValueLength() ?? 0,
                 externalRequestCount: countExternalRequests(),
+                replicationCapacity: REPLICATION_CAPACITY,
+                replicationQueueDepth: queued.length,
+                replicationMaximumQueueDepth: maximumQueueDepth,
+                replicationOverflowCount: overflowCount,
             };
         },
 
@@ -610,4 +680,6 @@ export function createEditor(container, bridge) {
             currentModel = null;
         },
     };
+
+    return handle;
 }

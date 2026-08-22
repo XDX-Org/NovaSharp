@@ -6,10 +6,6 @@
 # is the matrix itself: each row carries its runner, its bootstrap entry point, and the shell that entry point is
 # written for, so the steps below stay identical across rows.
 #
-# `win-arm64` is a recorded gap rather than an omission. Its bootstrap refuses to run, and the last job asserts that it
-# still refuses for the reason the documentation gives — so the day assets exist for it, this workflow fails and forces
-# the matrix and the phase documents to be updated.
-
 name: CI
 
 on:
@@ -45,26 +41,49 @@ jobs:
             shell: bash
             node-bin: src/NovaSharp/LanguageServers/Assets/linux-arm64/node/bin
             npm-cli: src/NovaSharp/LanguageServers/Assets/linux-arm64/node/lib/node_modules/npm/bin/npm-cli.js
+            executable: NovaSharp
+            host-packages: libgtk-4-1 libwebkitgtk-6.0-4 xvfb
+            virtual-display: xvfb-run --auto-servernum
           - rid: linux-x64
             runner: ubuntu-24.04
             shell: bash
             node-bin: src/NovaSharp/LanguageServers/Assets/linux-x64/node/bin
             npm-cli: src/NovaSharp/LanguageServers/Assets/linux-x64/node/lib/node_modules/npm/bin/npm-cli.js
+            executable: NovaSharp
+            host-packages: libgtk-4-1 libwebkitgtk-6.0-4 xvfb
+            virtual-display: xvfb-run --auto-servernum
           - rid: osx-arm64
             runner: macos-15
             shell: bash
             node-bin: src/NovaSharp/LanguageServers/Assets/osx-arm64/node/bin
             npm-cli: src/NovaSharp/LanguageServers/Assets/osx-arm64/node/lib/node_modules/npm/bin/npm-cli.js
+            executable: NovaSharp
+            host-packages: ''
+            virtual-display: ''
           - rid: osx-x64
             runner: macos-15-intel
             shell: bash
             node-bin: src/NovaSharp/LanguageServers/Assets/osx-x64/node/bin
             npm-cli: src/NovaSharp/LanguageServers/Assets/osx-x64/node/lib/node_modules/npm/bin/npm-cli.js
+            executable: NovaSharp
+            host-packages: ''
+            virtual-display: ''
+          - rid: win-arm64
+            runner: windows-11-arm
+            shell: pwsh
+            node-bin: src/NovaSharp/LanguageServers/Assets/win-arm64/node
+            npm-cli: src/NovaSharp/LanguageServers/Assets/win-arm64/node/node_modules/npm/bin/npm-cli.js
+            executable: NovaSharp.exe
+            host-packages: ''
+            virtual-display: ''
           - rid: win-x64
             runner: windows-2025
             shell: pwsh
             node-bin: src/NovaSharp/LanguageServers/Assets/win-x64/node
             npm-cli: src/NovaSharp/LanguageServers/Assets/win-x64/node/node_modules/npm/bin/npm-cli.js
+            executable: NovaSharp.exe
+            host-packages: ''
+            virtual-display: ''
 
     steps:
       - uses: actions/checkout@v6
@@ -128,6 +147,14 @@ jobs:
         shell: bash
         run: echo "${{ github.workspace }}/${{ matrix.node-bin }}" >> "$GITHUB_PATH"
 
+      - name: Install native host prerequisites
+        if: matrix.host-packages != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes ${{ matrix.host-packages }}
+
       - name: The bootstrap leaves no changes behind
         shell: bash
         run: |
@@ -145,6 +172,9 @@ jobs:
 
       - name: Browser gates
         shell: bash
+        env:
+          NOVASHARP_BROWSER_METRICS: ${{ github.workspace }}/artifacts/verification/${{ matrix.rid }}/browser.json
+          NOVASHARP_FIXTURE_NAME: ${{ matrix.runner }} / ${{ matrix.rid }}
         run: |
           set -euo pipefail
 
@@ -194,44 +224,30 @@ jobs:
             exit 1
           fi
 
-      - name: Keep the payload for the smoke tests
+      - name: Native host smoke and phase budgets
+        shell: bash
+        run: |
+          set -euo pipefail
+          command=(
+            dotnet run --project tools/NovaSharp.PhaseVerification/NovaSharp.PhaseVerification.csproj --no-build --
+            --application "artifacts/publish/${{ matrix.rid }}/${{ matrix.executable }}"
+            --source src/NovaSharp/Workbench.cs
+            --output "artifacts/verification/${{ matrix.rid }}"
+            --fixture-name "${{ matrix.runner }} / ${{ matrix.rid }}"
+          )
+
+          if [[ -n "${{ matrix.virtual-display }}" ]]; then
+            command=(${{ matrix.virtual-display }} "${command[@]}")
+          fi
+
+          "${command[@]}"
+
+      - name: Keep the payload and verification evidence
         uses: actions/upload-artifact@v7
         with:
           name: novasharp-${{ matrix.rid }}
-          path: artifacts/publish/${{ matrix.rid }}
+          path: |
+            artifacts/publish/${{ matrix.rid }}
+            artifacts/verification/${{ matrix.rid }}
           retention-days: 7
           if-no-files-found: error
-
-  recorded-gaps:
-    name: win-arm64 (recorded gap)
-    runs-on: windows-11-arm
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-dotnet@v5
-        with:
-          global-json-file: global.json
-
-      # The supported platform matrix lists win-arm64, and its bootstrap does not support it yet. That gap is recorded
-      # in the documentation, and this asserts the recorded behaviour is still the actual behaviour: the bootstrap must
-      # refuse, and must say why. When assets for it do exist, this job fails and the matrix has to be updated with it.
-      - name: The bootstrap refuses this platform, and says why
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Continue'
-          $output = (& pwsh -NoProfile -File ./tools/setup.ps1 2>&1 | Out-String)
-          $exitCode = $LASTEXITCODE
-          Write-Output $output
-
-          if ($exitCode -eq 0) {
-              throw ('The bootstrap succeeded on win-arm64. Update the supported platform matrix and the phase ' +
-                  'documents, then move this row into the gates job.')
-          }
-
-          if ($output -notmatch 'does not support win-arm64') {
-              throw 'The bootstrap failed on win-arm64 for a reason other than the recorded gap.'
-          }
-
-          Write-Output 'The bootstrap refused win-arm64 for the recorded reason.'
-          exit 0

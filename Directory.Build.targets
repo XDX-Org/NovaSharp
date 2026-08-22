@@ -1,0 +1,11 @@
+<Project>
+  <!-- Photino uses WebView2.Core directly. The WebView2 package also injects its unused WPF and WinForms wrappers;
+       removing those avoids a WindowsBase version conflict without suppressing a real compiler warning. The package
+       imports transitively into test projects, so this applies at the repository boundary rather than to one project. -->
+  <Target Name="RemoveUnusedWebView2UiReferences" BeforeTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <Reference Remove="@(Reference)"
+                 Condition="'%(Reference.Filename)' == 'Microsoft.Web.WebView2.Wpf' or '%(Reference.Filename)' == 'Microsoft.Web.WebView2.WinForms'" />
+    </ItemGroup>
+  </Target>
+</Project>

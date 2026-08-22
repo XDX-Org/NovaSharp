@@ -58,6 +58,18 @@ public sealed class DocumentReplica
         }
     }
 
+    /// <summary>The current UTF-16 length, read without materializing a snapshot string.</summary>
+    public int Length
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _text.Length;
+            }
+        }
+    }
+
     /// <summary>How many batches have been rejected and resynchronized, so saturation is measurable.</summary>
     public int ResyncCount { get; private set; }
 

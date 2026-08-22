@@ -107,7 +107,7 @@ public sealed class DocumentSessionTests : IAsyncDisposable
         _host.Type("class Gadget;\n");
         await WaitForAsync(() => _session.Status.IsDirty);
 
-        var result = await _session.SaveAsync();
+        var result = await _session.SaveAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(DocumentSaveStatus.Saved, result?.Status);
         Assert.Equal("class Widget;\nclass Gadget;\n", await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken));
@@ -124,7 +124,7 @@ public sealed class DocumentSessionTests : IAsyncDisposable
         _host.Held = [];
         _host.Type("// typed while saving\n");
 
-        var save = _session.SaveAsync();
+        var save = _session.SaveAsync(cancellationToken: TestContext.Current.CancellationToken);
         await Task.Delay(100, TestContext.Current.CancellationToken);
         Assert.False(save.IsCompleted, "The save must not write before the shadow has caught up.");
 
@@ -232,7 +232,7 @@ public sealed class DocumentSessionTests : IAsyncDisposable
         await File.WriteAllTextAsync(path, "from disk\n", TestContext.Current.CancellationToken);
         var snapshotsBefore = _host.SnapshotCount;
 
-        await _session.ReloadAsync();
+        await _session.ReloadAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal("from disk\n", _host.Text);
         Assert.Equal("from disk\n", _session.Replica?.Snapshot().Text);

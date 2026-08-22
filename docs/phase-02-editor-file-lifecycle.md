@@ -61,11 +61,12 @@ The three cross-cutting foundations this phase introduces are in place:
 
 Still open in this phase, and required before it can be called complete:
 
-- Every per-platform gate. [CI](../.github/workflows/ci.yml) now runs the bootstrap, `dotnet test`, the browser suite,
-  and the publish gates on every supported runtime identifier, but it has not yet been green on every row, the budgets
-  below have not been measured on any named hardware, and the unattended smoke tests do not exist.
+- [CI](../.github/workflows/ci.yml) now runs the bootstrap, `dotnet test`, 64 browser gates, RID-specific publish, and
+  the published native smoke and performance verifier on every supported runtime identifier. The new workflow has not
+  yet produced one green run on every row.
+- The named local `win-x64` Release fixture passes; the other five named CI fixtures have not yet produced evidence.
 
-## Performance budgets## Performance budgets
+## Performance budgets
 
 Set here because the delivery plan requires the startup, typing, and large-file budgets to exist before this phase is
 implemented. Each is a per-platform figure: a result on one runtime identifier is not a result for the others, and the
@@ -103,14 +104,14 @@ fixture hardware must be named in the record alongside the number.
 - **Met.** Tests cover IME composition, surrogate pairs, combining characters, bidi text, tabs, CRLF/LF/CR,
   multi-line and multi-cursor edits, selection replacement, undo grouping, queue saturation, out-of-order and stale
   batches, cancellation, and shutdown, alongside the registry's enablement and failure handling, settings merging and
-  validation, and redaction. 215 assertions run under `dotnet test`; 49 browser gates run in `tests/editor-host`.
+  validation, and redaction. 217 assertions run under `dotnet test`; 64 browser gates run in `tests/editor-host`.
 - **Met.** The command registry, the typed configuration service, and structured notification and logging are
   introduced by this phase and are in place, with the workbench driven through them rather than around them.
-- **Not met.** Numeric typing, edit-replication lag, save latency, UI-thread long-task, large-file memory, and
-  repeated-open/close budgets are recorded above but have not been measured on any named hardware.
-- **Not met.** No criterion above is satisfied by evidence from more than one operating system yet. CI images are now
-  recorded in the supported platform matrix and the gates run on every row; the minimum OS versions, a green run, and
-  the measured budgets are what remain.
+- **Met locally; per-platform qualification pending.** The named local `win-x64` fixture records cold/warm startup at
+  995/999 ms, 72 MB idle working set, a 23 MB working-set increase for a 10 MB file, paint at p95 14.7/p99 15.3 ms,
+  browser replication at p95 17.6/p99 19.1 ms, managed replication at p95 0.01 ms, 1/256 managed and 7/256 browser
+  queue depth, a 0.2 ms 1 MB save barrier, a 16.2 ms 1 MB save, and 17→18 MB heap after 100 lifecycle cycles.
+- **Not met.** The new qualification workflow has not yet been green on every supported runtime identifier.
 
 ## Next phase
 

@@ -1,5 +1,6 @@
 using PhotinoEx.Blazor;
 using PhotinoEx.Core.Models;
+using NovaSharp.Verification;
 
 namespace NovaSharp;
 
@@ -17,7 +18,7 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
-        var builder = PhotinoExBlazorAppBuilder.CreateDefault(args);
+        var builder = PhotinoExBlazorAppBuilder.CreateDefault(NativeSmokeTest.Configure(args));
         builder.RootComponents.Add<App>("app");
 
         App = builder.Build();

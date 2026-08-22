@@ -16,7 +16,7 @@ if (-not [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
     throw 'Use tools/setup.sh on Linux or macOS.'
 }
 $rid = "win-$architecture"
-if ($rid -ne 'win-x64') {
+if ($rid -notin 'win-arm64', 'win-x64') {
     throw "The current Windows development asset set does not support $rid."
 }
 

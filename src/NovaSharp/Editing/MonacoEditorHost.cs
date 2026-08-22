@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
 using NovaSharp.Commands;
@@ -51,18 +52,21 @@ public sealed class MonacoEditorHost : IEditorHost
     {
         ArgumentNullException.ThrowIfNull(content);
 
+        using var text = new MemoryStream(Encoding.UTF8.GetBytes(content.Text), writable: false);
+        using var streamReference = new DotNetStreamReference(text);
+
         return await InvokeAsync<EditorSequence>(
-            "openDocument",
+            "openDocumentStream",
             cancellationToken,
             content.Uri.AbsoluteUri,
             content.LanguageId,
-            content.Text,
+            streamReference,
             content.LineEnding,
             content.ReadOnly).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
-    public ValueTask<EditorSequence> ReplaceDocumentAsync(
+    public async ValueTask<EditorSequence> ReplaceDocumentAsync(
         string text,
         string lineEnding,
         CancellationToken cancellationToken)
@@ -70,7 +74,13 @@ public sealed class MonacoEditorHost : IEditorHost
         ArgumentNullException.ThrowIfNull(text);
         ArgumentException.ThrowIfNullOrEmpty(lineEnding);
 
-        return InvokeAsync<EditorSequence>("replaceDocument", cancellationToken, text, lineEnding);
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(text), writable: false);
+        using var streamReference = new DotNetStreamReference(stream);
+        return await InvokeAsync<EditorSequence>(
+            "replaceDocumentStream",
+            cancellationToken,
+            streamReference,
+            lineEnding).ConfigureAwait(false);
     }
 
     /// <inheritdoc />

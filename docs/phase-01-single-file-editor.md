@@ -89,27 +89,28 @@ written to disk in this phase.
 
 Criteria already met are marked. The rest are what still stands between this phase and `complete`.
 
-- **Met.** `tests/NovaSharp.Tests` exists, is referenced by `NovaSharp.slnx`, and `dotnet test NovaSharp.slnx` runs in the bootstrap.
-  Both it and the `tests/editor-host` browser suite are wired into [CI](../.github/workflows/ci.yml) for every supported
-  runtime identifier; a green run on every row is the evidence that is still outstanding.
-- Clean checkout restore, frontend asset build, `dotnet build`, and a runtime-identifier-specific `dotnet publish` succeed reproducibly.
-- **Met in code, unverified on a device.** NovaSharp opens as a 1200×800 native window and Monaco is the only editor. The placeholder
+- **Met in automation; qualification pending.** `dotnet test` runs in both bootstraps. CI runs it, 64 browser gates,
+  RID-specific publish, and the published native-host smoke on every supported runtime identifier. A green run of the
+  new workflow on every row is the remaining evidence.
+- **Met in automation; qualification pending.** Clean checkout restore, frontend asset build, `dotnet build`, and a
+  runtime-identifier-specific `dotnet publish` are gates on every matrix row.
+- **Met locally on `win-x64`; per-platform qualification pending.** NovaSharp opens as a 1200×800 native window and Monaco is the only editor. The placeholder
   text area is deleted, not disabled, and a contract test fails the build if one reappears.
-- The packaged editor and editor worker start locally on every runtime identifier in the supported platform table; a test detects
-  main-thread worker fallback and any runtime network request. `tests/editor-host` makes both assertions; running it per platform in CI
-  is the remaining work.
-- **Met in code, unverified on a device.** Canceling the dialog leaves the current model unchanged; selecting one `.cs` file displays it
+- **Met locally; per-platform qualification pending.** The published native application opens a fixture and reports
+  the packaged Monaco version, a real dedicated worker,
+  one model, and zero external requests. The smoke is wired on every matrix row; the first all-green run is pending.
+- **Met in code and interaction tests.** Canceling the dialog leaves the current model unchanged; selecting one `.cs` file displays it
   with Monaco C# lexical colors.
-- **Met in code, unverified on a device.** Read and permission failures appear over the editor without terminating the app or replacing
+- **Met in code and tests.** Read and permission failures appear over the editor without terminating the app or replacing
   the current model.
-- Typing, selection, undo/redo, find, IME, surrogate pairs, long lines, and scrolling work without synchronous .NET calls or Blazor
-  rerenders per keystroke. The browser suite covers typing, surrogate pairs, and undo; IME, find, and long-line behavior are not yet
-  asserted.
-- First-editor latency, typing latency, UI-thread long tasks, worker startup, and idle memory have recorded budgets and pass on named
-  hardware for each supported platform, not one representative platform.
-- Closing and reopening repeatedly releases editors, models, observers, callbacks, and worker resources within the defined bounds. The
-  browser suite asserts single-cycle disposal; the repeated-cycle bound is not yet measured.
-- No completion criterion above is satisfied by evidence from a single operating system. Nothing here has run on more than one yet.
+- **Met locally; per-platform qualification pending.** The browser suite covers typing, selection, undo/redo, find,
+  IME, surrogate pairs, long-line navigation, scrolling, and no overlapping replication interop.
+- **Met locally; per-platform qualification pending.** First-editor latency, typing latency, browser-thread long tasks,
+  worker startup, and idle memory have executable
+  budgets and JSON records. They pass on the named local `win-x64` fixture; every CI fixture still has to pass.
+- **Met locally; per-platform qualification pending.** The browser suite runs 100 create/open/dispose cycles, requires
+  zero live models, and limits retained heap to 10%.
+- No completion criterion above is complete until the new workflow is green on all six runtime identifiers.
 
 ## Next phase
 

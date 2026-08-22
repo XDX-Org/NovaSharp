@@ -1,6 +1,6 @@
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('', 'win-x64', 'linux-x64', 'linux-arm64', 'osx-x64', 'osx-arm64')]
+    [ValidateSet('', 'win-arm64', 'win-x64', 'linux-x64', 'linux-arm64', 'osx-x64', 'osx-arm64')]
     [string]$Rid = '',
     [switch]$Force
 )
@@ -77,6 +77,7 @@ try {
 
     $nodeVersion = $manifest.node.version
     $platforms = @{
+        'win-arm64' = @("node-v$nodeVersion-win-arm64.zip", 'win-arm64')
         'win-x64' = @("node-v$nodeVersion-win-x64.zip", 'win-x64')
         'linux-x64' = @("node-v$nodeVersion-linux-x64.tar.xz", 'linux-x64')
         'linux-arm64' = @("node-v$nodeVersion-linux-arm64.tar.xz", 'linux-arm64')

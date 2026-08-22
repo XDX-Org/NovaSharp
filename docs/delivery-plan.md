@@ -10,8 +10,8 @@ Source control UI, remote development, collaboration, notebooks, AI completion, 
 
 | Phase | Status | Exit evidence |
 |---|---|---|
-| 1. Monaco single-file editor shell | In progress | Monaco is mounted and is the only editor; the placeholder text area is gone. Unit and contract tests run under `dotnet test`, and a browser suite proves worker startup, no runtime network access, and model disposal. Outstanding: per-platform smoke tests, recorded performance budgets, and wiring the browser suite into the bootstrap and CI |
-| 2. Editor and file lifecycle | In progress | Ordered edit replication, the versioned .NET replica and its save barrier, encoding and line-ending resolution, atomic save, save-as, reload, reopen-with-encoding, comparison against the file on disk, and external-change resolution are implemented, as are this phase's three cross-cutting foundations: the command registry, the typed configuration service, and structured notification and logging. 215 assertions run under `dotnet test` and 49 browser gates in `tests/editor-host`. Outstanding: every per-platform gate — the [phase-2 budgets](phase-02-editor-file-lifecycle.md#performance-budgets) are set but unmeasured, and neither suite runs in CI |
+| 1. Monaco single-file editor shell | In progress | Monaco is the only editor. `dotnet test` runs 217 assertions; the browser suite runs 64 interaction, worker, bounded-replication, performance, and disposal gates; and the published native application now has an unattended cold/warm smoke path. Local `win-x64` phase-1 budgets pass. Outstanding: one green qualification run of the new gates on every matrix row |
+| 2. Editor and file lifecycle | In progress | The document lifecycle and all three cross-cutting foundations are implemented. CI now contains the native smoke, browser metrics, managed replication/save measurements, six RID-specific publishes, and retained JSON evidence. The named local `win-x64` Release fixture passes every phase-2 budget. Outstanding: one green qualification run of the new gates on every matrix row |
 | 3–17 | Planned | Completion criteria not yet met |
 
 Status values are `planned`, `in progress`, `blocked`, and `complete`. Update this table only from test or release evidence; documentation, packaged dependencies, or partial UI alone does not complete a phase. A phase is never `complete` on evidence from a single operating system.
@@ -54,21 +54,18 @@ Every runtime identifier in this table is a first-class target. Ordering is alph
 
 | Runtime identifier | Pinned assets | Minimum OS version | CI image | Packaging format | Automated smoke test |
 |---|---|---|---|---|---|
-| `linux-arm64` | Yes | Record before phase 2 completes | `ubuntu-24.04-arm` | Record before phase 17 | Pending |
-| `linux-x64` | Yes | Record before phase 2 completes | `ubuntu-24.04` | Record before phase 17 | Pending |
-| `osx-arm64` | Yes | Record before phase 2 completes | `macos-15` | Record before phase 17 | Pending |
-| `osx-x64` | Yes | Record before phase 2 completes | `macos-15-intel` | Record before phase 17 | Pending |
-| `win-arm64` | No | Record before phase 2 completes | `windows-11-arm` (gap asserted) | Record before phase 17 | Pending |
-| `win-x64` | Yes | Record before phase 2 completes | `windows-2025` | Record before phase 17 | Pending |
+| `linux-arm64` | Yes | Ubuntu 24.04 LTS | `ubuntu-24.04-arm` | Record before phase 17 | Wired; green run pending |
+| `linux-x64` | Yes | Ubuntu 24.04 LTS | `ubuntu-24.04` | Record before phase 17 | Wired; green run pending |
+| `osx-arm64` | Yes | macOS 15 | `macos-15` | Record before phase 17 | Wired; green run pending |
+| `osx-x64` | Yes | macOS 15 | `macos-15-intel` | Record before phase 17 | Wired; green run pending |
+| `win-arm64` | Yes | Windows 11 24H2 | `windows-11-arm` | Record before phase 17 | Wired; green run pending |
+| `win-x64` | Yes | Windows 10 version 1809 | `windows-2025` | Record before phase 17 | Wired; green run pending |
 
 CI images are the runner labels [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) uses. Every row runs the same
-gates from the same commit: the platform's bootstrap entry point end to end, `dotnet test`, the `tests/editor-host`
-browser suite, and the publish gates. `win-arm64` has no assets yet and its bootstrap refuses to run; the workflow
-asserts that it still refuses for the documented reason, so the gap cannot quietly become a silent exclusion, and the
-day assets exist for it the workflow fails until this table is updated.
-
-Minimum OS versions are still open. They are a product decision about the oldest WebView the packaged Monaco host is
-supported on, not a property of the runner images, so they are not filled in from CI.
+gates from the same commit: its bootstrap entry point end to end, `dotnet test`, the `tests/editor-host` browser suite,
+RID-specific publish, and the published native-host smoke and budgets. The workflow retains the payload and JSON
+measurement records per RID. Minimum OS versions are conservative product support boundaries, not aliases for runner
+images; lowering one requires an equivalent smoke fixture on that older host.
 
 ### Parity rule
 
@@ -111,6 +108,11 @@ Budgets must be measured on named fixture hardware and repositories. Set numeric
 | Terminal input/resize latency | 11 |
 | Debug step/evaluate latency | 12 |
 | Crash recovery and full-workbench memory | 14 |
+
+`tools/NovaSharp.PhaseVerification` launches the published application cold, warm, and with a generated 10 MB file,
+then measures managed replication and a 1 MB atomic save. `tests/editor-host` records paint, browser-thread, replication,
+queue, and 100-cycle heap measurements. CI names the runner fixture and uploads both JSON records; a missing record or a
+budget failure fails that RID's job.
 
 ## Delivery records
 

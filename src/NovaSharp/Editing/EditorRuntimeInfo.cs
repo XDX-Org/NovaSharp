@@ -9,9 +9,19 @@ namespace NovaSharp.Editing;
 /// the browser thread, which fails the phase.
 /// </param>
 /// <param name="ModelCount">Live Monaco text models, used to prove disposal actually released them.</param>
+/// <param name="DocumentLength">UTF-16 length of the attached model, read without copying its text.</param>
 /// <param name="ExternalRequestCount">Requests the page made to an origin other than its own. Must stay zero.</param>
+/// <param name="ReplicationCapacity">Maximum edit batches retained by the browser-side pump.</param>
+/// <param name="ReplicationQueueDepth">Edit batches currently waiting for the next interop send.</param>
+/// <param name="ReplicationMaximumQueueDepth">Largest observed browser-side queue depth.</param>
+/// <param name="ReplicationOverflowCount">Times the browser queue recovered through a full snapshot.</param>
 public sealed record EditorRuntimeInfo(
     string MonacoVersion,
     bool DedicatedWorker,
     int ModelCount,
-    int ExternalRequestCount);
+    int ExternalRequestCount,
+    int DocumentLength = 0,
+    int ReplicationCapacity = 256,
+    int ReplicationQueueDepth = 0,
+    int ReplicationMaximumQueueDepth = 0,
+    int ReplicationOverflowCount = 0);
