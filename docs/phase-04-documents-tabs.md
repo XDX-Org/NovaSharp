@@ -2,9 +2,8 @@
 
 ## Status
 
-In progress. The implementation and local `win-x64` qualification gates pass. Phase completion still requires the
-same commit to pass bootstrap, .NET/browser tests, RID publish, packaged native smoke, performance, disposal, and
-retained-evidence gates on all six supported runtime identifiers.
+Complete. [Qualification run 32585228606](https://github.com/XDX-Org/NovaSharp/actions/runs/32585228606)
+passed the required gates on all six supported runtime identifiers from commit `3ce0da3`.
 
 ## Goal
 
@@ -34,12 +33,12 @@ Splitting into multiple groups is deferred to phase 5, but tab state must not as
 
 ## Completion criteria
 
-- **Implemented and locally verified.** Opening the same path focuses its existing document instead of loading another buffer.
-- **Implemented and locally verified.** Reordering works by pointer and keyboard, including while the strip overflows.
-- **Implemented and locally verified.** Every multi-close command prompts once with an exact list of dirty documents and supports cancel.
-- **Implemented and locally verified.** Restoring a session tolerates moved or deleted files and malformed state.
-- **Implemented and locally verified.** Automated tests cover tab ordering, preview promotion, close decisions, duplicate names, and restoration.
-- **Implemented and locally verified.** Rapid tab switching/restoration does not leak models, enqueue duplicate loads, or delay typing in the active Monaco instance.
+- **Met.** Opening the same path focuses its existing document instead of loading another buffer.
+- **Met.** Reordering works by pointer and keyboard, including while the strip overflows.
+- **Met.** Every multi-close command prompts once with an exact list of dirty documents and supports cancel.
+- **Met.** Restoring a session tolerates moved or deleted files and malformed state.
+- **Met.** Automated tests cover tab ordering, preview promotion, close decisions, duplicate names, and restoration.
+- **Met.** Rapid tab switching/restoration does not leak models, enqueue duplicate loads, or delay typing in the active Monaco instance.
 
 ## Delivered implementation
 
@@ -61,13 +60,15 @@ Splitting into multiple groups is deferred to phase 5, but tab state must not as
 - Restore starts the active document in the bounded foreground scheduler lane and loads remaining documents
   concurrently through the bounded background lane. Deleted entries remain visible as missing tabs.
 
-## Local qualification
+## Qualification
 
 On 2026-08-22, the local `win-x64` fixture passed the full bootstrap, a warning-free solution build, 247 .NET tests,
 69 real-browser gates, the pinned Monaco asset check, RID-specific Release publish, packaged native smoke, the existing
 typing-under-background-load and 100-cycle model/heap budgets, and the negative RID-less/Debug publish gates. Native
 cold/warm startup measured 952/903 ms, idle working set 79 MB, and the existing 10 MB, replication, save, Explorer,
-and watcher budgets passed. This is local evidence only and does not satisfy the supported-platform parity rule.
+and watcher budgets passed. [Qualification run 32585228606](https://github.com/XDX-Org/NovaSharp/actions/runs/32585228606)
+then passed bootstrap, .NET/browser tests, RID publish, packaged native smoke, performance, disposal, and
+retained-evidence gates on all six supported runtime identifiers from commit `3ce0da3`.
 
 ## Known limitation
 

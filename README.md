@@ -60,7 +60,7 @@ The core architecture and initial IDE functionality are being implemented. It is
 
 The current workbench can open a workspace, keep multiple files in URI-deduplicated tabs, reuse a single preview tab,
 reorder and close tabs by pointer or keyboard, and restore open files plus cursor, selection, and scroll state after an
-orderly restart. Phase 4's implementation is present but remains unqualified until every supported platform passes.
+orderly restart. Phase 4 is complete and qualified on every supported platform.
 
 Expect:
 
@@ -191,15 +191,15 @@ produces reconstruct Monaco's text exactly.
 [CI](.github/workflows/ci.yml) runs both, plus bootstrap, RID-specific publish, the published native-host smoke, and
 performance measurements on every runtime identifier from the same commit. Each row retains its application and JSON
 evidence. The native verifier records disposable browser-profile provisioning separately before its repeatable process
-startup measurements and gates the median of three warm launches. [Qualification run 32581336852](https://github.com/XDX-Org/NovaSharp/actions/runs/32581336852)
-passes every gate through Phase 3 on all six supported runtime identifiers.
+startup measurements and gates the median of three warm launches. [Qualification run 32585228606](https://github.com/XDX-Org/NovaSharp/actions/runs/32585228606)
+passes every gate through Phase 4 on all six supported runtime identifiers.
 
 > [!NOTE]
 > Monaco is mounted and is the only editor, and the document lifecycle around it — asynchronous edit replication, dirty
 > state, safe save and reload, encoding and line-ending handling, and external-change resolution — is in place.
 > The Phase 3 workspace Explorer implementation is also present, with lazy folders, bounded watcher recovery, file
 > operations, accessible incremental tree rendering, and versioned state. Phase 4's multi-document tab implementation
-> passes local gates and awaits matrix qualification. Phases 1–3 are complete: their implementation,
+> is complete and qualified. Phases 1–4 are complete: their implementation,
 > foundations, native host, browser behavior, performance, cancellation, disposal, packaging, and retained-evidence
 > gates pass on every supported runtime identifier.
 
