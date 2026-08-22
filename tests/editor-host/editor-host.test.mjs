@@ -383,10 +383,18 @@ try {
         return editor.getModel().getValueInRange(editor.getSelection()) === 'needle';
     }));
 
-    // Measure paint and long tasks while an independent worker is busy. The worker represents background analysis:
-    // it may consume CPU, but it must not put that work on the browser thread.
-    await page.evaluate(() => {
+    // Measure the documented 2,000-line fixture for 60 seconds while a bounded independent worker is active. Earlier
+    // interaction gates deliberately use a 100,000-character line; carrying that pathological line into this budget
+    // would measure a different fixture. The worker yields between short analysis bursts, as NovaSharp's bounded
+    // background workers must, instead of monopolizing a runner core.
+    const performanceCharacterCount = 1_200;
+    await page.evaluate(async source => {
+        globalThis.editor.replaceDocument(source, '\n');
+        globalThis.adoptSnapshot();
+        globalThis.shadow.replicationLatencies.length = 0;
         const editor = globalThis.NovaMonaco.editor.getEditors()[0];
+        editor.setPosition({ lineNumber: 1_000, column: 10 });
+        editor.revealPositionInCenter({ lineNumber: 1_000, column: 10 });
         const paints = [];
         const longTasks = [];
         const subscription = editor.getModel().onDidChangeContent(() => {
@@ -398,14 +406,21 @@ try {
         });
         observer.observe({ type: 'longtask', buffered: false });
         const worker = new Worker(URL.createObjectURL(new Blob([
-            'const end = performance.now() + 10000; while (performance.now() < end) { Math.sqrt(Math.random()); }',
+            `const end = performance.now() + 65000;
+             function analyze() {
+                 const burstEnd = performance.now() + 8;
+                 while (performance.now() < burstEnd) { Math.sqrt(Math.random()); }
+                 if (performance.now() < end) { setTimeout(analyze, 32); }
+             }
+             analyze();`,
         ], { type: 'text/javascript' })));
         globalThis.performanceRun = { paints, longTasks, subscription, observer, worker };
         editor.focus();
-    });
-    await page.keyboard.type('a'.repeat(300), { delay: 2 });
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    }, Array.from({ length: 2_000 }, (_, index) => `// line ${index}: ordinary editor performance fixture`).join('\n'));
+    await page.keyboard.type('a'.repeat(performanceCharacterCount), { delay: 50 });
     await settle();
-    await page.waitForFunction(() => globalThis.performanceRun.paints.length >= 300);
+    await page.waitForFunction(expected => globalThis.performanceRun.paints.length >= expected, performanceCharacterCount);
     measuredPerformance = await page.evaluate(() => {
         const run = globalThis.performanceRun;
         run.subscription.dispose();

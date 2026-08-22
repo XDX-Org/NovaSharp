@@ -64,7 +64,9 @@ Still open in this phase, and required before it can be called complete:
 - [CI](../.github/workflows/ci.yml) now runs the bootstrap, `dotnet test`, 64 browser gates, RID-specific publish, and
   the published native smoke and performance verifier on every supported runtime identifier. The new workflow has not
   yet produced one green run on every row.
-- The named local `win-x64` Release fixture passes; the other five named CI fixtures have not yet produced evidence.
+- The named local `win-x64` Release fixture passes. [Qualification run 32568881427](https://github.com/XDX-Org/NovaSharp/actions/runs/32568881427)
+  exercised all six rows and exposed CI-fixture defects in the Linux WebKit sandbox setup and browser workload plus
+  `win-x64` startup misses; those gates are being corrected before qualification is repeated.
 
 ## Performance budgets
 
@@ -74,7 +76,7 @@ fixture hardware must be named in the record alongside the number.
 
 | Budget | Limit | Fixture |
 |---|---|---|
-| Cold start to an interactive editor | 2,500 ms | This repository's own `NovaSharp.csproj`, opened from a cold page cache |
+| Cold start to an interactive editor | 2,500 ms | `src/NovaSharp/Workbench.cs`, opened from a cold page cache |
 | Warm start to an interactive editor | 1,200 ms | The same file, second launch |
 | Idle resident memory, one small file open | 400 MB | `src/NovaSharp/Workbench.cs` |
 | Keystroke to paint, while a background workload runs | p95 16 ms, p99 33 ms | 60 s of sustained typing in a 2,000-line file |
@@ -108,9 +110,9 @@ fixture hardware must be named in the record alongside the number.
 - **Met.** The command registry, the typed configuration service, and structured notification and logging are
   introduced by this phase and are in place, with the workbench driven through them rather than around them.
 - **Met locally; per-platform qualification pending.** The named local `win-x64` fixture records cold/warm startup at
-  995/999 ms, 72 MB idle working set, a 23 MB working-set increase for a 10 MB file, paint at p95 14.7/p99 15.3 ms,
-  browser replication at p95 17.6/p99 19.1 ms, managed replication at p95 0.01 ms, 1/256 managed and 7/256 browser
-  queue depth, a 0.2 ms 1 MB save barrier, a 16.2 ms 1 MB save, and 17→18 MB heap after 100 lifecycle cycles.
+  2,190/978 ms, 74 MB idle working set, a 19 MB working-set increase for a 10 MB file, paint at p95 2.7/p99 11.9 ms,
+  browser replication at p95 3.8/p99 13.1 ms, managed replication at p95 0.01 ms, 1/256 managed and 6/256 browser
+  queue depth, a 0.2 ms 1 MB save barrier, a 17.6 ms 1 MB save, and 17→18 MB heap after 100 lifecycle cycles.
 - **Not met.** The new qualification workflow has not yet been green on every supported runtime identifier.
 
 ## Next phase

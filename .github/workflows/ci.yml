@@ -44,6 +44,8 @@ jobs:
             executable: NovaSharp
             host-packages: libgtk-4-1 libwebkitgtk-6.0-4 xvfb
             virtual-display: xvfb-run --auto-servernum
+            webkit-disable-sandbox: '1'
+            gtk-a11y: 'none'
           - rid: linux-x64
             runner: ubuntu-24.04
             shell: bash
@@ -52,6 +54,8 @@ jobs:
             executable: NovaSharp
             host-packages: libgtk-4-1 libwebkitgtk-6.0-4 xvfb
             virtual-display: xvfb-run --auto-servernum
+            webkit-disable-sandbox: '1'
+            gtk-a11y: 'none'
           - rid: osx-arm64
             runner: macos-15
             shell: bash
@@ -60,6 +64,8 @@ jobs:
             executable: NovaSharp
             host-packages: ''
             virtual-display: ''
+            webkit-disable-sandbox: ''
+            gtk-a11y: ''
           - rid: osx-x64
             runner: macos-15-intel
             shell: bash
@@ -68,6 +74,8 @@ jobs:
             executable: NovaSharp
             host-packages: ''
             virtual-display: ''
+            webkit-disable-sandbox: ''
+            gtk-a11y: ''
           - rid: win-arm64
             runner: windows-11-arm
             shell: pwsh
@@ -76,6 +84,8 @@ jobs:
             executable: NovaSharp.exe
             host-packages: ''
             virtual-display: ''
+            webkit-disable-sandbox: ''
+            gtk-a11y: ''
           - rid: win-x64
             runner: windows-2025
             shell: pwsh
@@ -84,6 +94,8 @@ jobs:
             executable: NovaSharp.exe
             host-packages: ''
             virtual-display: ''
+            webkit-disable-sandbox: ''
+            gtk-a11y: ''
 
     steps:
       - uses: actions/checkout@v6
@@ -170,6 +182,40 @@ jobs:
 
           git diff --check
 
+      - name: A publish for this runtime identifier produces a complete payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet publish src/NovaSharp/NovaSharp.csproj \
+            --configuration Release \
+            --runtime ${{ matrix.rid }} \
+            --output "artifacts/publish/${{ matrix.rid }}"
+
+      - name: Native host smoke and phase budgets
+        shell: bash
+        env:
+          # GitHub's Linux runners prohibit the user/network namespaces WebKitGTK's bubblewrap sandbox requires.
+          # This changes only the disposable CI process; packaged applications retain the production sandbox.
+          WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: ${{ matrix.webkit-disable-sandbox }}
+          GTK_A11Y: ${{ matrix.gtk-a11y }}
+        run: |
+          set -euo pipefail
+          command=(
+            dotnet run --project tools/NovaSharp.PhaseVerification/NovaSharp.PhaseVerification.csproj --no-build --
+            --application "artifacts/publish/${{ matrix.rid }}/${{ matrix.executable }}"
+            --source src/NovaSharp/Workbench.cs
+            --output "artifacts/verification/${{ matrix.rid }}"
+            --fixture-name "${{ matrix.runner }} / ${{ matrix.rid }}"
+          )
+
+          if [[ -n "${{ matrix.virtual-display }}" ]]; then
+            command=(${{ matrix.virtual-display }} "${command[@]}")
+          fi
+
+          "${command[@]}"
+
+      # Keep the timing fixture isolated from Playwright installation and browser-test CPU load. The browser suite
+      # still runs under its own bounded background workload below.
       - name: Browser gates
         shell: bash
         env:
@@ -190,15 +236,6 @@ jobs:
           node tests/editor-host/node_modules/playwright/cli.js install --with-deps chromium
 
           node "$npm_cli" --prefix tests/editor-host test
-
-      - name: A publish for this runtime identifier produces a complete payload
-        shell: bash
-        run: |
-          set -euo pipefail
-          dotnet publish src/NovaSharp/NovaSharp.csproj \
-            --configuration Release \
-            --runtime ${{ matrix.rid }} \
-            --output "artifacts/publish/${{ matrix.rid }}"
 
       - name: A publish without a runtime identifier fails rather than shipping an incomplete application
         shell: bash
@@ -224,25 +261,8 @@ jobs:
             exit 1
           fi
 
-      - name: Native host smoke and phase budgets
-        shell: bash
-        run: |
-          set -euo pipefail
-          command=(
-            dotnet run --project tools/NovaSharp.PhaseVerification/NovaSharp.PhaseVerification.csproj --no-build --
-            --application "artifacts/publish/${{ matrix.rid }}/${{ matrix.executable }}"
-            --source src/NovaSharp/Workbench.cs
-            --output "artifacts/verification/${{ matrix.rid }}"
-            --fixture-name "${{ matrix.runner }} / ${{ matrix.rid }}"
-          )
-
-          if [[ -n "${{ matrix.virtual-display }}" ]]; then
-            command=(${{ matrix.virtual-display }} "${command[@]}")
-          fi
-
-          "${command[@]}"
-
       - name: Keep the payload and verification evidence
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: novasharp-${{ matrix.rid }}

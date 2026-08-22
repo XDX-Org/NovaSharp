@@ -12,9 +12,10 @@ editor:
   with at most one replication call in flight, ascending non-overlapping offsets, and no rejected batch;
 - a line-ending change asks for a resynchronization rather than sending offsets into text the shadow does not have;
 - a NovaSharp-driven replacement stays undoable and sends no batches, and replication resumes cleanly after it;
-- a read-only editor refuses edits, and the save shortcut reaches the command identifier .NET registers.
-- find, long-line navigation, scrolling, typing/replication latency, browser-thread long tasks, bounded overflow
-  recovery, and 100 create/open/dispose cycles stay within their phase budgets.
+- a read-only editor refuses edits, and the save shortcut reaches the command identifier .NET registers;
+- find, long-line navigation, scrolling, a 60-second typing/replication run against the 2,000-line fixture,
+  browser-thread long tasks, bounded overflow recovery, and 100 create/open/dispose cycles stay within their phase
+  budgets.
 
 The shadow in the harness is a deliberate second implementation of `DocumentReplica`'s apply rule. Agreement between
 two independent implementations of the same protocol is what makes the replication contract a gate rather than a
