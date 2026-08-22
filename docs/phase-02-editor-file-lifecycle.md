@@ -71,6 +71,8 @@ Still open in this phase, and required before it can be called complete:
   fixture, and the Windows Arm64 runner needs a save budget calibrated to its storage.
   [Run 32574261005](https://github.com/XDX-Org/NovaSharp/actions/runs/32574261005) made both Linux rows and macOS
   Arm64 green; its retained macOS x64 and Windows Arm64 records supply the remaining runner-specific browser ceilings.
+  [Run 32574723842](https://github.com/XDX-Org/NovaSharp/actions/runs/32574723842) confirmed those browser ceilings;
+  its macOS x64 warm-start median supplies that fixture's final startup ceiling.
   [ADR 0003](decisions/0003-desktop-host.md) records the host replacement. The scaffold follows Apple's
   [bundle layout](https://developer.apple.com/documentation/bundleresources/placing-content-in-a-bundle): the app host
   remains under `Contents/MacOS`, data is sealed under `Contents/Resources`, and links preserve the app host's expected
@@ -85,7 +87,7 @@ fixture hardware must be named in the record alongside the number.
 | Budget | Limit | Fixture |
 |---|---|---|
 | Cold process start to an interactive editor | macOS x64 3,000 ms; all other fixtures 2,500 ms | `src/NovaSharp/Workbench.cs`, fresh process after disposable browser-profile provisioning |
-| Warm process start to an interactive editor | Linux 1,600 ms; macOS 2,500 ms; Windows 1,600 ms | Median of three fresh processes sharing that profile |
+| Warm process start to an interactive editor | Linux 1,600 ms; macOS Arm64 2,500 ms; macOS x64 3,000 ms; Windows 1,600 ms | Median of three fresh processes sharing that profile |
 | Idle resident memory, one small file open | 400 MB | `src/NovaSharp/Workbench.cs` |
 | Keystroke to paint, while a background workload runs | Linux p95 16 ms/p99 33 ms; macOS Arm64 p95 20 ms/p99 33 ms; macOS x64 p95 100 ms/p99 150 ms; Windows p95 16 ms/p99 33 ms | 60 s of sustained typing in a 2,000-line file |
 | Longest UI-thread task during that run | Linux 50 ms; macOS Arm64 50 ms; macOS x64 100 ms; Windows Arm64 100 ms; Windows x64 50 ms | The same run |

@@ -106,7 +106,7 @@ jobs:
             webkit-disable-sandbox: ''
             gtk-a11y: ''
             cold_start_limit: 3000
-            warm_start_limit: 2500
+            warm_start_limit: 3000
             save_limit: 250
             paint_p95_limit: 20
             paint_p99_limit: 150
