@@ -63,7 +63,7 @@ public sealed class WorkspaceExplorerService : IAsyncDisposable
             Report("novasharp.workspace.restore", loaded.Problem);
         }
 
-        Publish(Snapshot with
+        Update(current => current with
         {
             SidebarVisible = loaded.State.SidebarVisible,
             SidebarWidth = Math.Clamp(loaded.State.SidebarWidth, 160, 520),
@@ -90,7 +90,7 @@ public sealed class WorkspaceExplorerService : IAsyncDisposable
 
         var selected = ResolveOptional(loaded.State.WorkspacePath, loaded.State.SelectedPath);
         var active = ResolveOptional(loaded.State.WorkspacePath, loaded.State.ActivePath);
-        Publish(Snapshot with { SelectedId = selected is null ? null : Id(selected), ActivePath = active });
+        Update(current => current with { SelectedId = selected is null ? null : Id(selected), ActivePath = active });
     }
 
     public async Task OpenAsync(string root, CancellationToken cancellationToken = default)
@@ -104,7 +104,7 @@ public sealed class WorkspaceExplorerService : IAsyncDisposable
 
         CancelEnumerations();
         var node = new WorkspaceNode(Id(canonical), canonical, _paths.ToDisplayName(canonical), WorkspaceNodeKind.Directory);
-        Publish(Snapshot with { RootPath = canonical, Root = node, SelectedId = node.Id, ActivePath = null, Error = null });
+        Update(current => current with { RootPath = canonical, Root = node, SelectedId = node.Id, ActivePath = null, Error = null });
         _watcher.Watch(canonical);
         await ExpandAsync(canonical, cancellationToken: cancellationToken).ConfigureAwait(false);
         await PersistAsync(cancellationToken).ConfigureAwait(false);
@@ -114,7 +114,7 @@ public sealed class WorkspaceExplorerService : IAsyncDisposable
     {
         CancelEnumerations();
         _watcher.Watch(null);
-        Publish(Snapshot with { RootPath = null, Root = null, SelectedId = null, ActivePath = null, Error = null });
+        Update(current => current with { RootPath = null, Root = null, SelectedId = null, ActivePath = null, Error = null });
         await PersistAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -142,7 +142,7 @@ public sealed class WorkspaceExplorerService : IAsyncDisposable
         }
         _enumerations[currentNode.Id] = operation;
 
-        Publish(Replace(Snapshot, currentNode.Id, node => node with { IsExpanded = true, IsLoading = true, Error = null }));
+        Update(current => Replace(current, currentNode.Id, node => node with { IsExpanded = true, IsLoading = true, Error = null }));
         var watch = Stopwatch.StartNew();
         IncrementActive(1);
         try
@@ -159,24 +159,26 @@ public sealed class WorkspaceExplorerService : IAsyncDisposable
                 return;
             }
 
-            var now = Snapshot;
-            var existing = Find(now.Root!, currentNode.Id)?.Children ?? [];
-            var existingById = existing.ToDictionary(static item => item.Id, StringComparer.Ordinal);
-            var merged = children.Select(entry =>
+            Update(current =>
             {
-                var entryId = Id(entry.Path);
-                existingById.TryGetValue(entryId, out var old);
-                return old is null
-                    ? new WorkspaceNode(entryId, entry.Path, entry.Name, entry.Kind, IsDirectoryLink: entry.IsDirectoryLink)
-                    : old with { Name = entry.Name, Kind = entry.Kind, IsDirectoryLink = entry.IsDirectoryLink, Error = null };
-            }).ToArray();
-            Publish(Replace(now, currentNode.Id, node => node with
-            {
-                IsExpanded = true,
-                IsLoading = false,
-                Children = merged,
-                Error = null,
-            }, watch.Elapsed));
+                var existing = current.Root is null ? [] : Find(current.Root, currentNode.Id)?.Children ?? [];
+                var existingById = existing.ToDictionary(static item => item.Id, StringComparer.Ordinal);
+                var merged = children.Select(entry =>
+                {
+                    var entryId = Id(entry.Path);
+                    existingById.TryGetValue(entryId, out var old);
+                    return old is null
+                        ? new WorkspaceNode(entryId, entry.Path, entry.Name, entry.Kind, IsDirectoryLink: entry.IsDirectoryLink)
+                        : old with { Name = entry.Name, Kind = entry.Kind, IsDirectoryLink = entry.IsDirectoryLink, Error = null };
+                }).ToArray();
+                return Replace(current, currentNode.Id, node => node with
+                {
+                    IsExpanded = true,
+                    IsLoading = false,
+                    Children = merged,
+                    Error = null,
+                }, watch.Elapsed);
+            });
             await PersistAsync(operation.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (operation.IsCancellationRequested)
@@ -184,7 +186,7 @@ public sealed class WorkspaceExplorerService : IAsyncDisposable
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            Publish(Replace(Snapshot, currentNode.Id, node => node with { IsLoading = false, Error = exception.Message }));
+            Update(current => Replace(current, currentNode.Id, node => node with { IsLoading = false, Error = exception.Message }));
             Report("novasharp.workspace.enumerate", $"Could not read {currentNode.Name}: {exception.Message}");
         }
         finally
@@ -206,7 +208,7 @@ public sealed class WorkspaceExplorerService : IAsyncDisposable
             operation.Dispose();
             IncrementCanceled();
         }
-        Publish(Replace(Snapshot, id, node => node with { IsExpanded = false, IsLoading = false }));
+        Update(current => Replace(current, id, node => node with { IsExpanded = false, IsLoading = false }));
         await PersistAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -228,19 +230,19 @@ public sealed class WorkspaceExplorerService : IAsyncDisposable
             await ExpandAsync(current, canonical, cancellationToken).ConfigureAwait(false);
         }
 
-        Publish(Snapshot with { SelectedId = Id(canonical), ActivePath = canonical });
+        Update(current => current with { SelectedId = Id(canonical), ActivePath = canonical });
         await PersistAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task SelectAsync(string path, CancellationToken cancellationToken = default)
     {
-        Publish(Snapshot with { SelectedId = Id(path) });
+        Update(current => current with { SelectedId = Id(path) });
         await PersistAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task SetSidebarAsync(bool visible, int width, CancellationToken cancellationToken = default)
     {
-        Publish(Snapshot with { SidebarVisible = visible, SidebarWidth = Math.Clamp(width, 160, 520) });
+        Update(current => current with { SidebarVisible = visible, SidebarWidth = Math.Clamp(width, 160, 520) });
         await PersistAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -252,7 +254,7 @@ public sealed class WorkspaceExplorerService : IAsyncDisposable
             var target = await ResolveTargetAsync(parent, name, token).ConfigureAwait(false);
             await _files.CreateAsync(target, directory, token).ConfigureAwait(false);
             await ExpandAsync(parent, cancellationToken: token).ConfigureAwait(false);
-            Publish(Snapshot with { SelectedId = Id(target) });
+            Update(current => current with { SelectedId = Id(target) });
         }, cancellationToken);
     }
 
@@ -270,7 +272,7 @@ public sealed class WorkspaceExplorerService : IAsyncDisposable
                 await relocated(new WorkspaceRelocation(node.Path, target, node.Kind == WorkspaceNodeKind.Directory)).ConfigureAwait(false);
             }
             await ExpandAsync(parent, cancellationToken: token).ConfigureAwait(false);
-            Publish(Snapshot with { SelectedId = Id(target) });
+            Update(current => current with { SelectedId = Id(target) });
         }, cancellationToken);
     }
 
@@ -290,7 +292,7 @@ public sealed class WorkspaceExplorerService : IAsyncDisposable
             }
             await ExpandAsync(Path.GetDirectoryName(node.Path)!, cancellationToken: token).ConfigureAwait(false);
             await ExpandAsync(targetDirectory, cancellationToken: token).ConfigureAwait(false);
-            Publish(Snapshot with { SelectedId = Id(target) });
+            Update(current => current with { SelectedId = Id(target) });
         }, cancellationToken);
 
     public Task DeleteAsync(string path, CancellationToken cancellationToken = default) =>
@@ -312,7 +314,7 @@ public sealed class WorkspaceExplorerService : IAsyncDisposable
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
             {
                 Report("novasharp.workspace.mutation", exception.Message);
-                Publish(Snapshot with { Error = exception.Message });
+                Update(current => current with { Error = exception.Message });
             }
             return true;
         }, cancellationToken);
@@ -329,7 +331,7 @@ public sealed class WorkspaceExplorerService : IAsyncDisposable
         if (batch.Overflowed)
         {
             CollectExpanded(snapshot.Root, directories);
-            Publish(snapshot with { Metrics = snapshot.Metrics with { WatcherOverflows = snapshot.Metrics.WatcherOverflows + 1 } });
+            Update(current => current with { Metrics = current.Metrics with { WatcherOverflows = current.Metrics.WatcherOverflows + 1 } });
             Report("novasharp.workspace.watcherOverflow", "Some filesystem changes arrived too quickly; expanded folders were rescanned.", NotificationSeverity.Warning);
         }
         else
@@ -338,8 +340,7 @@ public sealed class WorkspaceExplorerService : IAsyncDisposable
             {
                 if (change.Kind == WorkspaceChangeKind.Renamed && change.OldPath is not null)
                 {
-                    var current = Snapshot;
-                    Publish(current with
+                    Update(current => current with
                     {
                         SelectedId = current.SelectedId == Id(change.OldPath) ? Id(change.Path) : current.SelectedId,
                         ActivePath = current.ActivePath is not null && _paths.IsSamePath(current.ActivePath, change.OldPath)
@@ -358,7 +359,7 @@ public sealed class WorkspaceExplorerService : IAsyncDisposable
             }
         }
 
-        Publish(Snapshot with { Metrics = Snapshot.Metrics with { PendingWatcherEvents = _watcher.PendingCount } });
+        Update(current => current with { Metrics = current.Metrics with { PendingWatcherEvents = _watcher.PendingCount } });
         foreach (var directory in directories)
         {
             var node = Find(Snapshot.Root!, Id(directory));
@@ -459,11 +460,12 @@ public sealed class WorkspaceExplorerService : IAsyncDisposable
         };
     }
 
-    private void Publish(WorkspaceSnapshot snapshot)
+    private void Update(Func<WorkspaceSnapshot, WorkspaceSnapshot> update)
     {
-        snapshot = snapshot with { Version = Snapshot.Version + 1 };
+        WorkspaceSnapshot snapshot;
         lock (_gate)
         {
+            snapshot = update(_snapshot) with { Version = _snapshot.Version + 1 };
             _snapshot = snapshot;
         }
         Changed?.Invoke(snapshot);
@@ -471,14 +473,21 @@ public sealed class WorkspaceExplorerService : IAsyncDisposable
 
     private void IncrementActive(int delta)
     {
-        var snapshot = Snapshot;
-        Publish(snapshot with { Metrics = snapshot.Metrics with { ActiveEnumerations = Math.Max(0, snapshot.Metrics.ActiveEnumerations + delta) } });
+        Update(current => current with
+        {
+            Metrics = current.Metrics with
+            {
+                ActiveEnumerations = Math.Max(0, current.Metrics.ActiveEnumerations + delta),
+            },
+        });
     }
 
     private void IncrementCanceled()
     {
-        var snapshot = Snapshot;
-        Publish(snapshot with { Metrics = snapshot.Metrics with { CanceledEnumerations = snapshot.Metrics.CanceledEnumerations + 1 } });
+        Update(current => current with
+        {
+            Metrics = current.Metrics with { CanceledEnumerations = current.Metrics.CanceledEnumerations + 1 },
+        });
     }
 
     private void Report(string id, string message, NotificationSeverity severity = NotificationSeverity.Error) =>
