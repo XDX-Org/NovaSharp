@@ -23,7 +23,8 @@ public enum NotificationSeverity
 /// </remarks>
 /// <param name="CommandId">The command to run.</param>
 /// <param name="Title">What the button says.</param>
-public sealed record NotificationAction(string CommandId, string Title);
+/// <param name="DocumentId">The document tab to activate before invoking the command, when the action is contextual.</param>
+public sealed record NotificationAction(string CommandId, string Title, string? DocumentId = null);
 
 /// <summary>One thing NovaSharp needs to tell the user.</summary>
 /// <param name="Id">Identifies this notification so a later one about the same thing replaces it.</param>

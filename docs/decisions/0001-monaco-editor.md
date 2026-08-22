@@ -10,6 +10,11 @@ Use an exact, lockfile-pinned `monaco-editor` release as NovaSharp's only source
 
 One Monaco `ITextModel` exists per canonical document URI and may be attached to multiple editor instances. Monaco is authoritative for live text, selections, composition, viewport rendering, token colors, editor-local widgets, and undo/redo while the model is open. NovaSharp owns file identity, encoding, line endings, dirty/save state, external-conflict policy, workspace transactions, project context, and persisted validated view state.
 
+Because a Monaco model's URI is immutable, renaming or saving a document under a new canonical URI drains the old
+replica pump, creates the replacement URI model from Monaco's live text, restores validated view state, and returns
+one full snapshot for the new replica as it releases the old lease. A concurrent edit is therefore included in the
+new model or in the following ordered stream; it is never reconstructed from a stale .NET snapshot.
+
 Typing must not synchronously call .NET. A JavaScript-side pump coalesces Monaco change events into an ordered, bounded asynchronous replication stream of UTF-16 range edits and permits at most one interop send in flight per document. .NET maintains a versioned shadow for Roslyn, dirty-buffer search, recovery, and commands. Save, build, refactor, and other consistency-sensitive operations await a sequence barrier before reading that shadow; overflow or a detected gap triggers one full snapshot resynchronization. .NET-originated edits return through Monaco edit APIs with origin guards and intentional undo stops.
 
 Use Monaco's public APIs rather than recreating editor UI:

@@ -10,7 +10,7 @@
      data-node-id="@Node.Id">
     <button type="button" class="tree-row" style="padding-left: @(8 + Level * 16)px"
             tabindex="0"
-            @onclick="ActivateAsync"
+            @onclick="ClickAsync" @ondblclick="ActivateAsync"
             @onkeydown="OnKeyDownAsync" @oncontextmenu="SelectAsync" @oncontextmenu:preventDefault>
         <span class="tree-twist" aria-hidden="true">@(Node.CanExpand ? Node.IsLoading ? "…" : Node.IsExpanded ? "▾" : "▸" : "")</span>
         <span class="tree-icon" aria-hidden="true">@Icon(Node.Kind)</span>
@@ -26,7 +26,7 @@
             @foreach (var child in Node.Children.Take(_visibleChildren))
             {
                 <WorkspaceTreeNode Node="child" Level="@(Level + 1)" SelectedId="SelectedId"
-                    OnSelect="OnSelect" OnActivate="OnActivate" OnExpand="OnExpand" OnCollapse="OnCollapse"
+                    OnSelect="OnSelect" OnPreview="OnPreview" OnActivate="OnActivate" OnExpand="OnExpand" OnCollapse="OnCollapse"
                     OnRename="OnRename" OnDelete="OnDelete" />
             }
             @if (Node.Children.Count > _visibleChildren)
@@ -44,6 +44,7 @@
     [Parameter] public int Level { get; set; }
     [Parameter] public string? SelectedId { get; set; }
     [Parameter] public EventCallback<WorkspaceNode> OnSelect { get; set; }
+    [Parameter] public EventCallback<WorkspaceNode> OnPreview { get; set; }
     [Parameter] public EventCallback<WorkspaceNode> OnActivate { get; set; }
     [Parameter] public EventCallback<WorkspaceNode> OnExpand { get; set; }
     [Parameter] public EventCallback<WorkspaceNode> OnCollapse { get; set; }
@@ -70,6 +71,15 @@
         {
             await OnActivate.InvokeAsync(Node);
         }
+    }
+
+    private async Task ClickAsync()
+    {
+        await OnSelect.InvokeAsync(Node);
+        if (Node.CanExpand)
+            await (Node.IsExpanded ? OnCollapse : OnExpand).InvokeAsync(Node);
+        else if (Node.Kind != WorkspaceNodeKind.SymbolicLink)
+            await OnPreview.InvokeAsync(Node);
     }
 
     private async Task OnKeyDownAsync(KeyboardEventArgs args)

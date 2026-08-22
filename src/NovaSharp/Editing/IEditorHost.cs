@@ -14,13 +14,24 @@ namespace NovaSharp.Editing;
 /// </param>
 public sealed record EditorSequence(long Sequence, long AlternativeSequence);
 
+/// <summary>A portable subset of Monaco view state persisted for one editor view.</summary>
+public sealed record EditorViewState(
+    int LineNumber = 1,
+    int Column = 1,
+    int SelectionStartLineNumber = 1,
+    int SelectionStartColumn = 1,
+    int PositionLineNumber = 1,
+    int PositionColumn = 1,
+    double ScrollTop = 0,
+    double ScrollLeft = 0);
+
 /// <summary>
 /// The single interop surface between NovaSharp and the packaged Monaco editor.
 /// </summary>
 /// <remarks>
 /// Every member is asynchronous and cancellable, and none of them is on the typing path: edits travel the other way,
 /// pushed by Monaco into the replication pump without waiting for .NET. Whole document text crosses this boundary
-/// only when a document is opened, reloaded, or resynchronized.
+/// only when a document is opened, reloaded, or resynchronized, including a canonical URI relocation.
 /// </remarks>
 public interface IEditorHost : IAsyncDisposable
 {
@@ -34,6 +45,25 @@ public interface IEditorHost : IAsyncDisposable
     /// <returns>The sequence the new model starts at.</returns>
     ValueTask<EditorSequence> OpenDocumentAsync(DocumentContent content, CancellationToken cancellationToken);
 
+    /// <summary>Attaches an already-open model and restores its validated view state.</summary>
+    ValueTask SwitchDocumentAsync(Uri uri, EditorViewState? viewState, CancellationToken cancellationToken);
+
+    /// <summary>Detaches the current model when no tab with an editor view is active.</summary>
+    ValueTask ClearDocumentAsync(CancellationToken cancellationToken);
+
+    /// <summary>Captures cursor, selection, and scroll state for an open document.</summary>
+    ValueTask<EditorViewState?> GetViewStateAsync(Uri uri, CancellationToken cancellationToken);
+
+    /// <summary>Releases this view's lease on an open document model.</summary>
+    ValueTask CloseDocumentAsync(Uri uri, CancellationToken cancellationToken);
+
+    /// <summary>Moves a live model to a new canonical URI while retaining its text and view state.</summary>
+    ValueTask<DocumentSnapshot> RelocateDocumentAsync(
+        Uri oldUri,
+        Uri newUri,
+        string languageId,
+        CancellationToken cancellationToken);
+
     /// <summary>
     /// Replaces the whole text of the open model, as a reload does.
     /// </summary>
@@ -43,14 +73,30 @@ public interface IEditorHost : IAsyncDisposable
     /// </remarks>
     ValueTask<EditorSequence> ReplaceDocumentAsync(string text, string lineEnding, CancellationToken cancellationToken);
 
+    /// <summary>Replaces a particular open document, whether or not its tab is active.</summary>
+    ValueTask<EditorSequence> ReplaceDocumentAsync(
+        Uri uri,
+        string text,
+        string lineEnding,
+        CancellationToken cancellationToken);
+
     /// <summary>Reads the model's current text and sequence, for a resynchronization.</summary>
     ValueTask<DocumentSnapshot> GetSnapshotAsync(CancellationToken cancellationToken);
+
+    /// <summary>Reads a particular open model for resynchronization.</summary>
+    ValueTask<DocumentSnapshot> GetSnapshotAsync(Uri uri, CancellationToken cancellationToken);
 
     /// <summary>Reads the model's current sequence without its text, for a save barrier.</summary>
     ValueTask<EditorSequence> GetSequenceAsync(CancellationToken cancellationToken);
 
+    /// <summary>Reads a particular open model's sequence for a save barrier.</summary>
+    ValueTask<EditorSequence> GetSequenceAsync(Uri uri, CancellationToken cancellationToken);
+
     /// <summary>Makes the editor refuse edits, for a file that cannot be written.</summary>
     ValueTask SetReadOnlyAsync(bool readOnly, CancellationToken cancellationToken);
+
+    /// <summary>Updates a particular open document's read-only state.</summary>
+    ValueTask SetReadOnlyAsync(Uri uri, bool readOnly, CancellationToken cancellationToken);
 
     /// <summary>
     /// Replaces the editor's actions with the ones <paramref name="descriptors"/> describe.

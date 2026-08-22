@@ -13,7 +13,8 @@ Source control UI, remote development, collaboration, notebooks, AI completion, 
 | 1. Monaco single-file editor shell | Complete | [Qualification run 32575928633](https://github.com/XDX-Org/NovaSharp/actions/runs/32575928633) passed the bootstrap, 217 .NET tests, 64 browser gates, RID publish, packaged native smoke, performance, disposal, and retained-evidence gates on all six matrix rows from commit `fd34239` |
 | 2. Editor and file lifecycle | Complete | [Qualification run 32575928633](https://github.com/XDX-Org/NovaSharp/actions/runs/32575928633) passed the document lifecycle, managed replication/save, browser performance, bounded queues, cancellation, disposal, RID publish, and native-host gates on all six matrix rows from commit `fd34239` |
 | 3. Workspace explorer | Complete | [Qualification run 32581336852](https://github.com/XDX-Org/NovaSharp/actions/runs/32581336852) passed the Explorer lifecycle, 20,000-entry expansion, watcher recovery, browser performance, RID publish, native-host smoke, and retained-evidence gates on all six matrix rows from commit `6dbe097` |
-| 4–17 | Planned | Completion criteria not yet met |
+| 4. Documents and movable tabs | In progress | Implementation and local `win-x64` gates pass; qualification on all six supported runtime identifiers is pending |
+| 5–17 | Planned | Completion criteria not yet met |
 
 Status values are `planned`, `in progress`, `blocked`, and `complete`. Update this table only from test or release evidence; documentation, packaged dependencies, or partial UI alone does not complete a phase. A phase is never `complete` on evidence from a single operating system.
 

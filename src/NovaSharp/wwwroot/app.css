@@ -39,12 +39,24 @@ button:disabled { cursor: default; opacity: 0.6; }
 .editor-panel {
     position: relative;
     display: grid;
-    grid-template-rows: minmax(0, 1fr);
+    grid-template-rows: 36px minmax(0, 1fr);
     grid-template-columns: minmax(0, 1fr);
     min-height: 0;
     flex: 1;
     min-width: 0;
 }
+
+.tabs-bar { display: flex; min-width: 0; border-bottom: 1px solid #343842; background: #202329; }
+.tabs-strip { display: flex; min-width: 0; flex: 1; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
+.document-tab { display: flex; min-width: 120px; max-width: 240px; align-items: center; gap: 6px; padding: 0 6px 0 10px; border-right: 1px solid #343842; color: #aeb6c4; background: #25282e; cursor: default; user-select: none; }
+.document-tab.active { color: #eceff4; background: #181a1f; box-shadow: inset 0 2px #88c0d0; }
+.document-tab.preview .tab-label { font-style: italic; }
+.document-tab:focus-visible { outline: 1px solid #88c0d0; outline-offset: -2px; }
+.tab-state { width: 10px; color: #e8c07d; font-size: 10px; }
+.tab-label { overflow: hidden; flex: 1; text-overflow: ellipsis; white-space: nowrap; }
+.tab-close { padding: 1px 5px; border-color: transparent; background: none; font-size: 14px; }
+.tabs-overflow { width: 38px; border: 0; border-left: 1px solid #343842; color: transparent; background: #2e3440; }
+.tabs-overflow:focus { width: min(280px, 40%); color: inherit; }
 
 .explorer {
     position: relative;
@@ -84,7 +96,7 @@ button:disabled { cursor: default; opacity: 0.6; }
 
 
 /* The element Monaco is created in. It stays empty until the editor mounts and is never written to by Blazor. */
-.editor-host { min-width: 0; min-height: 0; grid-area: 1 / 1; }
+.editor-host { min-width: 0; min-height: 0; grid-area: 2 / 1; }
 
 /* Hidden rather than removed while comparing: destroying the element would destroy the editor mounted in it. */
 .editor-host.hidden { visibility: hidden; pointer-events: none; }
@@ -95,7 +107,7 @@ button:disabled { cursor: default; opacity: 0.6; }
    stack in normal flow inside this, so a second one appears below the first instead of covering it. */
 .notices {
     position: absolute;
-    top: 0;
+    top: 36px;
     right: 0;
     left: 0;
     z-index: 2;

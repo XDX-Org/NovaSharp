@@ -380,7 +380,7 @@ public sealed class WorkspaceExplorerService : IAsyncDisposable
             CollectExpanded(snapshot.Root, expanded, root);
         }
 
-        await _persistence.SaveAsync(new WorkspaceStateDocument
+        await _persistence.UpdateAsync(state => state with
         {
             WorkspacePath = root,
             ExpandedPaths = [.. expanded],

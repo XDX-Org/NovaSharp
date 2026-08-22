@@ -21,7 +21,7 @@
             <div class="workspace-path" title="@_snapshot.RootPath">@_snapshot.RootPath</div>
             <div role="tree" aria-label="Workspace files" class="workspace-tree">
                 <WorkspaceTreeNode Node="_snapshot.Root" SelectedId="_snapshot.SelectedId"
-                    OnSelect="SelectAsync" OnActivate="ActivateAsync" OnExpand="ExpandAsync" OnCollapse="CollapseAsync"
+                    OnSelect="SelectAsync" OnPreview="PreviewAsync" OnActivate="ActivateAsync" OnExpand="ExpandAsync" OnCollapse="CollapseAsync"
                     OnRename="BeginRename" OnDelete="DeleteAsync" />
             </div>
             <div class="explorer-actions" aria-label="Explorer actions">
@@ -52,6 +52,7 @@
 
 @code {
     [Parameter] public EventCallback<string> OpenFile { get; set; }
+    [Parameter] public EventCallback<string> PreviewFile { get; set; }
 
     private readonly List<IDisposable> _registrations = [];
     private WorkspaceSnapshot _snapshot = Workbench.Explorer.Snapshot;
@@ -127,6 +128,12 @@
     private async Task ActivateAsync(WorkspaceNode node)
     {
         await OpenFile.InvokeAsync(node.Path);
+        await Workbench.Explorer.RevealAsync(node.Path);
+    }
+
+    private async Task PreviewAsync(WorkspaceNode node)
+    {
+        await PreviewFile.InvokeAsync(node.Path);
         await Workbench.Explorer.RevealAsync(node.Path);
     }
 
@@ -251,16 +258,7 @@
 
     private async Task OnRelocatedAsync(WorkspaceRelocation relocation)
     {
-        var session = Workbench.ActiveDocument;
-        if (session?.Status.Path is not { } openPath) return;
-        string? target = null;
-        if (Workbench.Paths.IsSamePath(relocation.OldPath, openPath)) target = relocation.NewPath;
-        else if (relocation.IsDirectory && Workbench.Paths.IsDescendantOrSelf(relocation.OldPath, openPath))
-        {
-            var relative = Workbench.Paths.ToWorkspaceRelativePath(relocation.OldPath, openPath);
-            target = Workbench.Paths.ResolveWorkspaceRelativePath(relocation.NewPath, relative);
-        }
-        if (target is not null) await session.RelocateAsync(openPath, target, Workbench.Paths.ToDocumentUri(target));
+        if (Workbench.Documents is { } documents) await documents.RelocateAsync(relocation);
     }
 
     public void Dispose()

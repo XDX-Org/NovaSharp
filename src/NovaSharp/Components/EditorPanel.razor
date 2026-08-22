@@ -6,7 +6,6 @@
 @using NovaSharp.Platform
 @using NovaSharp.Text
 @using NovaSharp.Verification
-@using NovaSharp.Workspace
 @using Photino.NET
 @implements IAsyncDisposable
 @inject IJSRuntime JSRuntime
@@ -27,38 +26,62 @@
     </header>
 
     <div class="workbench-body">
-    <WorkspaceExplorer OpenFile="OpenWorkspaceFileAsync" />
-    <section class="editor-panel">
-        @if (_notifications.Count > 0)
-        {
-            <div class="notices">
-                @foreach (var notification in _notifications)
+        <WorkspaceExplorer OpenFile="OpenWorkspaceFileAsync" PreviewFile="PreviewWorkspaceFileAsync" />
+        <section class="editor-panel">
+            <div class="tabs-bar">
+                <div class="tabs-strip" role="tablist" aria-label="Open editors">
+                    @foreach (var tab in _tabs.Tabs)
+                    {
+                        <div class="document-tab @(tab.IsActive ? "active" : null) @(tab.IsPreview ? "preview" : null)"
+                             role="tab" aria-selected="@tab.IsActive" aria-label="@tab.AccessibleLabel"
+                             title="@tab.Path" tabindex="@(tab.IsActive ? 0 : -1)" draggable="true"
+                             @onclick="() => ActivateTabAsync(tab.Id)" @ondblclick="() => PromoteTabAsync(tab.Id)"
+                             @onauxclick="args => MiddleClickAsync(tab.Id, args)"
+                             @ondragstart="() => _draggedTabId = tab.Id"
+                             @ondragover:preventDefault @ondrop="() => DropTabAsync(tab.Id)">
+                            <span class="tab-state" aria-hidden="true">@(tab.IsMissing ? "!" : tab.IsReadOnly ? "◇" : tab.IsDirty ? "●" : tab.IsPinned ? "" : "○")</span>
+                            <span class="tab-label">@tab.Label</span>
+                            <button type="button" class="tab-close" aria-label="Close @tab.Label"
+                                    @onclick="() => CloseOneAsync(tab.Id)" @onclick:stopPropagation>×</button>
+                        </div>
+                    }
+                </div>
+                @if (_tabs.Tabs.Count > 0)
                 {
-                    <div class="notice @Style(notification.Severity)" role="@Role(notification.Severity)">
-                        <span>@notification.Message</span>
-                        @foreach (var action in notification.Actions)
+                    <select class="tabs-overflow" aria-label="Open editor list" value="@_tabs.ActiveId" @onchange="SelectOverflowAsync">
+                        @foreach (var tab in _tabs.Tabs)
                         {
-                            <button type="button" @onclick="() => InvokeAsync(action.CommandId)"
-                                    disabled="@(!Workbench.Commands.IsEnabled(action.CommandId))">@action.Title</button>
+                            <option value="@tab.Id">@(tab.IsDirty ? "● " : null)@tab.Label</option>
                         }
-                        <button type="button" class="dismiss" aria-label="Dismiss"
-                                @onclick="() => Workbench.Notifications.Dismiss(notification.Id)">×</button>
-                    </div>
+                    </select>
                 }
             </div>
-        }
 
-        @* Monaco is created in this element once it is mounted. Blazor never writes to it: the editor owns its
-           subtree, and rerendering this component must not disturb the live editor. *@
-        <div class="editor-host @(_status.IsComparing ? "hidden" : null)" @ref="_editorContainer"></div>
+            @if (_notifications.Count > 0)
+            {
+                <div class="notices">
+                    @foreach (var notification in _notifications)
+                    {
+                        <div class="notice @Style(notification.Severity)" role="@Role(notification.Severity)">
+                            <span>@notification.Message</span>
+                            @foreach (var action in notification.Actions)
+                            {
+                                <button type="button" @onclick="() => InvokeNotificationActionAsync(action)"
+                                        disabled="@(action.DocumentId is null && !Workbench.Commands.IsEnabled(action.CommandId))">@action.Title</button>
+                            }
+                            <button type="button" class="dismiss" aria-label="Dismiss"
+                                    @onclick="() => Workbench.Notifications.Dismiss(notification.Id)">×</button>
+                        </div>
+                    }
+                </div>
+            }
 
-        @if (_status.IsComparing)
-        {
-            @* A second host, because a Monaco editor and a diff editor cannot share one container. The live model
-               moves between them, so the comparison shows unsaved text and stays editable. *@
-            <div class="editor-host" @ref="_diffContainer"></div>
-        }
-    </section>
+            <div class="editor-host @(_status.IsComparing ? "hidden" : null)" @ref="_editorContainer"></div>
+            @if (_status.IsComparing)
+            {
+                <div class="editor-host" @ref="_diffContainer"></div>
+            }
+        </section>
     </div>
 
     <footer class="status-bar">
@@ -68,19 +91,15 @@
         }
         @if (_status.IsOpen)
         {
-            <button type="button" class="status-item" @onclick="() => InvokeAsync(WorkbenchCommands.ChooseLineEnding)"
-                    title="Line ending a save writes">
+            <button type="button" class="status-item" @onclick="() => InvokeAsync(WorkbenchCommands.ChooseLineEnding)">
                 @LineEndingLabel(_status.LineEnding)@(_status.LineEndingsWereMixed ? " (mixed)" : null)
             </button>
-            <button type="button" class="status-item" @onclick="() => InvokeAsync(WorkbenchCommands.ChooseEncoding)"
-                    title="Text encoding a save writes">
+            <button type="button" class="status-item" @onclick="() => InvokeAsync(WorkbenchCommands.ChooseEncoding)">
                 @(_status.Encoding?.DisplayName ?? "Unknown")@(_status.DecodedWithFallback ? " (guessed)" : null)
             </button>
-            @if (_status.IsReadOnly)
-            {
-                <span class="status-item badge">Read-only</span>
-            }
+            @if (_status.IsReadOnly) { <span class="status-item badge">Read-only</span> }
         }
+        @if (_tabs.ActiveTab?.IsMissing == true) { <span class="status-item badge">Missing file</span> }
     </footer>
 
     @if (_lineEndingPickerOpen)
@@ -105,26 +124,15 @@
             <h2>File encoding</h2>
             <select @bind="_pickedEncodingId" size="12">
                 <optgroup label="Favourites">
-                    @foreach (var profile in Favorites)
-                    {
-                        <option value="@profile.Id">@EncodingLabel(profile)</option>
-                    }
+                    @foreach (var profile in Favorites) { <option value="@profile.Id">@EncodingLabel(profile)</option> }
                 </optgroup>
                 <optgroup label="All encodings">
-                    @foreach (var profile in TextEncodings.All)
-                    {
-                        <option value="@profile.Id">@EncodingLabel(profile)</option>
-                    }
+                    @foreach (var profile in TextEncodings.All) { <option value="@profile.Id">@EncodingLabel(profile)</option> }
                 </optgroup>
             </select>
-            <p class="picker-hint">
-                Reopening re-reads the file with the chosen encoding and discards nothing but the current decode.
-                Converting re-encodes the text in the editor. A warning marks an encoding that cannot write every
-                character this document contains.
-            </p>
+            <p class="picker-hint">Reopening re-reads the file. Converting writes the editor text in the selected encoding.</p>
             <div class="picker-actions">
-                <button type="button" @onclick="ReopenWithEncodingAsync" disabled="@_status.IsDirty"
-                        title="@(_status.IsDirty ? "Save or discard your changes before reopening." : null)">Reopen with</button>
+                <button type="button" @onclick="ReopenWithEncodingAsync" disabled="@_status.IsDirty">Reopen with</button>
                 <button type="button" @onclick="SaveWithEncodingAsync">Convert and save</button>
                 <button type="button" @onclick="() => _encodingPickerOpen = false">Cancel</button>
             </div>
@@ -133,121 +141,88 @@
 </main>
 
 @code {
-    /// <summary>The commands the toolbar offers, in order.</summary>
     private static readonly string[] ToolbarCommands =
     [
-        WorkbenchCommands.ToggleExplorer,
-        WorkbenchCommands.Open,
-        WorkbenchCommands.Save,
-        WorkbenchCommands.SaveAs,
-        WorkbenchCommands.Reload,
-        WorkbenchCommands.Compare,
+        WorkbenchCommands.ToggleExplorer, WorkbenchCommands.Open, WorkbenchCommands.Save,
+        WorkbenchCommands.SaveAs, WorkbenchCommands.Reload, WorkbenchCommands.Compare,
     ];
 
     private readonly List<IDisposable> _registrations = [];
-
     private ElementReference _editorContainer;
     private ElementReference _diffContainer;
     private IEditorHost? _host;
-    private DocumentSession? _session;
+    private DocumentRegistry? _documents;
+    private DocumentSession? _smokeSession;
+    private DocumentTabsSnapshot _tabs = new([]);
     private DocumentStatus _status = new();
     private IReadOnlyList<Notification> _notifications = [];
     private bool _diffAttached;
-
+    private string? _draggedTabId;
     private bool _encodingPickerOpen;
     private bool _lineEndingPickerOpen;
     private string _pickedEncodingId = TextEncodings.Utf8.Id;
     private LineEndingStyle _pickedLineEnding = LineEndingStyle.Lf;
     private FrozenDictionary<string, bool> _representable = FrozenDictionary<string, bool>.Empty;
 
+    private DocumentSession? Active => _documents?.ActiveDocument;
     private static IEnumerable<TextEncodingProfile> Favorites =>
         TextEncodings.Favorites.Select(TextEncodings.Find).OfType<TextEncodingProfile>();
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
-        {
-            await StartAsync();
-            return;
-        }
-
-        // The comparison can only be created once its container has been rendered, which is the render after the
-        // status said a comparison was open.
-        if (_status.IsComparing && !_diffAttached)
-        {
-            await AttachComparisonAsync();
-        }
+        if (firstRender) { await StartAsync(); return; }
+        if (_status.IsComparing && !_diffAttached) await AttachComparisonAsync();
     }
 
     private async Task StartAsync()
     {
-        // The container exists by the time the first render has been applied, which is the earliest point Monaco can
-        // be created in it.
         var host = new MonacoEditorHost(JSRuntime);
-        var session = Workbench.CreateSession(host);
-        session.StatusChanged += OnStatusChangedAsync;
         Workbench.Notifications.Changed += OnNotificationsChanged;
-
-        // The bridge is what Monaco calls back into. Replication is synchronous and non-blocking by design: it hands
-        // the batch to a queue and returns, so a keystroke never waits for .NET.
-        var bridge = new EditorBridge(session.Replicate, session.RequestResync, InvokeAsync);
-
         try
         {
-            await host.InitializeAsync(_editorContainer, bridge, CancellationToken.None);
-            _host = host;
-            _session = session;
-            Workbench.ActiveDocument = session;
-
-            // The editor is interactive once its model is open. Configuration and command-palette registration are
-            // independent startup work and must not inflate that performance boundary.
             if (NativeSmokeTest.IsEnabled)
             {
+                var session = Workbench.CreateSession(host);
+                await host.InitializeAsync(_editorContainer,
+                    new EditorBridge(session.Replicate, session.RequestResync, InvokeAsync), CancellationToken.None);
+                _host = host;
+                _smokeSession = session;
                 await NativeSmokeTest.RunAsync(session, host);
                 return;
             }
 
-            RegisterCommands(session);
+            var documents = Workbench.CreateDocumentRegistry(host);
+            await host.InitializeAsync(_editorContainer,
+                new EditorBridge(documents.Replicate, documents.RequestResync, InvokeAsync), CancellationToken.None);
+            _host = host;
+            _documents = documents;
+            Workbench.Documents = documents;
+            documents.Changed += OnTabsChanged;
+            RegisterCommands();
+
             var unresolved = await host.RegisterCommandsAsync(Workbench.Commands.Commands, CancellationToken.None);
             if (unresolved.Count > 0)
-            {
-                // A shortcut that does not bind is indistinguishable from a broken command, so it is reported rather
-                // than left for the user to discover.
-                Workbench.Notifications.Raise(
-                    "novasharp.commands.unresolvedKeybinding",
-                    NotificationSeverity.Warning,
+                Workbench.Notifications.Raise("novasharp.commands.unresolvedKeybinding", NotificationSeverity.Warning,
                     $"These shortcuts could not be bound: {string.Join(", ", unresolved)}");
-            }
 
             await Workbench.LoadConfigurationAsync();
+            await documents.RestoreAsync();
+            _tabs = documents.Snapshot;
+            _status = documents.ActiveDocument?.Status ?? new();
         }
         catch (Exception exception) when (exception is JSException or JSDisconnectedException)
         {
-            session.StatusChanged -= OnStatusChangedAsync;
-            Workbench.Notifications.Changed -= OnNotificationsChanged;
-            await session.DisposeAsync();
-            await host.DisposeAsync();
-            Workbench.Notifications.Raise(
-                "novasharp.editor.startFailed",
-                NotificationSeverity.Error,
+            Workbench.Notifications.Raise("novasharp.editor.startFailed", NotificationSeverity.Error,
                 $"The editor could not start: {exception.Message}");
         }
-
         _notifications = Workbench.Notifications.Active;
         StateHasChanged();
     }
 
-    /// <summary>
-    /// Registers what this panel can do, once, against the shared registry.
-    /// </summary>
-    /// <remarks>
-    /// Enablement lives here rather than on each button, so a keybinding, a toolbar button, and a notification's
-    /// action are all governed by the same predicate.
-    /// </remarks>
-    private void RegisterCommands(DocumentSession session)
+    private void RegisterCommands()
     {
-        void Register(string id, Func<CancellationToken, Task> handler, Func<bool>? isEnabled = null) =>
-            _registrations.Add(Workbench.Commands.Register(WorkbenchCommands.Describe(id), handler, isEnabled));
+        void Register(string id, Func<CancellationToken, Task> handler, Func<bool>? enabled = null) =>
+            _registrations.Add(Workbench.Commands.Register(WorkbenchCommands.Describe(id), handler, enabled));
 
         Register(WorkbenchCommands.Open, _ => OpenFileAsync(), () => !_status.IsBusy && !_status.IsComparing);
         Register(WorkbenchCommands.Save, _ => SaveAsync(), () => _status.IsOpen && !_status.IsBusy);
@@ -255,30 +230,42 @@
         Register(WorkbenchCommands.Reload, _ => ReloadAsync(), () => _status.IsOpen && !_status.IsBusy);
         Register(WorkbenchCommands.Compare, _ => BeginCompareAsync(), () => _status.IsOpen && !_status.IsComparing);
         Register(WorkbenchCommands.EndCompare, _ => EndCompareAsync(), () => _status.IsComparing);
-        Register(
-            WorkbenchCommands.KeepEditorText,
-            token => session.ResolveExternalChangeAsync(ExternalChangeChoice.Keep, token),
-            () => _status.IsOpen);
+        Register(WorkbenchCommands.KeepEditorText, token => Active?.ResolveExternalChangeAsync(ExternalChangeChoice.Keep, token) ?? Task.CompletedTask, () => _status.IsOpen);
         Register(WorkbenchCommands.ChooseEncoding, _ => ToggleEncodingPickerAsync(), () => _status.IsOpen);
         Register(WorkbenchCommands.ChooseLineEnding, _ => { ToggleLineEndingPicker(); return Task.CompletedTask; }, () => _status.IsOpen);
+        Register(WorkbenchCommands.Close, token => CloseKindAsync(DocumentCloseKind.One, token), () => _tabs.ActiveId is not null);
+        Register(WorkbenchCommands.CloseOthers, token => CloseKindAsync(DocumentCloseKind.Others, token), () => _tabs.Tabs.Count > 1);
+        Register(WorkbenchCommands.CloseRight, token => CloseKindAsync(DocumentCloseKind.Right, token), () => ActiveIndex >= 0 && ActiveIndex < _tabs.Tabs.Count - 1);
+        Register(WorkbenchCommands.CloseSaved, token => CloseKindAsync(DocumentCloseKind.Saved, token), () => _tabs.Tabs.Any(tab => !tab.IsDirty));
+        Register(WorkbenchCommands.CloseAll, token => CloseKindAsync(DocumentCloseKind.All, token), () => _tabs.Tabs.Count > 0);
+        Register(WorkbenchCommands.MoveTabLeft, token => MoveActiveAsync(-1, token), () => ActiveIndex > 0);
+        Register(WorkbenchCommands.MoveTabRight, token => MoveActiveAsync(1, token), () => ActiveIndex >= 0 && ActiveIndex < _tabs.Tabs.Count - 1);
+        Register(WorkbenchCommands.PreviousTab, token => CycleAsync(-1, token), () => _tabs.Tabs.Count > 1);
+        Register(WorkbenchCommands.NextTab, token => CycleAsync(1, token), () => _tabs.Tabs.Count > 1);
+        Register(WorkbenchCommands.PinTab, token => _tabs.ActiveId is { } id ? _documents!.PromoteAsync(id, token) : Task.CompletedTask, () => _tabs.ActiveTab?.IsPreview == true);
     }
 
-    /// <summary>Runs a command and reports it if it failed.</summary>
     private async Task InvokeAsync(string commandId)
     {
         var result = await Workbench.Commands.InvokeAsync(commandId);
         if (result.Outcome is CommandOutcome.Failed or CommandOutcome.Unknown)
-        {
-            Workbench.Notifications.Raise(
-                $"novasharp.commands.failed:{commandId}",
-                NotificationSeverity.Error,
+            Workbench.Notifications.Raise($"novasharp.commands.failed:{commandId}", NotificationSeverity.Error,
                 result.Message ?? $"{commandId} failed.");
-        }
     }
 
-    private Task OnStatusChangedAsync(DocumentStatus status) => InvokeAsync(() =>
+    private async Task InvokeNotificationActionAsync(NotificationAction action)
     {
-        _status = status;
+        if (action.DocumentId is { } id && _tabs.Tabs.Any(tab => tab.Id == id))
+            await ActivateTabAsync(id);
+        await InvokeAsync(action.CommandId);
+    }
+
+    private void OnTabsChanged(DocumentTabsSnapshot tabs) => _ = InvokeAsync(() =>
+    {
+        var wasComparing = _status.IsComparing;
+        _tabs = tabs;
+        _status = _documents?.ActiveDocument?.Status ?? new();
+        if (wasComparing && !_status.IsComparing) _diffAttached = false;
         StateHasChanged();
     });
 
@@ -290,130 +277,150 @@
 
     private async Task OpenFileAsync()
     {
-        if (_session is null || !await ConfirmDiscardAsync("Open another file"))
-        {
-            return;
-        }
-
+        if (_documents is null) return;
         var files = await Program.App.MainWindow.ShowOpenFileAsync(
             title: "Open file",
             multiSelect: false,
             filters: [("C# source", ["cs"]), ("All files", ["*"])]);
-
-        // Cancelling the dialog leaves the current model exactly as it was.
-        if (files is not [var path])
+        if (files is [var path])
         {
-            return;
+            await EndCompareAsync();
+            await _documents.OpenPinnedAsync(path);
         }
-
-        await _session.OpenAsync(path);
     }
 
     private async Task OpenWorkspaceFileAsync(string path)
     {
-        if (_session is null || !await ConfirmDiscardAsync("Open another file")) return;
-        await _session.OpenAsync(path);
+        await EndCompareAsync();
+        if (_documents is not null) await _documents.OpenPinnedAsync(path);
     }
+
+    private async Task PreviewWorkspaceFileAsync(string path)
+    {
+        await EndCompareAsync();
+        if (_documents is not null) await _documents.OpenPreviewAsync(path);
+    }
+
+    private async Task ActivateTabAsync(string id)
+    {
+        await EndCompareAsync();
+        if (_documents is not null)
+        {
+            await _documents.ActivateAsync(id);
+            _tabs = _documents.Snapshot;
+            _status = _documents.ActiveDocument?.Status ?? new();
+        }
+    }
+
+    private Task PromoteTabAsync(string id) => _documents?.PromoteAsync(id) ?? Task.CompletedTask;
+
+    private async Task MiddleClickAsync(string id, MouseEventArgs args)
+    {
+        if (args.Button == 1) await CloseOneAsync(id);
+    }
+
+    private async Task DropTabAsync(string targetId)
+    {
+        if (_documents is null || _draggedTabId is not { } dragged) return;
+        _draggedTabId = null;
+        var target = _tabs.Tabs.ToList().FindIndex(tab => tab.Id == targetId);
+        await _documents.MoveAsync(dragged, target);
+    }
+
+    private Task SelectOverflowAsync(ChangeEventArgs args) =>
+        args.Value?.ToString() is { Length: > 0 } id ? ActivateTabAsync(id) : Task.CompletedTask;
+
+    private Task CloseOneAsync(string id) => CloseCandidatesAsync(_documents?.GetCloseCandidates(DocumentCloseKind.One, id) ?? []);
+    private Task CloseKindAsync(DocumentCloseKind kind, CancellationToken token) =>
+        CloseCandidatesAsync(_documents?.GetCloseCandidates(kind) ?? [], token);
+
+    private async Task CloseCandidatesAsync(IReadOnlyList<DocumentTabSnapshot> candidates, CancellationToken token = default)
+    {
+        if (_documents is null || candidates.Count == 0) return;
+        var dirty = candidates.Where(tab => tab.IsDirty).ToArray();
+        if (dirty.Length > 0)
+        {
+            var list = string.Join("\n", dirty.Select(tab => $"• {tab.Label}"));
+            var answer = await Program.App.MainWindow.ShowMessageAsync("NovaSharp",
+                $"Close and discard changes in these documents?\n\n{list}",
+                PhotinoDialogButtons.YesNo, PhotinoDialogIcon.Warning);
+            if (answer != PhotinoDialogResult.Yes) return;
+        }
+        await EndCompareAsync();
+        await _documents.CloseAsync(candidates.Select(tab => tab.Id).ToArray(), discardDirty: true, token);
+    }
+
+    private Task MoveActiveAsync(int offset, CancellationToken token) =>
+        _tabs.ActiveId is { } id ? _documents!.MoveRelativeAsync(id, offset, token) : Task.CompletedTask;
+
+    private Task CycleAsync(int offset, CancellationToken token)
+    {
+        if (_tabs.Tabs.Count == 0) return Task.CompletedTask;
+        var index = (ActiveIndex + offset + _tabs.Tabs.Count) % _tabs.Tabs.Count;
+        return _documents!.ActivateAsync(_tabs.Tabs[index].Id, token);
+    }
+
+    private int ActiveIndex => _tabs.Tabs.ToList().FindIndex(tab => tab.Id == _tabs.ActiveId);
 
     private async Task SaveAsync()
     {
-        if (_session is null)
-        {
-            return;
-        }
-
-        var result = await _session.SaveAsync();
-        if (result?.Status != DocumentSaveStatus.ExternallyChanged)
-        {
-            return;
-        }
-
-        // The one place NovaSharp writes over a file it knows has changed, and only after the user has been told
-        // exactly what would be lost.
-        var answer = await Program.App.MainWindow.ShowMessageAsync(
-            "NovaSharp",
-            $"{_status.DisplayName} changed on disk since it was opened. Overwrite it with what is in the editor?",
-            PhotinoDialogButtons.YesNo,
-            PhotinoDialogIcon.Warning);
-
-        if (answer == PhotinoDialogResult.Yes)
-        {
-            await _session.SaveAsync(overwriteExternalChange: true);
-        }
+        if (Active is not { } session) return;
+        var result = await session.SaveAsync();
+        if (result?.Status != DocumentSaveStatus.ExternallyChanged) return;
+        var answer = await Program.App.MainWindow.ShowMessageAsync("NovaSharp",
+            $"{_status.DisplayName} changed on disk. Overwrite it with the editor text?",
+            PhotinoDialogButtons.YesNo, PhotinoDialogIcon.Warning);
+        if (answer == PhotinoDialogResult.Yes) await session.SaveAsync(overwriteExternalChange: true);
     }
 
     private async Task SaveAsAsync()
     {
-        if (_session is null)
+        if (Active is not { } session) return;
+        var path = await Program.App.MainWindow.ShowSaveFileAsync("Save as", filters: [("C# source", ["cs"]), ("All files", ["*"])]);
+        if (string.IsNullOrWhiteSpace(path)) return;
+        var existing = _tabs.Tabs.FirstOrDefault(tab => !tab.IsActive && Workbench.Paths.IsSamePath(tab.Path, path));
+        if (existing is not null)
         {
+            Workbench.Notifications.Raise("novasharp.documents.saveAsOpen", NotificationSeverity.Warning,
+                $"{existing.Label} is already open in another tab.");
+            await ActivateTabAsync(existing.Id);
             return;
         }
-
-        var path = await Program.App.MainWindow.ShowSaveFileAsync(
-            title: "Save as",
-            filters: [("C# source", ["cs"]), ("All files", ["*"])]);
-
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            return;
-        }
-
-        await _session.SaveAsAsync(path);
+        await EndCompareAsync();
+        await session.SaveAsAsync(path);
     }
 
     private async Task ReloadAsync()
     {
-        if (_session is null || !await ConfirmDiscardAsync("Reload from disk"))
+        if (Active is not { } session) return;
+        if (_status.IsDirty)
         {
-            return;
+            var answer = await Program.App.MainWindow.ShowMessageAsync("NovaSharp",
+                $"Reload {_status.DisplayName} and discard its unsaved changes?",
+                PhotinoDialogButtons.YesNo, PhotinoDialogIcon.Warning);
+            if (answer != PhotinoDialogResult.Yes) return;
         }
-
         await EndCompareAsync();
-        await _session.ReloadAsync();
+        await session.ReloadAsync();
     }
 
-    private async Task BeginCompareAsync()
-    {
-        if (_session is null || _host is null)
-        {
-            return;
-        }
-
-        // Rendering the container and creating the editor in it are two turns: the second happens in
-        // OnAfterRenderAsync, once the element the diff needs actually exists.
-        await _session.SetComparingAsync(true);
-    }
+    private Task BeginCompareAsync() => Active?.SetComparingAsync(true) ?? Task.CompletedTask;
 
     private async Task AttachComparisonAsync()
     {
-        if (_session is null || _host is null)
-        {
-            return;
-        }
-
+        if (Active is not { } session || _host is null) return;
         _diffAttached = true;
-        var original = await _session.ReadFileTextAsync();
-
-        if (original is null)
-        {
-            _diffAttached = false;
-            await _session.SetComparingAsync(false);
-            return;
-        }
-
+        var original = await session.ReadFileTextAsync();
+        if (original is null) { _diffAttached = false; await session.SetComparingAsync(false); return; }
         await _host.BeginCompareAsync(_diffContainer, original, CancellationToken.None);
     }
 
     private async Task EndCompareAsync()
     {
-        if (_host is null || !_status.IsComparing)
-        {
-            return;
-        }
-
+        if (_host is null || !_status.IsComparing) return;
         await _host.EndCompareAsync(CancellationToken.None);
         _diffAttached = false;
-        await _session!.SetComparingAsync(false);
+        if (Active is { } session) await session.SetComparingAsync(false);
     }
 
     private void ToggleLineEndingPicker()
@@ -426,27 +433,16 @@
     private async Task SaveWithLineEndingAsync()
     {
         _lineEndingPickerOpen = false;
-        if (_session is not null)
-        {
-            await _session.SaveWithLineEndingAsync(_pickedLineEnding);
-        }
+        if (Active is { } session) await session.SaveWithLineEndingAsync(_pickedLineEnding);
     }
 
     private async Task ToggleEncodingPickerAsync()
     {
         _lineEndingPickerOpen = false;
         _encodingPickerOpen = !_encodingPickerOpen;
-
-        if (!_encodingPickerOpen || _session is null)
-        {
-            return;
-        }
-
+        if (!_encodingPickerOpen || Active is not { } session) return;
         _pickedEncodingId = _status.Encoding?.Id ?? TextEncodings.Utf8.Id;
-
-        // Which encodings would lose characters is a property of this document, so it is worked out when the menu
-        // opens rather than kept up to date on every keystroke.
-        var text = _session.Replica?.Snapshot().Text ?? string.Empty;
+        var text = session.Replica?.Snapshot().Text ?? string.Empty;
         _representable = await Workbench.RunInBackgroundAsync(
             _ => Task.FromResult(EncodingCompatibility.Evaluate(TextEncodings.All, text)));
     }
@@ -454,100 +450,38 @@
     private async Task ReopenWithEncodingAsync()
     {
         _encodingPickerOpen = false;
-        if (_session is null || TextEncodings.Find(_pickedEncodingId) is not { } encoding)
-        {
-            return;
-        }
-
-        await _session.ReloadAsync(encoding);
+        if (Active is { } session && TextEncodings.Find(_pickedEncodingId) is { } encoding)
+            await session.ReloadAsync(encoding);
     }
 
     private async Task SaveWithEncodingAsync()
     {
         _encodingPickerOpen = false;
-        if (_session is null || TextEncodings.Find(_pickedEncodingId) is not { } encoding)
-        {
-            return;
-        }
-
-        await _session.SaveWithEncodingAsync(encoding);
+        if (Active is { } session && TextEncodings.Find(_pickedEncodingId) is { } encoding)
+            await session.SaveWithEncodingAsync(encoding);
     }
 
     private string EncodingLabel(TextEncodingProfile profile) =>
-        _representable.TryGetValue(profile.Id, out var ok) && !ok
-            ? $"⚠ {profile.DisplayName}"
-            : profile.DisplayName;
-
-    private static string LineEndingLabel(LineEndingStyle style) => style switch
-    {
-        LineEndingStyle.CrLf => "CRLF",
-        LineEndingStyle.Cr => "CR",
-        _ => "LF",
-    };
-
-    private static string? Style(NotificationSeverity severity) => severity switch
-    {
-        NotificationSeverity.Error => "error",
-        NotificationSeverity.Warning => "conflict",
-        _ => null,
-    };
-
-    private static string Role(NotificationSeverity severity) =>
-        severity == NotificationSeverity.Information ? "status" : "alert";
-
-    /// <summary>Shows a command's first shortcut the way a person reads one.</summary>
-    private static string? Shortcut(CommandDescriptor descriptor) =>
-        descriptor.Keybindings.Count == 0
-            ? null
-            : descriptor.Keybindings[0]
-                .Replace("CtrlCmd", "Ctrl/Cmd", StringComparison.Ordinal)
-                .Replace("Key", string.Empty, StringComparison.Ordinal)
-                .Replace("Digit", string.Empty, StringComparison.Ordinal);
-
-    /// <summary>Asks before an action that would discard unsaved changes.</summary>
-    private async Task<bool> ConfirmDiscardAsync(string action)
-    {
-        if (!_status.IsDirty)
-        {
-            return true;
-        }
-
-        var answer = await Program.App.MainWindow.ShowMessageAsync(
-            "NovaSharp",
-            $"{_status.DisplayName} has unsaved changes. {action} and lose them?",
-            PhotinoDialogButtons.YesNo,
-            PhotinoDialogIcon.Warning);
-
-        return answer == PhotinoDialogResult.Yes;
-    }
+        _representable.TryGetValue(profile.Id, out var ok) && !ok ? $"⚠ {profile.DisplayName}" : profile.DisplayName;
+    private static string LineEndingLabel(LineEndingStyle style) => style switch { LineEndingStyle.CrLf => "CRLF", LineEndingStyle.Cr => "CR", _ => "LF" };
+    private static string? Style(NotificationSeverity severity) => severity switch { NotificationSeverity.Error => "error", NotificationSeverity.Warning => "conflict", _ => null };
+    private static string Role(NotificationSeverity severity) => severity == NotificationSeverity.Information ? "status" : "alert";
+    private static string? Shortcut(CommandDescriptor descriptor) => descriptor.Keybindings.Count == 0 ? null :
+        descriptor.Keybindings[0].Replace("CtrlCmd", "Ctrl/Cmd", StringComparison.Ordinal).Replace("Key", string.Empty, StringComparison.Ordinal);
 
     public async ValueTask DisposeAsync()
     {
         Workbench.Notifications.Changed -= OnNotificationsChanged;
-
-        foreach (var registration in _registrations)
-        {
-            registration.Dispose();
-        }
-
+        foreach (var registration in _registrations) registration.Dispose();
         _registrations.Clear();
-
-        if (_session is not null)
+        if (_documents is not null)
         {
-            _session.StatusChanged -= OnStatusChangedAsync;
-            if (ReferenceEquals(Workbench.ActiveDocument, _session))
-            {
-                Workbench.ActiveDocument = null;
-            }
-
-            await _session.DisposeAsync();
-            _session = null;
+            _documents.Changed -= OnTabsChanged;
+            await _documents.DisposeAsync();
+            if (ReferenceEquals(Workbench.Documents, _documents)) Workbench.Documents = null;
+            _documents = null;
         }
-
-        if (_host is not null)
-        {
-            await _host.DisposeAsync();
-            _host = null;
-        }
+        if (_smokeSession is not null) { await _smokeSession.DisposeAsync(); _smokeSession = null; }
+        if (_host is not null) { await _host.DisposeAsync(); _host = null; }
     }
 }

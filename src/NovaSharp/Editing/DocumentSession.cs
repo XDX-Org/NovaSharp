@@ -23,7 +23,7 @@ public enum ExternalChangeChoice
 /// The composition point of phase 2, and the only class that knows about all three. Everything expensive is delegated
 /// — reading and writing to the bounded queue, replication to the pump — so what remains here is ordering: which
 /// barrier a save waits on, which record a result updates, and which state the workbench is told about afterwards.
-/// One document at a time; several of these, keyed by URI, is what phase 4 turns this into.
+/// The document registry owns several of these by URI and routes only that document's host operations here.
 /// </remarks>
 public sealed class DocumentSession : IAsyncDisposable
 {
@@ -38,6 +38,7 @@ public sealed class DocumentSession : IAsyncDisposable
 
     private readonly INotificationService _notifications;
     private readonly Func<WorkbenchSettings> _settings;
+    private readonly string _notificationScope = Guid.NewGuid().ToString("N");
     private DocumentRecord? _record;
     private DocumentReplica? _replica;
     private DocumentReplicationPump? _pump;
@@ -113,13 +114,32 @@ public sealed class DocumentSession : IAsyncDisposable
     /// </remarks>
     public DocumentReplica? Replica => _replica;
 
+    /// <summary>The canonical identity of this session's document.</summary>
+    public Uri? DocumentUri
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _record?.Uri;
+            }
+        }
+    }
+
     /// <summary>Updates the file identity after an Explorer rename without touching Monaco text or view state.</summary>
-    public async Task RelocateAsync(string oldPath, string newPath, Uri newUri)
+    public async Task RelocateAsync(
+        string oldPath,
+        string newPath,
+        Uri newUri,
+        CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(oldPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(newPath);
         ArgumentNullException.ThrowIfNull(newUri);
 
+        DocumentRecord? record;
+        DocumentReplica? replica;
+        DocumentReplicationPump? pump;
         lock (_gate)
         {
             if (_record is null || !string.Equals(_record.Path, oldPath, StringComparison.Ordinal))
@@ -127,17 +147,56 @@ public sealed class DocumentSession : IAsyncDisposable
                 return;
             }
 
-            _record = _record with
+            record = _record;
+            replica = _replica;
+            pump = _pump;
+        }
+
+        DocumentSnapshot? before = null;
+        if (replica is not null && pump is not null)
+            before = await DrainPumpForRelocationAsync(pump, replica).ConfigureAwait(false);
+        DocumentSnapshot relocated;
+        try
+        {
+            relocated = await _host.RelocateDocumentAsync(
+                record.Uri,
+                newUri,
+                LanguageIds.FromPath(newPath),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            RestorePumpAfterFailedRelocation(replica);
+            throw;
+        }
+        DocumentReplicationPump? replacementPump = null;
+        if (replica is not null)
+        {
+            replica.Resync(relocated.Text, relocated.Sequence, relocated.AlternativeSequence);
+            replacementPump = CreatePump(replica);
+        }
+        var wasDirty = before is not null
+            && (record.IsDirty(before.AlternativeSequence)
+                || !string.Equals(before.Text, relocated.Text, StringComparison.Ordinal));
+
+        lock (_gate)
+        {
+            _record = record with
             {
                 Path = newPath,
                 Uri = newUri,
                 DisplayName = Path.GetFileName(newPath),
                 Disk = _store.GetState(newPath),
+                SavedSequence = wasDirty ? long.MinValue : relocated.AlternativeSequence,
             };
+            _alternativeSequence = relocated.AlternativeSequence;
+            if (replacementPump is not null) _pump = replacementPump;
             _externalChangeAcknowledged = false;
+            _status = _status with { IsComparing = false };
         }
 
         _watcher.Watch(newPath);
+        replacementPump?.RequestResync();
         await PublishAsync(BuildStatus()).ConfigureAwait(false);
     }
 
@@ -145,7 +204,11 @@ public sealed class DocumentSession : IAsyncDisposable
     /// <param name="path">The file to open.</param>
     /// <param name="encoding">The encoding to try, or <see langword="null"/> for the configured default.</param>
     /// <param name="cancellationToken">Cancels the open.</param>
-    public async Task OpenAsync(string path, TextEncodingProfile? encoding = null, CancellationToken cancellationToken = default)
+    public async Task OpenAsync(
+        string path,
+        TextEncodingProfile? encoding = null,
+        bool foreground = true,
+        CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
 
@@ -156,7 +219,12 @@ public sealed class DocumentSession : IAsyncDisposable
             // Superseded rather than queued: opening a second file while the first is still being read makes the first
             // result stale, and publishing it would show the wrong document.
             await _open.RunAsync(
-                token => _loader.OpenAsync(path, encoding ?? Settings.DefaultEncoding, Settings.DefaultLineEnding, token),
+                token => _loader.OpenAsync(
+                    path,
+                    encoding ?? Settings.DefaultEncoding,
+                    Settings.DefaultLineEnding,
+                    foreground,
+                    token),
                 AdoptAsync,
                 cancellationToken).ConfigureAwait(false);
         }
@@ -190,19 +258,20 @@ public sealed class DocumentSession : IAsyncDisposable
         }
 
         _watcher.Watch(opened.Record.Path);
-        _notifications.Dismiss(NotificationIds.ExternalChange);
-        _notifications.Dismiss(NotificationIds.EncodingFallback);
+        _notifications.Dismiss(Scoped(NotificationIds.OpenFailed));
+        _notifications.Dismiss(Scoped(NotificationIds.ExternalChange));
+        _notifications.Dismiss(Scoped(NotificationIds.EncodingFallback));
 
         if (opened.Record.DecodedWithFallback)
         {
             // Said out loud rather than left in the status bar for the user to notice. A document NovaSharp guessed
             // the encoding of is one where "save" means something different from what they expect.
             _notifications.Raise(new Notification(
-                NotificationIds.EncodingFallback,
+                Scoped(NotificationIds.EncodingFallback),
                 NotificationSeverity.Warning,
                 $"{opened.Record.DisplayName} is not valid {Settings.DefaultEncoding.DisplayName}. "
                 + $"It was opened as {opened.Record.Encoding.DisplayName}, which preserves every byte.",
-                [new NotificationAction(WorkbenchCommands.ChooseEncoding, "Choose an encoding")],
+                [new NotificationAction(WorkbenchCommands.ChooseEncoding, "Choose an encoding", opened.Record.Uri.AbsoluteUri)],
                 DateTimeOffset.UtcNow));
         }
 
@@ -355,7 +424,7 @@ public sealed class DocumentSession : IAsyncDisposable
         {
             // The barrier: the sequence Monaco is at right now, then the shadow catching up to it. What is written is
             // the document as it was at one instant, even if the user keeps typing while it is written.
-            var target = await _host.GetSequenceAsync(cancellationToken).ConfigureAwait(false);
+            var target = await _host.GetSequenceAsync(record.Uri, cancellationToken).ConfigureAwait(false);
             await pump.WaitForSequenceAsync(target.Sequence, cancellationToken).ConfigureAwait(false);
             var snapshot = replica.Snapshot();
 
@@ -370,9 +439,46 @@ public sealed class DocumentSession : IAsyncDisposable
 
             if (result.Status == DocumentSaveStatus.Saved)
             {
+                var savedRecord = result.Record;
+                long? relocatedAlternativeSequence = null;
+                if (!HostUrisMatch(record.Uri, savedRecord.Uri))
+                {
+                    await DrainPumpForRelocationAsync(pump, replica).ConfigureAwait(false);
+                    DocumentSnapshot relocated;
+                    try
+                    {
+                        relocated = await _host.RelocateDocumentAsync(
+                            record.Uri,
+                            savedRecord.Uri,
+                            LanguageIds.FromPath(savedRecord.Path),
+                            cancellationToken).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        RestorePumpAfterFailedRelocation(replica);
+                        throw;
+                    }
+                    replica.Resync(relocated.Text, relocated.Sequence, relocated.AlternativeSequence);
+                    var replacementPump = CreatePump(replica);
+                    savedRecord = savedRecord with
+                    {
+                        SavedSequence = string.Equals(snapshot.Text, relocated.Text, StringComparison.Ordinal)
+                            ? relocated.AlternativeSequence
+                            : long.MinValue,
+                    };
+                    relocatedAlternativeSequence = relocated.AlternativeSequence;
+                    lock (_gate)
+                    {
+                        _pump = replacementPump;
+                    }
+                    result = result with { Record = savedRecord };
+                }
+
                 lock (_gate)
                 {
-                    _record = result.Record;
+                    _record = savedRecord;
+                    if (relocatedAlternativeSequence is { } currentAlternativeSequence)
+                        _alternativeSequence = currentAlternativeSequence;
                     _externalChangeAcknowledged = false;
 
                     // The document and its file agree again, so whatever the notice was about is settled.
@@ -381,14 +487,21 @@ public sealed class DocumentSession : IAsyncDisposable
 
                 // Save-as continues editing the new file, so the watcher follows it there.
                 _watcher.Watch(result.Record.Path);
-                _notifications.Dismiss(NotificationIds.SaveFailed);
-                _notifications.Dismiss(NotificationIds.ExternalChange);
+                _notifications.Dismiss(Scoped(NotificationIds.SaveFailed));
+                _notifications.Dismiss(Scoped(NotificationIds.ExternalChange));
                 await PublishAsync(BuildStatus()).ConfigureAwait(false);
+                if (relocatedAlternativeSequence is not null)
+                {
+                    lock (_gate)
+                    {
+                        _pump?.RequestResync();
+                    }
+                }
             }
             else
             {
                 _notifications.Raise(
-                    NotificationIds.SaveFailed,
+                    Scoped(NotificationIds.SaveFailed),
                     result.Status == DocumentSaveStatus.ExternallyChanged
                         ? NotificationSeverity.Warning
                         : NotificationSeverity.Error,
@@ -440,7 +553,7 @@ public sealed class DocumentSession : IAsyncDisposable
 
             // Pushed as an edit with its own undo stop, so the model keeps its view state and the change stays undoable.
             var sequence = await _host
-                .ReplaceDocumentAsync(opened.Content.Text, opened.Content.LineEnding, cancellationToken)
+                .ReplaceDocumentAsync(record.Uri, opened.Content.Text, opened.Content.LineEnding, cancellationToken)
                 .ConfigureAwait(false);
 
             // The shadow is set from the text that was just written into the model rather than read back out of it.
@@ -456,9 +569,10 @@ public sealed class DocumentSession : IAsyncDisposable
                 _status = _status with { ExternalChange = ExternalChangeState.None };
             }
 
-            _notifications.Dismiss(NotificationIds.ExternalChange);
+            _notifications.Dismiss(Scoped(NotificationIds.ExternalChange));
+            _notifications.Dismiss(Scoped(NotificationIds.ReloadFailed));
 
-            await _host.SetReadOnlyAsync(opened.Record.IsReadOnly, cancellationToken).ConfigureAwait(false);
+            await _host.SetReadOnlyAsync(record.Uri, opened.Record.IsReadOnly, cancellationToken).ConfigureAwait(false);
             await PublishAsync(BuildStatus()).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -497,7 +611,7 @@ public sealed class DocumentSession : IAsyncDisposable
             _status = _status with { ExternalChange = ExternalChangeState.None };
         }
 
-        _notifications.Dismiss(NotificationIds.ExternalChange);
+        _notifications.Dismiss(Scoped(NotificationIds.ExternalChange));
 
         return PublishAsync(BuildStatus());
     }
@@ -542,7 +656,7 @@ public sealed class DocumentSession : IAsyncDisposable
 
             var deleted = state == ExternalChangeState.Deleted;
             _notifications.Raise(new Notification(
-                NotificationIds.ExternalChange,
+                Scoped(NotificationIds.ExternalChange),
                 NotificationSeverity.Warning,
                 deleted
                     ? $"{record.DisplayName} was deleted on disk. The editor still has your text."
@@ -550,11 +664,11 @@ public sealed class DocumentSession : IAsyncDisposable
                 // Named as commands, so the buttons a notification offers are the same commands the palette and the
                 // toolbar invoke, with the same enablement.
                 deleted
-                    ? [new NotificationAction(WorkbenchCommands.KeepEditorText, "Keep my text")]
+                    ? [new NotificationAction(WorkbenchCommands.KeepEditorText, "Keep my text", record.Uri.AbsoluteUri)]
                     : [
-                        new NotificationAction(WorkbenchCommands.Compare, "Compare"),
-                        new NotificationAction(WorkbenchCommands.Reload, "Reload from disk"),
-                        new NotificationAction(WorkbenchCommands.KeepEditorText, "Keep my text"),
+                        new NotificationAction(WorkbenchCommands.Compare, "Compare", record.Uri.AbsoluteUri),
+                        new NotificationAction(WorkbenchCommands.Reload, "Reload from disk", record.Uri.AbsoluteUri),
+                        new NotificationAction(WorkbenchCommands.KeepEditorText, "Keep my text", record.Uri.AbsoluteUri),
                     ],
                 DateTimeOffset.UtcNow));
 
@@ -573,8 +687,18 @@ public sealed class DocumentSession : IAsyncDisposable
             NotificationIds.ResyncFailed,
             $"The editor and NovaSharp are out of step and could not be resynchronized: {exception.Message}");
 
-    private async Task<DocumentSnapshot> RequestSnapshotAsync(CancellationToken cancellationToken) =>
-        await _host.GetSnapshotAsync(cancellationToken).ConfigureAwait(false);
+    private async Task<DocumentSnapshot> RequestSnapshotAsync(CancellationToken cancellationToken)
+    {
+        Uri? uri;
+        lock (_gate)
+        {
+            uri = _record?.Uri;
+        }
+
+        return uri is null
+            ? new DocumentSnapshot(string.Empty, 0, 0)
+            : await _host.GetSnapshotAsync(uri, cancellationToken).ConfigureAwait(false);
+    }
 
     /// <summary>
     /// Describes the document, and only the document.
@@ -611,9 +735,11 @@ public sealed class DocumentSession : IAsyncDisposable
 
     private Task FailAsync(string id, string message)
     {
-        _notifications.Raise(id, NotificationSeverity.Error, message);
+        _notifications.Raise(Scoped(id), NotificationSeverity.Error, message);
         return PublishAsync(BuildStatus() with { IsBusy = false });
     }
+
+    private string Scoped(string id) => $"{id}:{_notificationScope}";
 
     private async Task PublishAsync(DocumentStatus status)
     {
@@ -631,6 +757,40 @@ public sealed class DocumentSession : IAsyncDisposable
 
     private static bool IsFileFailure(Exception exception) =>
         exception is IOException or UnauthorizedAccessException or NotSupportedException or System.Text.EncoderFallbackException;
+
+    private static bool HostUrisMatch(Uri left, Uri right) =>
+        string.Equals(left.AbsoluteUri, right.AbsoluteUri, StringComparison.Ordinal);
+
+    private async Task<DocumentSnapshot> DrainPumpForRelocationAsync(
+        DocumentReplicationPump pump,
+        DocumentReplica replica)
+    {
+        lock (_gate)
+        {
+            if (ReferenceEquals(_pump, pump)) _pump = null;
+        }
+        pump.ResyncFailed -= OnResyncFailed;
+        await pump.DisposeAsync().ConfigureAwait(false);
+        return replica.Snapshot();
+    }
+
+    private DocumentReplicationPump CreatePump(DocumentReplica replica)
+    {
+        var replacement = new DocumentReplicationPump(replica, RequestSnapshotAsync);
+        replacement.ResyncFailed += OnResyncFailed;
+        return replacement;
+    }
+
+    private void RestorePumpAfterFailedRelocation(DocumentReplica? replica)
+    {
+        if (replica is null) return;
+        var replacement = CreatePump(replica);
+        lock (_gate)
+        {
+            _pump = replacement;
+        }
+        replacement.RequestResync();
+    }
 
     private async Task DisposeDocumentAsync()
     {
@@ -669,5 +829,17 @@ public sealed class DocumentSession : IAsyncDisposable
         await _watcher.DisposeAsync().ConfigureAwait(false);
         await _open.DisposeAsync().ConfigureAwait(false);
         await DisposeDocumentAsync().ConfigureAwait(false);
+        foreach (var id in new[]
+        {
+            NotificationIds.OpenFailed,
+            NotificationIds.SaveFailed,
+            NotificationIds.ReloadFailed,
+            NotificationIds.ExternalChange,
+            NotificationIds.ResyncFailed,
+            NotificationIds.EncodingFallback,
+        })
+        {
+            _notifications.Dismiss(Scoped(id));
+        }
     }
 }

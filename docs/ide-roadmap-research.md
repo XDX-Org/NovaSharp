@@ -12,6 +12,8 @@ NovaSharp separates four kinds of state:
 This separation allows a tab to move without recreating its model, two editors to show one shared model, and resources to be disposed only after the last lease closes. VS Code likewise treats splits as editor groups that contain items, while Visual Studio distinguishes tab groups from independently scrolling views ([VS Code UI](https://code.visualstudio.com/docs/editing/userinterface), [Visual Studio editor windows](https://learn.microsoft.com/en-us/visualstudio/ide/how-to-manage-editor-windows?view=visualstudio)).
 
 Use canonical URI-like document IDs. A dirty Monaco model wins over filesystem watcher events until the user explicitly reloads or resolves the conflict.
+Since Monaco model URIs are immutable, a file relocation drains that document's ordered replica pump, rekeys the
+model from its live text, restores the view, and establishes the new sequence from one snapshot resynchronization.
 
 ## Monaco editor boundary
 

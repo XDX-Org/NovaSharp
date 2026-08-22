@@ -39,7 +39,11 @@ public sealed class DocumentSessionTests : IAsyncDisposable
 
     private WorkbenchSettings _settings = WorkbenchSettings.Defaults;
 
-    private bool Raised(string id) => _notifications.Active.Any(notification => notification.Id == id);
+    private bool Raised(string id) => _notifications.Active.Any(notification =>
+        notification.Id.StartsWith(id + ":", StringComparison.Ordinal));
+
+    private Notification Notification(string id) => _notifications.Active.Single(notification =>
+        notification.Id.StartsWith(id + ":", StringComparison.Ordinal));
 
     private string Path(string name) => System.IO.Path.Combine(_directory, name);
 
@@ -157,7 +161,11 @@ public sealed class DocumentSessionTests : IAsyncDisposable
         var newPath = Path("new.cs");
         File.Move(oldPath, newPath);
 
-        await _session.RelocateAsync(oldPath, newPath, new WorkspacePaths().ToDocumentUri(newPath));
+        await _session.RelocateAsync(
+            oldPath,
+            newPath,
+            new WorkspacePaths().ToDocumentUri(newPath),
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(newPath, _session.Status.Path);
         Assert.Equal("new.cs", _session.Status.DisplayName);
@@ -320,8 +328,10 @@ public sealed class DocumentSessionTests : IAsyncDisposable
 
         await WaitForAsync(() => Raised(NotificationIds.ExternalChange));
 
-        var notification = _notifications.Active.Single(item => item.Id == NotificationIds.ExternalChange);
+        var notification = Notification(NotificationIds.ExternalChange);
         Assert.Equal(NotificationSeverity.Warning, notification.Severity);
+        Assert.All(notification.Actions, action =>
+            Assert.Equal(_session.DocumentUri?.AbsoluteUri, action.DocumentId));
         Assert.Equal(
             [WorkbenchCommands.Compare, WorkbenchCommands.Reload, WorkbenchCommands.KeepEditorText],
             notification.Actions.Select(action => action.CommandId));
@@ -376,7 +386,7 @@ public sealed class DocumentSessionTests : IAsyncDisposable
         Assert.True(Raised(NotificationIds.EncodingFallback));
         Assert.Equal(
             WorkbenchCommands.ChooseEncoding,
-            _notifications.Active.Single(item => item.Id == NotificationIds.EncodingFallback).Actions[0].CommandId);
+            Notification(NotificationIds.EncodingFallback).Actions[0].CommandId);
     }
 
     [Fact]

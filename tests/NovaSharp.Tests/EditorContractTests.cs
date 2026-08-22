@@ -104,7 +104,7 @@ public sealed class EditorContractTests
         // directly would put a .NET round trip in the keystroke-to-paint path, which ADR 0001 forbids.
         Assert.Contains("function onContentChanged(", module, StringComparison.Ordinal);
         Assert.DoesNotContain("async function onContentChanged(", module, StringComparison.Ordinal);
-        Assert.Contains("if (sending || queued.length === 0", module, StringComparison.Ordinal);
+        Assert.Contains("if (document.sending || document.queued.length === 0", module, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -207,5 +207,50 @@ public sealed class EditorContractTests
         Assert.DoesNotContain("http://", navigation, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("https://", navigation, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("target?.focus()", navigation, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DocumentTabs_ExposeAccessiblePointerAndOverflowInteractions()
+    {
+        var markup = ReadContract("EditorPanel.razor");
+
+        Assert.Contains("role=\"tablist\"", markup, StringComparison.Ordinal);
+        Assert.Contains("role=\"tab\"", markup, StringComparison.Ordinal);
+        Assert.Contains("aria-selected", markup, StringComparison.Ordinal);
+        Assert.Contains("AccessibleLabel", markup, StringComparison.Ordinal);
+        Assert.Contains("draggable=\"true\"", markup, StringComparison.Ordinal);
+        Assert.Contains("@ondrop", markup, StringComparison.Ordinal);
+        Assert.Contains("@onauxclick", markup, StringComparison.Ordinal);
+        Assert.Contains("aria-label=\"Open editor list\"", markup, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DocumentTabs_HaveKeyboardEquivalentMoveAndCloseCommands()
+    {
+        var ids = WorkbenchCommands.All.ToHashSet(StringComparer.Ordinal);
+
+        Assert.Contains(WorkbenchCommands.MoveTabLeft, ids);
+        Assert.Contains(WorkbenchCommands.MoveTabRight, ids);
+        Assert.Contains(WorkbenchCommands.Close, ids);
+        Assert.Contains(WorkbenchCommands.CloseOthers, ids);
+        Assert.Contains(WorkbenchCommands.CloseRight, ids);
+        Assert.Contains(WorkbenchCommands.CloseSaved, ids);
+        Assert.Contains(WorkbenchCommands.CloseAll, ids);
+        Assert.All(
+            WorkbenchCommands.Describe(WorkbenchCommands.MoveTabLeft).Keybindings
+                .Concat(WorkbenchCommands.Describe(WorkbenchCommands.MoveTabRight).Keybindings),
+            binding => Assert.Contains("CtrlCmd", binding, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Explorer_DistinguishesPreviewFromPinnedActivation()
+    {
+        var explorer = ReadContract("WorkspaceExplorer.razor");
+        var node = ReadContract("WorkspaceTreeNode.razor");
+
+        Assert.Contains("PreviewFile", explorer, StringComparison.Ordinal);
+        Assert.Contains("OpenFile", explorer, StringComparison.Ordinal);
+        Assert.Contains("@onclick=\"ClickAsync\"", node, StringComparison.Ordinal);
+        Assert.Contains("@ondblclick=\"ActivateAsync\"", node, StringComparison.Ordinal);
     }
 }

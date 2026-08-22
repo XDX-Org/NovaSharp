@@ -9,6 +9,8 @@ namespace NovaSharp.Async;
 public sealed class BoundedWorkQueue : IAsyncDisposable
 {
     private readonly Channel<Func<CancellationToken, Task>> _channel;
+    private readonly Channel<Func<CancellationToken, Task>> _foreground;
+    private readonly SemaphoreSlim _available = new(0);
     private readonly CancellationTokenSource _shutdown = new();
     private readonly Task[] _workers;
     private int _disposed;
@@ -27,6 +29,12 @@ public sealed class BoundedWorkQueue : IAsyncDisposable
             SingleReader = false,
             SingleWriter = false,
         });
+        _foreground = Channel.CreateBounded<Func<CancellationToken, Task>>(new BoundedChannelOptions(capacity)
+        {
+            FullMode = BoundedChannelFullMode.Wait,
+            SingleReader = false,
+            SingleWriter = false,
+        });
 
         _workers = new Task[workerCount];
         for (var i = 0; i < workerCount; i++)
@@ -38,8 +46,23 @@ public sealed class BoundedWorkQueue : IAsyncDisposable
     /// <summary>The configured queue depth, exposed so saturation is observable rather than implicit.</summary>
     public int Capacity { get; }
 
+    /// <summary>The combined bound across the foreground and background lanes.</summary>
+    public int TotalCapacity => checked(Capacity * 2);
+
     /// <summary>Queues <paramref name="work"/> and returns its result. Waits for space when the queue is full.</summary>
     public async Task<T> EnqueueAsync<T>(Func<CancellationToken, Task<T>> work, CancellationToken cancellationToken = default)
+        => await EnqueueCoreAsync(_channel, work, cancellationToken).ConfigureAwait(false);
+
+    /// <summary>Queues latency-sensitive work ahead of background items, with the same explicit bound.</summary>
+    public async Task<T> EnqueueForegroundAsync<T>(
+        Func<CancellationToken, Task<T>> work,
+        CancellationToken cancellationToken = default) =>
+        await EnqueueCoreAsync(_foreground, work, cancellationToken).ConfigureAwait(false);
+
+    private async Task<T> EnqueueCoreAsync<T>(
+        Channel<Func<CancellationToken, Task>> lane,
+        Func<CancellationToken, Task<T>> work,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(work);
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
@@ -73,7 +96,8 @@ public sealed class BoundedWorkQueue : IAsyncDisposable
 
         try
         {
-            await _channel.Writer.WriteAsync(RunAsync, cancellationToken).ConfigureAwait(false);
+            await lane.Writer.WriteAsync(RunAsync, cancellationToken).ConfigureAwait(false);
+            _available.Release();
         }
         catch (ChannelClosedException)
         {
@@ -82,7 +106,7 @@ public sealed class BoundedWorkQueue : IAsyncDisposable
 
         using var registration = cancellationToken.Register(static state =>
         {
-            ((TaskCompletionSource<T>)state!).TrySetCanceled();
+            ((TaskCompletionSource<T>) state!).TrySetCanceled();
         }, completion);
 
         return await completion.Task.ConfigureAwait(false);
@@ -92,8 +116,13 @@ public sealed class BoundedWorkQueue : IAsyncDisposable
     {
         try
         {
-            await foreach (var item in _channel.Reader.ReadAllAsync(_shutdown.Token).ConfigureAwait(false))
+            while (!_shutdown.IsCancellationRequested)
             {
+                await _available.WaitAsync(_shutdown.Token).ConfigureAwait(false);
+                if (!_foreground.Reader.TryRead(out var item) && !_channel.Reader.TryRead(out item))
+                {
+                    continue;
+                }
                 await item(_shutdown.Token).ConfigureAwait(false);
             }
         }
@@ -115,6 +144,7 @@ public sealed class BoundedWorkQueue : IAsyncDisposable
         }
 
         _channel.Writer.TryComplete();
+        _foreground.Writer.TryComplete();
         await _shutdown.CancelAsync().ConfigureAwait(false);
 
         try
@@ -135,7 +165,12 @@ public sealed class BoundedWorkQueue : IAsyncDisposable
         {
             await abandoned(new CancellationToken(canceled: true)).ConfigureAwait(false);
         }
+        while (_foreground.Reader.TryRead(out var abandoned))
+        {
+            await abandoned(new CancellationToken(canceled: true)).ConfigureAwait(false);
+        }
 
         _shutdown.Dispose();
+        _available.Dispose();
     }
 }

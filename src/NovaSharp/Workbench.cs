@@ -54,13 +54,14 @@ internal static class Workbench
     internal static DocumentSaver Saver { get; } = new(Paths, Files, Codec, BackgroundWork);
 
     /// <summary>
-    /// The document the workbench is showing, or <see langword="null"/> when the editor is not up.
+    /// The URI-keyed document collection owned by the mounted editor workbench.
     /// </summary>
     /// <remarks>
-    /// Held here because the window's closing callback has to reach it, and that callback runs outside any component.
-    /// One document is all phase 2 has; phase 4 replaces this with the document collection.
+    /// Held here because window close and Explorer relocation callbacks run outside the editor component.
     /// </remarks>
-    internal static DocumentSession? ActiveDocument { get; set; }
+    internal static DocumentRegistry? Documents { get; set; }
+
+    internal static DocumentSession? ActiveDocument => Documents?.ActiveDocument;
 
     /// <summary>Creates the session for one editor, wiring it to the shared services.</summary>
     internal static DocumentSession CreateSession(IEditorHost host) =>
@@ -72,6 +73,9 @@ internal static class Workbench
             BackgroundWork,
             Notifications,
             static () => Configuration.Current.Settings);
+
+    internal static DocumentRegistry CreateDocumentRegistry(IEditorHost host) =>
+        new(host, Paths, WorkspacePersistence, () => CreateSession(host), Notifications, () => Explorer.Snapshot.RootPath);
 
     private static WorkspaceExplorerService CreateExplorer()
     {
@@ -138,6 +142,12 @@ internal static class Workbench
     {
         // The result is deliberately discarded: the queue applies its own deadline first, and a wait that still
         // overruns means the process should exit anyway rather than hang on a stuck worker.
+        var documents = Documents;
+        Documents = null;
+        if (documents is not null)
+        {
+            _ = documents.DisposeAsync().AsTask().Wait(ShutdownDeadline);
+        }
         _ = Explorer.DisposeAsync().AsTask().Wait(ShutdownDeadline);
         _ = BackgroundWork.DisposeAsync().AsTask().Wait(ShutdownDeadline);
     }

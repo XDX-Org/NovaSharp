@@ -13,7 +13,7 @@ namespace NovaSharp.Editing;
 public sealed class EditorBridge
 {
     private readonly Func<IReadOnlyList<TextEditBatch>, bool> _replicate;
-    private readonly Action _requestResync;
+    private readonly Action<string?> _requestResync;
     private readonly Func<string, Task> _invokeCommand;
 
     /// <param name="replicate">Accepts batches without waiting. Returns whether they were all queued.</param>
@@ -22,6 +22,16 @@ public sealed class EditorBridge
     public EditorBridge(
         Func<IReadOnlyList<TextEditBatch>, bool> replicate,
         Action requestResync,
+        Func<string, Task> invokeCommand)
+        : this(replicate, _ => requestResync(), invokeCommand)
+    {
+        ArgumentNullException.ThrowIfNull(requestResync);
+    }
+
+    /// <summary>Creates a bridge that routes resynchronization by canonical document URI.</summary>
+    public EditorBridge(
+        Func<IReadOnlyList<TextEditBatch>, bool> replicate,
+        Action<string?> requestResync,
         Func<string, Task> invokeCommand)
     {
         ArgumentNullException.ThrowIfNull(replicate);
@@ -55,7 +65,7 @@ public sealed class EditorBridge
 
     /// <summary>Reports a change to the model that no edit batch can describe, such as its line ending.</summary>
     [JSInvokable]
-    public void RequestResync() => _requestResync();
+    public void RequestResync(string? documentUri = null) => _requestResync(documentUri);
 
     /// <summary>Runs a command a Monaco action or keybinding invoked.</summary>
     [JSInvokable]

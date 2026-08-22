@@ -7,9 +7,9 @@ using NovaSharp.Platform;
 
 namespace NovaSharp.Workspace;
 
-public sealed class WorkspaceStateDocument
+public sealed record WorkspaceStateDocument
 {
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 2;
 
     public int SchemaVersion { get; init; } = CurrentSchemaVersion;
     public string? WorkspacePath { get; init; }
@@ -18,6 +18,8 @@ public sealed class WorkspaceStateDocument
     public string? ActivePath { get; init; }
     public bool SidebarVisible { get; init; } = true;
     public int SidebarWidth { get; init; } = 280;
+    public PersistedDocumentView[] OpenDocuments { get; init; } = [];
+    public string? ActiveDocumentId { get; init; }
 
     public static JsonSerializerOptions SerializerOptions { get; } = new(JsonSerializerDefaults.Web)
     {
@@ -26,6 +28,14 @@ public sealed class WorkspaceStateDocument
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 }
+
+public sealed record PersistedDocumentView(
+    string Id,
+    string Path,
+    bool WorkspaceRelative,
+    bool IsPreview,
+    bool IsPinned,
+    EditorViewState? ViewState = null);
 
 public sealed record WorkspaceStateLoadResult(WorkspaceStateDocument State, string? Problem = null);
 
@@ -36,6 +46,7 @@ public sealed class WorkspacePersistenceService
     private readonly IApplicationPaths _paths;
     private readonly IDocumentFileStore _files;
     private readonly BoundedWorkQueue _queue;
+    private readonly SemaphoreSlim _writes = new(1, 1);
 
     public WorkspacePersistenceService(IApplicationPaths paths, IDocumentFileStore files, BoundedWorkQueue queue)
     {
@@ -75,7 +86,11 @@ public sealed class WorkspacePersistenceService
                         $"Workspace state schema {state.SchemaVersion} is newer than this version supports.");
                 }
 
-                return new WorkspaceStateLoadResult(state);
+                return new WorkspaceStateLoadResult(state with
+                {
+                    ExpandedPaths = state.ExpandedPaths ?? [],
+                    OpenDocuments = state.OpenDocuments ?? [],
+                });
             }
             catch (JsonException exception)
             {
@@ -91,15 +106,44 @@ public sealed class WorkspacePersistenceService
             }
         }, cancellationToken);
 
-    public Task SaveAsync(WorkspaceStateDocument state, CancellationToken cancellationToken = default)
+    public async Task SaveAsync(WorkspaceStateDocument state, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(state);
-        return _queue.EnqueueAsync(async token =>
+        await _writes.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await SaveCoreAsync(state, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _writes.Release();
+        }
+    }
+
+    public async Task UpdateAsync(
+        Func<WorkspaceStateDocument, WorkspaceStateDocument> update,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(update);
+        await _writes.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var loaded = await LoadAsync(cancellationToken).ConfigureAwait(false);
+            var state = update(loaded.State) with { SchemaVersion = WorkspaceStateDocument.CurrentSchemaVersion };
+            await SaveCoreAsync(state, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _writes.Release();
+        }
+    }
+
+    private Task SaveCoreAsync(WorkspaceStateDocument state, CancellationToken cancellationToken) =>
+        _queue.EnqueueAsync(async token =>
         {
             Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
             var json = JsonSerializer.Serialize(state, WorkspaceStateDocument.SerializerOptions) + "\n";
             await _files.WriteAllBytesAsync(FilePath, Encoding.UTF8.GetBytes(json), token).ConfigureAwait(false);
             return true;
         }, cancellationToken);
-    }
 }

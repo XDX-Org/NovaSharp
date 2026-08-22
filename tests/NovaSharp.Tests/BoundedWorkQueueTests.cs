@@ -117,6 +117,37 @@ public sealed class BoundedWorkQueueTests
     }
 
     [Fact]
+    public async Task ForegroundLane_RunsBeforeQueuedBackgroundWork()
+    {
+        await using var queue = new BoundedWorkQueue(capacity: 4, workerCount: 1);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var order = new List<string>();
+        var running = queue.EnqueueAsync(async _ =>
+        {
+            started.SetResult();
+            await release.Task;
+            return 0;
+        }, TestContext.Current.CancellationToken);
+        await started.Task;
+
+        var background = queue.EnqueueAsync(_ =>
+        {
+            order.Add("background");
+            return Task.FromResult(0);
+        }, TestContext.Current.CancellationToken);
+        var foreground = queue.EnqueueForegroundAsync(_ =>
+        {
+            order.Add("foreground");
+            return Task.FromResult(0);
+        }, TestContext.Current.CancellationToken);
+
+        release.SetResult();
+        await Task.WhenAll(running, background, foreground);
+        Assert.Equal(["foreground", "background"], order);
+    }
+
+    [Fact]
     public async Task EnqueueAsync_CancelsQueuedWorkWhenTheCallerCancels()
     {
         await using var queue = new BoundedWorkQueue(capacity: 4, workerCount: 1);
@@ -178,6 +209,7 @@ public sealed class BoundedWorkQueueTests
         await using var queue = new BoundedWorkQueue(capacity: 9, workerCount: 1);
 
         Assert.Equal(9, queue.Capacity);
+        Assert.Equal(18, queue.TotalCapacity);
     }
 
     [Fact]

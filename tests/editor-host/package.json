@@ -1,7 +1,7 @@
 {
   "name": "novasharp-editor-host-tests",
   "private": true,
-  "description": "Browser-level phase-1 gates for the packaged Monaco editor host.",
+  "description": "Browser-level Monaco editor host gates for phases 1, 2, and 4.",
   "type": "module",
   "scripts": {
     "test": "node editor-host.test.mjs"

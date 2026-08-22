@@ -66,6 +66,49 @@ public sealed class MonacoEditorHost : IEditorHost
     }
 
     /// <inheritdoc />
+    public async ValueTask SwitchDocumentAsync(Uri uri, EditorViewState? viewState, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(uri);
+        await InvokeAsync<object?>("switchDocument", cancellationToken, uri.AbsoluteUri, viewState).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask ClearDocumentAsync(CancellationToken cancellationToken) =>
+        await InvokeAsync<object?>("clearDocument", cancellationToken).ConfigureAwait(false);
+
+    /// <inheritdoc />
+    public ValueTask<EditorViewState?> GetViewStateAsync(Uri uri, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(uri);
+        return InvokeAsync<EditorViewState?>("viewState", cancellationToken, uri.AbsoluteUri);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask CloseDocumentAsync(Uri uri, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(uri);
+        await InvokeAsync<object?>("closeDocument", cancellationToken, uri.AbsoluteUri).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public ValueTask<DocumentSnapshot> RelocateDocumentAsync(
+        Uri oldUri,
+        Uri newUri,
+        string languageId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(oldUri);
+        ArgumentNullException.ThrowIfNull(newUri);
+        ArgumentException.ThrowIfNullOrWhiteSpace(languageId);
+        return InvokeAsync<DocumentSnapshot>(
+            "relocateDocument",
+            cancellationToken,
+            oldUri.AbsoluteUri,
+            newUri.AbsoluteUri,
+            languageId);
+    }
+
+    /// <inheritdoc />
     public async ValueTask<EditorSequence> ReplaceDocumentAsync(
         string text,
         string lineEnding,
@@ -84,16 +127,58 @@ public sealed class MonacoEditorHost : IEditorHost
     }
 
     /// <inheritdoc />
+    public async ValueTask<EditorSequence> ReplaceDocumentAsync(
+        Uri uri,
+        string text,
+        string lineEnding,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(uri);
+        ArgumentNullException.ThrowIfNull(text);
+        ArgumentException.ThrowIfNullOrEmpty(lineEnding);
+
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(text), writable: false);
+        using var streamReference = new DotNetStreamReference(stream);
+        return await InvokeAsync<EditorSequence>(
+            "replaceDocumentStream",
+            cancellationToken,
+            uri.AbsoluteUri,
+            streamReference,
+            lineEnding).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
     public ValueTask<DocumentSnapshot> GetSnapshotAsync(CancellationToken cancellationToken) =>
         InvokeAsync<DocumentSnapshot>("snapshot", cancellationToken);
+
+    /// <inheritdoc />
+    public ValueTask<DocumentSnapshot> GetSnapshotAsync(Uri uri, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(uri);
+        return InvokeAsync<DocumentSnapshot>("snapshot", cancellationToken, uri.AbsoluteUri);
+    }
 
     /// <inheritdoc />
     public ValueTask<EditorSequence> GetSequenceAsync(CancellationToken cancellationToken) =>
         InvokeAsync<EditorSequence>("sequence", cancellationToken);
 
     /// <inheritdoc />
+    public ValueTask<EditorSequence> GetSequenceAsync(Uri uri, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(uri);
+        return InvokeAsync<EditorSequence>("sequence", cancellationToken, uri.AbsoluteUri);
+    }
+
+    /// <inheritdoc />
     public async ValueTask SetReadOnlyAsync(bool readOnly, CancellationToken cancellationToken) =>
         await InvokeAsync<object?>("setReadOnly", cancellationToken, readOnly).ConfigureAwait(false);
+
+    /// <inheritdoc />
+    public async ValueTask SetReadOnlyAsync(Uri uri, bool readOnly, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(uri);
+        await InvokeAsync<object?>("setReadOnly", cancellationToken, uri.AbsoluteUri, readOnly).ConfigureAwait(false);
+    }
 
     /// <inheritdoc />
     public ValueTask<IReadOnlyList<string>> RegisterCommandsAsync(

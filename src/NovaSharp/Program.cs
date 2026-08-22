@@ -1,7 +1,7 @@
-using Photino.Blazor;
-using Photino.NET;
 using NovaSharp.Platform;
 using NovaSharp.Verification;
+using Photino.Blazor;
+using Photino.NET;
 
 namespace NovaSharp;
 
@@ -59,21 +59,22 @@ internal static class Program
     /// </remarks>
     private static bool OnWindowClosing(object sender, EventArgs e)
     {
-        var document = Workbench.ActiveDocument;
-        if (document is null || !document.HasUnsavedChanges || Volatile.Read(ref _closeConfirmed) != 0)
+        var dirty = Workbench.Documents?.Snapshot.DirtyTabs ?? [];
+        if (dirty.Count == 0 || Volatile.Read(ref _closeConfirmed) != 0)
         {
             return false;
         }
 
-        _ = ConfirmCloseAsync(document);
+        _ = ConfirmCloseAsync(dirty);
         return true;
     }
 
-    private static async Task ConfirmCloseAsync(Editing.DocumentSession document)
+    private static async Task ConfirmCloseAsync(IReadOnlyList<Editing.DocumentTabSnapshot> dirty)
     {
+        var names = string.Join("\n", dirty.Select(tab => $"• {tab.Label}"));
         var answer = await App.MainWindow.ShowMessageAsync(
             "NovaSharp",
-            $"{document.Status.DisplayName} has unsaved changes. Close without saving?",
+            $"Close and discard changes in these documents?\n\n{names}",
             PhotinoDialogButtons.YesNo,
             PhotinoDialogIcon.Warning).ConfigureAwait(false);
 

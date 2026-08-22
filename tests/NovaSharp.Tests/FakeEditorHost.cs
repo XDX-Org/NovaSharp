@@ -47,6 +47,23 @@ internal sealed class FakeEditorHost : IEditorHost
         return ValueTask.FromResult(new EditorSequence(Sequence, AlternativeSequence));
     }
 
+    public ValueTask SwitchDocumentAsync(Uri uri, EditorViewState? viewState, CancellationToken cancellationToken) =>
+        ValueTask.CompletedTask;
+
+    public ValueTask ClearDocumentAsync(CancellationToken cancellationToken) => ValueTask.CompletedTask;
+
+    public ValueTask<EditorViewState?> GetViewStateAsync(Uri uri, CancellationToken cancellationToken) =>
+        ValueTask.FromResult<EditorViewState?>(null);
+
+    public ValueTask CloseDocumentAsync(Uri uri, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+
+    public ValueTask<DocumentSnapshot> RelocateDocumentAsync(
+        Uri oldUri,
+        Uri newUri,
+        string languageId,
+        CancellationToken cancellationToken) =>
+        ValueTask.FromResult(new DocumentSnapshot(Text, Sequence, AlternativeSequence));
+
     public ValueTask<EditorSequence> ReplaceDocumentAsync(string text, string lineEnding, CancellationToken cancellationToken)
     {
         _text.Clear();
@@ -56,20 +73,36 @@ internal sealed class FakeEditorHost : IEditorHost
         return ValueTask.FromResult(new EditorSequence(Sequence, AlternativeSequence));
     }
 
+    public ValueTask<EditorSequence> ReplaceDocumentAsync(
+        Uri uri,
+        string text,
+        string lineEnding,
+        CancellationToken cancellationToken) =>
+        ReplaceDocumentAsync(text, lineEnding, cancellationToken);
+
     public ValueTask<DocumentSnapshot> GetSnapshotAsync(CancellationToken cancellationToken)
     {
         SnapshotCount++;
         return ValueTask.FromResult(new DocumentSnapshot(Text, Sequence, AlternativeSequence));
     }
 
+    public ValueTask<DocumentSnapshot> GetSnapshotAsync(Uri uri, CancellationToken cancellationToken) =>
+        GetSnapshotAsync(cancellationToken);
+
     public ValueTask<EditorSequence> GetSequenceAsync(CancellationToken cancellationToken) =>
         ValueTask.FromResult(new EditorSequence(Sequence, AlternativeSequence));
+
+    public ValueTask<EditorSequence> GetSequenceAsync(Uri uri, CancellationToken cancellationToken) =>
+        GetSequenceAsync(cancellationToken);
 
     public ValueTask SetReadOnlyAsync(bool readOnly, CancellationToken cancellationToken)
     {
         IsReadOnly = readOnly;
         return ValueTask.CompletedTask;
     }
+
+    public ValueTask SetReadOnlyAsync(Uri uri, bool readOnly, CancellationToken cancellationToken) =>
+        SetReadOnlyAsync(readOnly, cancellationToken);
 
     /// <summary>The commands the editor was last told to bind.</summary>
     public IReadOnlyList<CommandDescriptor> RegisteredCommands { get; private set; } = [];

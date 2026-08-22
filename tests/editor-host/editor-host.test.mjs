@@ -1,6 +1,6 @@
 // Browser-level gates for the packaged Monaco editor host.
 //
-// These assert the parts of phases 1 and 2 that only a real browser can prove: the packaged bundle loads from the
+// These assert the parts of phases 1, 2, and 4 that only a real browser can prove: the packaged bundle loads from the
 // application's own origin, the editor worker starts as a real dedicated worker rather than falling back to the
 // browser thread, nothing reaches the network at runtime, disposal actually releases the model, and — the phase-2
 // gate — the edit batches Monaco produces reconstruct its text exactly in a shadow that only ever sees those batches.
@@ -577,10 +577,45 @@ try {
     const afterReopen = await page.evaluate(() => globalThis.editor.runtimeInfo());
     check('reopening the same URI reuses one model', afterReopen.modelCount === 1, String(afterReopen.modelCount));
 
-    // Switching documents releases the previous model deterministically.
+    // Tabs retain one leased model per URI and switching only reattaches the existing model.
+    const widgetViewBeforeSwitch = await page.evaluate(() =>
+        globalThis.editor.viewState('file:///workspace/Widget.cs'));
     await page.evaluate(() => globalThis.editor.openDocument('file:///workspace/Other.cs', 'csharp', 'class Other;\n', '\n', false));
     const afterSwitch = await page.evaluate(() => globalThis.editor.runtimeInfo());
-    check('switching documents releases the previous model', afterSwitch.modelCount === 1, String(afterSwitch.modelCount));
+    check('opening another tab retains one model per URI', afterSwitch.modelCount === 2, String(afterSwitch.modelCount));
+
+    await page.evaluate(() => globalThis.editor.switchDocument('file:///workspace/Widget.cs'));
+    check('switching tabs reattaches the existing model', await page.evaluate(() =>
+        globalThis.NovaMonaco.editor.getEditors()[0].getModel().uri.toString() === 'file:///workspace/Widget.cs'));
+    const widgetViewAfterSwitch = await page.evaluate(() =>
+        globalThis.editor.viewState('file:///workspace/Widget.cs'));
+    check('switching tabs restores cursor, selection, and scroll state',
+        JSON.stringify(widgetViewAfterSwitch) === JSON.stringify(widgetViewBeforeSwitch),
+        JSON.stringify(widgetViewAfterSwitch));
+
+    await page.evaluate(() => {
+        for (let index = 0; index < 200; index++) {
+            globalThis.editor.switchDocument(index % 2 === 0
+                ? 'file:///workspace/Other.cs'
+                : 'file:///workspace/Widget.cs');
+        }
+    });
+    check('rapid tab switching creates no duplicate models',
+        await page.evaluate(() => globalThis.editor.runtimeInfo()).then(info => info.modelCount === 2));
+    await page.evaluate(() => globalThis.editor.closeDocument('file:///workspace/Other.cs'));
+    check('closing one tab releases only its model',
+        await page.evaluate(() => globalThis.editor.runtimeInfo()).then(info => info.modelCount === 1));
+
+    await page.evaluate(() => globalThis.editor.relocateDocument(
+        'file:///workspace/Widget.cs',
+        'file:///workspace/Renamed.cs',
+        'csharp'));
+    check('renaming a document rekeys one model and retains its text', await page.evaluate(() => {
+        const editor = globalThis.NovaMonaco.editor.getEditors()[0];
+        return editor.getModel().uri.toString() === 'file:///workspace/Renamed.cs'
+            && editor.getModel().getValue().includes('// while comparing')
+            && globalThis.NovaMonaco.editor.getModels().length === 1;
+    }));
 
     await page.evaluate(() => globalThis.editor.dispose());
     const remaining = await page.evaluate(() => globalThis.NovaMonaco.editor.getModels().length);

@@ -1,6 +1,6 @@
 # Editor host tests
 
-Browser-level gates for phases 1 and 2. These assert what only a real browser can show about the packaged Monaco
+Browser-level gates for phases 1, 2, and 4. These assert what only a real browser can show about the packaged Monaco
 editor:
 
 - the bundle and its worker load from the application's own origin, with no runtime network access;
@@ -8,6 +8,8 @@ editor:
 - C# lexical colours come from the packaged language definition;
 - typing, composition, surrogate pairs, and undo are owned by Monaco, with no round trip to .NET;
 - one text model exists per canonical document URI, and disposal releases it;
+- tab switching reattaches retained models, restores view state, survives rapid switching, rekeys renamed documents,
+  and releases only the model whose last lease closes;
 - the edit batches the host produces reconstruct Monaco's text exactly in a shadow that only ever sees those batches,
   with at most one replication call in flight, ascending non-overlapping offsets, and no rejected batch;
 - a line-ending change asks for a resynchronization rather than sending offsets into text the shadow does not have;
@@ -27,7 +29,7 @@ The Monaco assets must already be built, which the repository bootstrap does. Th
 
 ```bash
 cd tests/editor-host
-npm install
+npm ci
 npx playwright install chromium
 npm test
 ```
@@ -40,7 +42,7 @@ executable and skip `npx playwright install`.
 The suite runs in [CI](../../.github/workflows/ci.yml) on every runtime identifier in the
 [supported platform matrix](../../docs/delivery-plan.md#supported-platform-matrix), against the Chromium build pinned
 by the Playwright version in `package-lock.json`. CI sets `NOVASHARP_BROWSER_METRICS` and
-`NOVASHARP_FIXTURE_NAME`, causing the suite to write the measured values and all 64 assertions to the RID's retained
+`NOVASHARP_FIXTURE_NAME`, causing the suite to write the measured values and all 69 assertions to the RID's retained
 JSON evidence.
 
 It is deliberately not part of the bootstrap. The bootstrap acquires only hash-pinned assets, and adding a browser

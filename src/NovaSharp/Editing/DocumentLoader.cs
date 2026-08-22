@@ -50,12 +50,25 @@ public sealed class DocumentLoader
         string path,
         TextEncodingProfile encoding,
         LineEndingStyle defaultLineEnding,
+        CancellationToken cancellationToken) =>
+        OpenAsync(path, encoding, defaultLineEnding, foreground: true, cancellationToken);
+
+    public Task<OpenedDocument> OpenAsync(
+        string path,
+        TextEncodingProfile encoding,
+        LineEndingStyle defaultLineEnding,
+        bool foreground,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentNullException.ThrowIfNull(encoding);
 
-        return _queue.EnqueueAsync(async token =>
+        Task<OpenedDocument> ReadAsync(CancellationToken token) => ReadCoreAsync(token);
+        return foreground
+            ? _queue.EnqueueForegroundAsync(ReadAsync, cancellationToken)
+            : _queue.EnqueueAsync(ReadAsync, cancellationToken);
+
+        async Task<OpenedDocument> ReadCoreAsync(CancellationToken token)
         {
             var bytes = await _store.ReadAllBytesAsync(path, token).ConfigureAwait(false);
 
@@ -86,6 +99,6 @@ public sealed class DocumentLoader
                 disk.ReadOnly);
 
             return new OpenedDocument(record, content);
-        }, cancellationToken);
+        }
     }
 }

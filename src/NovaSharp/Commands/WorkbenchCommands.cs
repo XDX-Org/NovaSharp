@@ -40,6 +40,17 @@ public static class WorkbenchCommands
     /// <summary>Choose the line ending a save writes.</summary>
     public const string ChooseLineEnding = "novasharp.document.chooseLineEnding";
 
+    public const string Close = "novasharp.tabs.close";
+    public const string CloseOthers = "novasharp.tabs.closeOthers";
+    public const string CloseRight = "novasharp.tabs.closeRight";
+    public const string CloseSaved = "novasharp.tabs.closeSaved";
+    public const string CloseAll = "novasharp.tabs.closeAll";
+    public const string MoveTabLeft = "novasharp.tabs.moveLeft";
+    public const string MoveTabRight = "novasharp.tabs.moveRight";
+    public const string PreviousTab = "novasharp.tabs.previous";
+    public const string NextTab = "novasharp.tabs.next";
+    public const string PinTab = "novasharp.tabs.pin";
+
     public const string OpenWorkspace = "novasharp.workspace.open";
     public const string CloseWorkspace = "novasharp.workspace.close";
     public const string RefreshWorkspace = "novasharp.workspace.refresh";
@@ -63,6 +74,16 @@ public static class WorkbenchCommands
         KeepEditorText => new CommandDescriptor(KeepEditorText, "Keep The Editor's Text", Category, [], ShowInPalette: false),
         ChooseEncoding => new CommandDescriptor(ChooseEncoding, "Change File Encoding…", Category, [], ShowInPalette: true),
         ChooseLineEnding => new CommandDescriptor(ChooseLineEnding, "Change Line Ending…", Category, [], ShowInPalette: true),
+        Close => new CommandDescriptor(Close, "Close Editor", "View", ["CtrlCmd+W"], ShowInPalette: true),
+        CloseOthers => new CommandDescriptor(CloseOthers, "Close Other Editors", "View", [], ShowInPalette: true),
+        CloseRight => new CommandDescriptor(CloseRight, "Close Editors to the Right", "View", [], ShowInPalette: true),
+        CloseSaved => new CommandDescriptor(CloseSaved, "Close Saved Editors", "View", [], ShowInPalette: true),
+        CloseAll => new CommandDescriptor(CloseAll, "Close All Editors", "View", [], ShowInPalette: true),
+        MoveTabLeft => new CommandDescriptor(MoveTabLeft, "Move Editor Left", "View", ["CtrlCmd+Shift+PageUp"], ShowInPalette: true),
+        MoveTabRight => new CommandDescriptor(MoveTabRight, "Move Editor Right", "View", ["CtrlCmd+Shift+PageDown"], ShowInPalette: true),
+        PreviousTab => new CommandDescriptor(PreviousTab, "Previous Editor", "View", ["CtrlCmd+PageUp"], ShowInPalette: true),
+        NextTab => new CommandDescriptor(NextTab, "Next Editor", "View", ["CtrlCmd+PageDown"], ShowInPalette: true),
+        PinTab => new CommandDescriptor(PinTab, "Keep Open", "View", [], ShowInPalette: true),
         OpenWorkspace => new CommandDescriptor(OpenWorkspace, "Open Folder…", "Workspace", ["CtrlCmd+Shift+O"], ShowInPalette: true),
         CloseWorkspace => new CommandDescriptor(CloseWorkspace, "Close Folder", "Workspace", [], ShowInPalette: true),
         RefreshWorkspace => new CommandDescriptor(RefreshWorkspace, "Refresh Explorer", "Workspace", [], ShowInPalette: true),
@@ -75,6 +96,7 @@ public static class WorkbenchCommands
     public static IReadOnlyList<string> All { get; } =
     [
         Open, Save, SaveAs, Reload, Compare, EndCompare, KeepEditorText, ChooseEncoding, ChooseLineEnding,
+        Close, CloseOthers, CloseRight, CloseSaved, CloseAll, MoveTabLeft, MoveTabRight, PreviousTab, NextTab, PinTab,
         OpenWorkspace, CloseWorkspace, RefreshWorkspace, ToggleExplorer, RevealActiveFile,
     ];
 }

@@ -8,7 +8,7 @@
 // Nothing here waits for .NET on the typing path. A change event appends to a queue and returns; a pump sends what is
 // queued with at most one call in flight, and whatever Monaco raises while that call is outstanding travels in the
 // next one. Whole document text crosses this boundary only on open, on a NovaSharp-driven replacement, and on the
-// snapshot a resynchronization asks for.
+// snapshot a resynchronization asks for, including the one needed when an immutable model URI changes.
 //
 // Loaded as an ES module. The bundle resolves its worker URL from import.meta.url, so a classic script tag would
 // silently break worker creation.
@@ -259,7 +259,8 @@ export function createEditor(container, bridge) {
     observer.observe(container);
 
     let currentModel = null;
-    let contentSubscription = null;
+    let currentDocument = null;
+    const documents = new Map();
     let disposed = false;
     let workerVerified;
     let registeredCommands = [];
@@ -267,16 +268,8 @@ export function createEditor(container, bridge) {
     let diffObserver = null;
     let originalModel = null;
 
-    // Replication state. `sentSequence` is the version .NET's shadow is known to have been told about, which is what
-    // makes every batch's base sequence continue from the last one rather than from wherever Monaco has got to.
-    let sentSequence = 0;
-    let queued = [];
-    let sending = false;
-    let resyncing = false;
-    let resyncRequestPending = false;
     let maximumQueueDepth = 0;
     let overflowCount = 0;
-    let suppressed = false;
 
     const ensureLive = () => {
         if (disposed) {
@@ -284,78 +277,78 @@ export function createEditor(container, bridge) {
         }
     };
 
-    function scheduleResync() {
-        queued = [];
-        resyncing = true;
-        resyncRequestPending = true;
-        if (!sending) {
-            void requestResync();
+    function scheduleResync(document) {
+        document.queued = [];
+        document.resyncing = true;
+        document.resyncRequestPending = true;
+        if (!document.sending) {
+            void requestResync(document);
         }
     }
 
     /** Requests a snapshot without overlapping the edit send that may already be in flight. */
-    async function requestResync() {
-        if (sending || !resyncRequestPending || disposed) {
+    async function requestResync(document) {
+        if (document.sending || !document.resyncRequestPending || disposed) {
             return;
         }
 
-        sending = true;
-        resyncRequestPending = false;
+        document.sending = true;
+        document.resyncRequestPending = false;
         try {
-            await bridge.invokeMethodAsync('RequestResync');
+            await bridge.invokeMethodAsync('RequestResync', document.model.uri.toString());
         } catch {
             // The page is going away. A later open reconstructs the shadow from the file and a fresh model.
         } finally {
-            sending = false;
+            document.sending = false;
         }
     }
 
     /** Sends what is queued, keeping at most one interop call in flight. */
-    async function flush() {
-        if (sending || queued.length === 0 || disposed || resyncing) {
+    async function flush(document) {
+        if (document.sending || document.queued.length === 0 || disposed || document.resyncing) {
             return;
         }
 
-        sending = true;
-        const batches = queued;
-        queued = [];
+        document.sending = true;
+        const batches = document.queued;
+        document.queued = [];
 
         try {
             const accepted = await bridge.invokeMethodAsync('ReplicateEdits', batches);
             if (accepted === false) {
                 // .NET dropped a batch and is fetching a snapshot instead. Anything still queued describes edits that
                 // the snapshot will already contain, so sending it would only ask for a second recovery.
-                queued = [];
-                resyncing = true;
+                document.queued = [];
+                document.resyncing = true;
             }
         } catch {
             // The page is being torn down, or .NET is gone. Neither is worth interrupting the user's typing over, and
             // the shadow is rebuilt from a snapshot when the document is next opened.
-            queued = [];
+            document.queued = [];
         } finally {
-            sending = false;
-            if (resyncRequestPending) {
-                void requestResync();
-            } else if (queued.length > 0 && !resyncing) {
-                void flush();
+            document.sending = false;
+            if (document.resyncRequestPending) {
+                void requestResync(document);
+            } else if (document.queued.length > 0 && !document.resyncing) {
+                void flush(document);
             }
         }
     }
 
-    function onContentChanged(event) {
-        if (suppressed || disposed) {
+    function onContentChanged(document, event) {
+        if (document.suppressed || disposed) {
             return;
         }
 
         if (event.isEolChange) {
             // A line-ending change rewrites every line in the model at once and no range edit describes it. The queue
             // is dropped and .NET rebuilds from a snapshot rather than being sent offsets into text it does not have.
-            sentSequence = currentModel.getVersionId();
-            scheduleResync();
+            document.sentSequence = document.model.getVersionId();
+            scheduleResync(document);
             return;
         }
 
-        if (resyncing) {
+        if (document.resyncing) {
             return;
         }
 
@@ -372,24 +365,24 @@ export function createEditor(container, bridge) {
         }
 
         const batch = {
-            documentUri: currentModel.uri.toString(),
-            baseSequence: sentSequence,
+            documentUri: document.model.uri.toString(),
+            baseSequence: document.sentSequence,
             resultSequence: event.versionId,
-            alternativeSequence: currentModel.getAlternativeVersionId(),
+            alternativeSequence: document.model.getAlternativeVersionId(),
             origin: ORIGIN_USER,
             edits,
         };
 
-        sentSequence = event.versionId;
-        if (queued.length === REPLICATION_CAPACITY) {
+        document.sentSequence = event.versionId;
+        if (document.queued.length === REPLICATION_CAPACITY) {
             overflowCount += 1;
-            scheduleResync();
+            scheduleResync(document);
             return;
         }
 
-        queued.push(batch);
-        maximumQueueDepth = Math.max(maximumQueueDepth, queued.length);
-        void flush();
+        document.queued.push(batch);
+        maximumQueueDepth = Math.max(maximumQueueDepth, document.queued.length);
+        void flush(document);
     }
 
     /** Stops any open comparison and gives the model back to the editor. */
@@ -416,15 +409,73 @@ export function createEditor(container, bridge) {
         }
     }
 
-    function attach(model) {
-        contentSubscription?.dispose();
-        currentModel = model;
-        editor.setModel(model);
-        sentSequence = model.getVersionId();
-        queued = [];
-        resyncing = false;
-        resyncRequestPending = false;
-        contentSubscription = model.onDidChangeContent(onContentChanged);
+    function portableViewState() {
+        if (!currentDocument || !currentModel) {
+            return null;
+        }
+
+        const selection = editor.getSelection();
+        const position = editor.getPosition();
+        return {
+            lineNumber: position?.lineNumber ?? 1,
+            column: position?.column ?? 1,
+            selectionStartLineNumber: selection?.selectionStartLineNumber ?? position?.lineNumber ?? 1,
+            selectionStartColumn: selection?.selectionStartColumn ?? position?.column ?? 1,
+            positionLineNumber: selection?.positionLineNumber ?? position?.lineNumber ?? 1,
+            positionColumn: selection?.positionColumn ?? position?.column ?? 1,
+            scrollTop: editor.getScrollTop(),
+            scrollLeft: editor.getScrollLeft(),
+        };
+    }
+
+    function captureCurrentView() {
+        if (!currentDocument) {
+            return;
+        }
+
+        currentDocument.monacoViewState = editor.saveViewState();
+        currentDocument.portableViewState = portableViewState();
+    }
+
+    function clampPosition(model, lineNumber, column) {
+        const line = Math.max(1, Math.min(Number(lineNumber) || 1, model.getLineCount()));
+        const maximumColumn = model.getLineMaxColumn(line);
+        return { lineNumber: line, column: Math.max(1, Math.min(Number(column) || 1, maximumColumn)) };
+    }
+
+    function restorePortableView(document, state) {
+        if (!state) {
+            return;
+        }
+
+        const start = clampPosition(document.model, state.selectionStartLineNumber, state.selectionStartColumn);
+        const end = clampPosition(document.model, state.positionLineNumber, state.positionColumn);
+        editor.setSelection({
+            selectionStartLineNumber: start.lineNumber,
+            selectionStartColumn: start.column,
+            positionLineNumber: end.lineNumber,
+            positionColumn: end.column,
+        });
+        editor.setScrollPosition({
+            scrollTop: Math.max(0, Number(state.scrollTop) || 0),
+            scrollLeft: Math.max(0, Number(state.scrollLeft) || 0),
+        });
+    }
+
+    function attach(document, restoredViewState = null) {
+        if (currentDocument !== document) {
+            captureCurrentView();
+            currentDocument = document;
+            currentModel = document.model;
+            editor.setModel(document.model);
+        }
+
+        editor.updateOptions({ readOnly: document.readOnly });
+        if (restoredViewState) {
+            restorePortableView(document, restoredViewState);
+        } else if (document.monacoViewState) {
+            editor.restoreViewState(document.monacoViewState);
+        }
     }
 
     const handle = {
@@ -537,26 +588,148 @@ export function createEditor(container, bridge) {
         openDocument(uriString, languageId, text, lineEnding, readOnly) {
             ensureLive();
 
-            const next = acquireModel(uriString, languageId, text, lineEnding);
-            if (next !== currentModel) {
-                const previous = currentModel;
-                attach(next);
-
-                // Released after the swap, so the editor is never briefly attached to a disposed model.
-                releaseModel(previous);
-            } else {
-                releaseModel(next);
+            const key = monaco.Uri.parse(uriString).toString();
+            let document = documents.get(key);
+            if (!document) {
+                const model = acquireModel(uriString, languageId, text, lineEnding);
+                document = {
+                    model,
+                    readOnly: readOnly === true,
+                    sentSequence: model.getVersionId(),
+                    queued: [],
+                    sending: false,
+                    resyncing: false,
+                    resyncRequestPending: false,
+                    suppressed: false,
+                    monacoViewState: null,
+                    portableViewState: null,
+                    contentSubscription: null,
+                };
+                document.contentSubscription = model.onDidChangeContent(event => onContentChanged(document, event));
+                documents.set(key, document);
             }
 
-            editor.updateOptions({ readOnly: readOnly === true });
+            document.readOnly = readOnly === true;
+            attach(document);
             editor.focus();
-            return readSequence(currentModel);
+            return readSequence(document.model);
         },
 
         /** Opens text streamed as UTF-8 so a large initial document does not need a second JSON-sized interop buffer. */
         async openDocumentStream(uriString, languageId, textStream, lineEnding, readOnly) {
             const text = new TextDecoder().decode(await textStream.arrayBuffer());
             return handle.openDocument(uriString, languageId, text, lineEnding, readOnly);
+        },
+
+        /** Attaches an existing model without copying its text or recreating its undo history. */
+        switchDocument(uriString, restoredViewState) {
+            ensureLive();
+            const document = documents.get(monaco.Uri.parse(uriString).toString());
+            if (!document) {
+                throw new Error(`Document is not open: ${uriString}`);
+            }
+
+            attach(document, restoredViewState);
+            editor.focus();
+            return readSequence(document.model);
+        },
+
+        /** Detaches the active view without releasing any document lease. */
+        clearDocument() {
+            ensureLive();
+            stopCompare();
+            captureCurrentView();
+            editor.setModel(null);
+            currentDocument = null;
+            currentModel = null;
+            return null;
+        },
+
+        /** Returns the portable cursor, selection, and scroll state for one view. */
+        viewState(uriString) {
+            ensureLive();
+            const document = documents.get(monaco.Uri.parse(uriString).toString());
+            if (!document) {
+                return null;
+            }
+
+            if (document === currentDocument) {
+                captureCurrentView();
+            }
+
+            return document.portableViewState;
+        },
+
+        /** Releases one model lease; all other open tabs and editor instances remain intact. */
+        closeDocument(uriString) {
+            ensureLive();
+            const key = monaco.Uri.parse(uriString).toString();
+            const document = documents.get(key);
+            if (!document) {
+                return null;
+            }
+
+            if (document === currentDocument) {
+                stopCompare();
+                editor.setModel(null);
+                currentDocument = null;
+                currentModel = null;
+            }
+
+            document.queued = [];
+            document.contentSubscription?.dispose();
+            documents.delete(key);
+            releaseModel(document.model);
+            return null;
+        },
+
+        /** Recreates a model under a new immutable Monaco URI while preserving live text and view state. */
+        relocateDocument(oldUriString, newUriString, languageId) {
+            ensureLive();
+            const oldKey = monaco.Uri.parse(oldUriString).toString();
+            const newKey = monaco.Uri.parse(newUriString).toString();
+            const oldDocument = documents.get(oldKey);
+            if (!oldDocument) {
+                throw new Error(`Document is not open: ${oldUriString}`);
+            }
+
+            if (oldKey === newKey) {
+                return {
+                    text: oldDocument.model.getValue(),
+                    ...readSequence(oldDocument.model),
+                };
+            }
+
+            const wasCurrent = oldDocument === currentDocument;
+            if (wasCurrent) {
+                stopCompare();
+            }
+            captureCurrentView();
+            const model = acquireModel(newUriString, languageId, oldDocument.model.getValue(), oldDocument.model.getEOL());
+            const document = {
+                ...oldDocument,
+                model,
+                sentSequence: model.getVersionId(),
+                queued: [],
+                sending: false,
+                resyncing: false,
+                resyncRequestPending: false,
+                suppressed: false,
+                contentSubscription: null,
+            };
+            document.contentSubscription = model.onDidChangeContent(event => onContentChanged(document, event));
+
+            oldDocument.queued = [];
+            oldDocument.contentSubscription?.dispose();
+            documents.delete(oldKey);
+            documents.set(newKey, document);
+            if (wasCurrent) {
+                currentDocument = null;
+                currentModel = null;
+                attach(document);
+            }
+            releaseModel(oldDocument.model);
+            return { text: model.getValue(), ...readSequence(model) };
         },
 
         /**
@@ -567,53 +740,70 @@ export function createEditor(container, bridge) {
          * the text it just supplied, and the returned sequence is what its shadow adopts, so sending edits describing
          * a state both sides already agree on would cost a round trip and buy nothing.
          */
-        replaceDocument(text, lineEnding) {
+        replaceDocument(uriOrText, textOrLineEnding, maybeLineEnding) {
             ensureLive();
-            const model = currentModel;
-            if (!model) {
-                throw new Error('No document is open.');
+            const targeted = maybeLineEnding !== undefined;
+            const document = targeted
+                ? documents.get(monaco.Uri.parse(uriOrText).toString())
+                : currentDocument;
+            const text = targeted ? textOrLineEnding : uriOrText;
+            const lineEnding = targeted ? maybeLineEnding : textOrLineEnding;
+            if (!document) {
+                throw new Error('The document is not open.');
             }
 
-            suppressed = true;
+            const model = document.model;
+            document.suppressed = true;
             try {
                 model.pushStackElement();
                 model.setEOL(toEndOfLineSequence(lineEnding));
                 model.pushEditOperations(
-                    editor.getSelections() ?? [],
+                    document === currentDocument ? editor.getSelections() ?? [] : [],
                     [{ range: model.getFullModelRange(), text, forceMoveMarkers: true }],
                     () => null);
                 model.pushStackElement();
             } finally {
-                suppressed = false;
-                queued = [];
-                resyncing = false;
-                resyncRequestPending = false;
-                sentSequence = model.getVersionId();
+                document.suppressed = false;
+                document.queued = [];
+                document.resyncing = false;
+                document.resyncRequestPending = false;
+                document.sentSequence = model.getVersionId();
             }
 
             return readSequence(model);
         },
 
         /** Replaces text streamed as UTF-8; ordinary incremental edits never use this whole-document path. */
-        async replaceDocumentStream(textStream, lineEnding) {
-            const text = new TextDecoder().decode(await textStream.arrayBuffer());
-            return handle.replaceDocument(text, lineEnding);
+        async replaceDocumentStream(uriOrStream, streamOrLineEnding, maybeLineEnding) {
+            const targeted = maybeLineEnding !== undefined;
+            const stream = targeted ? streamOrLineEnding : uriOrStream;
+            const text = new TextDecoder().decode(await stream.arrayBuffer());
+            return targeted
+                ? handle.replaceDocument(uriOrStream, text, maybeLineEnding)
+                : handle.replaceDocument(text, streamOrLineEnding);
         },
 
         /** Reads the model's text and sequence together, for a resynchronization. */
-        snapshot() {
+        snapshot(uriString) {
             ensureLive();
-            const model = currentModel;
-            if (!model) {
+            const document = uriString
+                ? documents.get(monaco.Uri.parse(uriString).toString())
+                : currentDocument;
+            if (!document) {
+                if (uriString) {
+                    throw new Error(`Document is not open: ${uriString}`);
+                }
                 return { text: '', sequence: 0, alternativeSequence: 0 };
             }
 
+            const model = document.model;
+
             // The queue is cleared with the same certainty the snapshot is taken: everything in it is text the
             // snapshot already contains.
-            queued = [];
-            resyncing = false;
-            resyncRequestPending = false;
-            sentSequence = model.getVersionId();
+            document.queued = [];
+            document.resyncing = false;
+            document.resyncRequestPending = false;
+            document.sentSequence = model.getVersionId();
 
             return {
                 text: model.getValue(),
@@ -623,15 +813,32 @@ export function createEditor(container, bridge) {
         },
 
         /** Reads the model's sequence without its text, for a save barrier. */
-        sequence() {
+        sequence(uriString) {
             ensureLive();
-            return readSequence(currentModel);
+            const document = uriString
+                ? documents.get(monaco.Uri.parse(uriString).toString())
+                : currentDocument;
+            if (uriString && !document) {
+                throw new Error(`Document is not open: ${uriString}`);
+            }
+            return readSequence(document?.model);
         },
 
         /** Makes the editor refuse edits, for a file that cannot be written. */
-        setReadOnly(readOnly) {
+        setReadOnly(uriOrReadOnly, maybeReadOnly) {
             ensureLive();
-            editor.updateOptions({ readOnly: readOnly === true });
+            const targeted = maybeReadOnly !== undefined;
+            const document = targeted
+                ? documents.get(monaco.Uri.parse(uriOrReadOnly).toString())
+                : currentDocument;
+            if (!document) {
+                return null;
+            }
+
+            document.readOnly = (targeted ? maybeReadOnly : uriOrReadOnly) === true;
+            if (document === currentDocument) {
+                editor.updateOptions({ readOnly: document.readOnly });
+            }
             return null;
         },
 
@@ -647,7 +854,7 @@ export function createEditor(container, bridge) {
                 documentLength: currentModel?.getValueLength() ?? 0,
                 externalRequestCount: countExternalRequests(),
                 replicationCapacity: REPLICATION_CAPACITY,
-                replicationQueueDepth: queued.length,
+                replicationQueueDepth: [...documents.values()].reduce((sum, document) => sum + document.queued.length, 0),
                 replicationMaximumQueueDepth: maximumQueueDepth,
                 replicationOverflowCount: overflowCount,
             };
@@ -664,19 +871,21 @@ export function createEditor(container, bridge) {
             stopCompare();
 
             disposed = true;
-            queued = [];
-
             for (const registration of registeredCommands) {
                 registration.dispose();
             }
 
             registeredCommands = [];
-            contentSubscription?.dispose();
-            contentSubscription = null;
             observer.disconnect();
             editor.setModel(null);
             editor.dispose();
-            releaseModel(currentModel);
+            for (const document of documents.values()) {
+                document.queued = [];
+                document.contentSubscription?.dispose();
+                releaseModel(document.model);
+            }
+            documents.clear();
+            currentDocument = null;
             currentModel = null;
         },
     };

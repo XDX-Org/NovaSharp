@@ -58,6 +58,10 @@ NovaSharp is currently in the **early prototype stage**.
 
 The core architecture and initial IDE functionality are being implemented. It is not yet recommended for production development or as a replacement for an established IDE.
 
+The current workbench can open a workspace, keep multiple files in URI-deduplicated tabs, reuse a single preview tab,
+reorder and close tabs by pointer or keyboard, and restore open files plus cursor, selection, and scroll state after an
+orderly restart. Phase 4's implementation is present but remains unqualified until every supported platform passes.
+
 Expect:
 
 * Missing features
@@ -194,7 +198,8 @@ passes every gate through Phase 3 on all six supported runtime identifiers.
 > Monaco is mounted and is the only editor, and the document lifecycle around it — asynchronous edit replication, dirty
 > state, safe save and reload, encoding and line-ending handling, and external-change resolution — is in place.
 > The Phase 3 workspace Explorer implementation is also present, with lazy folders, bounded watcher recovery, file
-> operations, accessible incremental tree rendering, and versioned state. Phases 1–3 are complete: their implementation,
+> operations, accessible incremental tree rendering, and versioned state. Phase 4's multi-document tab implementation
+> passes local gates and awaits matrix qualification. Phases 1–3 are complete: their implementation,
 > foundations, native host, browser behavior, performance, cancellation, disposal, packaging, and retained-evidence
 > gates pass on every supported runtime identifier.
 

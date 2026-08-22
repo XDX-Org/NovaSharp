@@ -2,8 +2,8 @@ namespace NovaSharp.Editing;
 
 /// <summary>The state handed to Monaco when a document is opened or reloaded.</summary>
 /// <remarks>
-/// Text crosses the interop boundary here and, after phase 2, in one other place: the snapshot a resynchronization
-/// asks for. Ordinary editing never sends a whole document in either direction.
+/// Text crosses the interop boundary here and in a snapshot resynchronization, including the resynchronization needed
+/// to replace an immutable model URI. Ordinary editing never sends a whole document in either direction.
 /// </remarks>
 /// <param name="Uri">The canonical document URI, which is also the Monaco model URI.</param>
 /// <param name="DisplayName">The short name shown in the workbench.</param>

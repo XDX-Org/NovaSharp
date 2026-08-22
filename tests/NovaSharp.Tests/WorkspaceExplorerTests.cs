@@ -361,6 +361,36 @@ public sealed class WorkspacePersistenceTests : IAsyncDisposable
         Assert.Null(loaded.State.WorkspacePath);
     }
 
+    [Fact]
+    public async Task LoadAsync_NormalizesNullCollectionsFromMalformedState()
+    {
+        var service = Create();
+        Directory.CreateDirectory(_root);
+        await File.WriteAllTextAsync(
+            service.FilePath,
+            """{"schemaVersion":2,"expandedPaths":null,"openDocuments":null}""",
+            TestContext.Current.CancellationToken);
+
+        var loaded = await service.LoadAsync(TestContext.Current.CancellationToken);
+
+        Assert.Empty(loaded.State.ExpandedPaths);
+        Assert.Empty(loaded.State.OpenDocuments);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_PreservesStateOwnedByAnotherWorkbenchService()
+    {
+        var service = Create();
+        var document = new PersistedDocumentView("file:///Widget.cs", "Widget.cs", true, false, true);
+        await service.SaveAsync(new WorkspaceStateDocument { OpenDocuments = [document] }, TestContext.Current.CancellationToken);
+
+        await service.UpdateAsync(state => state with { SidebarWidth = 360 }, TestContext.Current.CancellationToken);
+        var loaded = await service.LoadAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(360, loaded.State.SidebarWidth);
+        Assert.Equal([document], loaded.State.OpenDocuments);
+    }
+
     public async ValueTask DisposeAsync()
     {
         await _queue.DisposeAsync();
