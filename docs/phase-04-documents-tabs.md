@@ -77,4 +77,4 @@ recorded limitation remains owned by phase 14.
 
 ## Next phase
 
-Make tab ownership explicit through editor groups and split layouts.
+Establish the workbench shell and visual system before adding editor groups and split layouts.
