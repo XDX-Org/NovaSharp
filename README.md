@@ -89,8 +89,8 @@ priority: no operating system is the reference platform, and a feature is not fi
 
 | Runtime identifier | Host runtime prerequisites | Bootstrap prerequisites | Pinned assets | Automated smoke test |
 |---|---|---|---|---|
-| `linux-arm64` | GTK 4, WebKitGTK 6 | POSIX shell, `curl`, `jq`, `tar`, `unzip`, XZ support | Yes | Wired; green run pending |
-| `linux-x64` | GTK 4, WebKitGTK 6 | POSIX shell, `curl`, `jq`, `tar`, `unzip`, XZ support | Yes | Wired; green run pending |
+| `linux-arm64` | GTK 3, WebKitGTK 4.1 | POSIX shell, `curl`, `jq`, `tar`, `unzip`, XZ support | Yes | Wired; green run pending |
+| `linux-x64` | GTK 3, WebKitGTK 4.1 | POSIX shell, `curl`, `jq`, `tar`, `unzip`, XZ support | Yes | Wired; green run pending |
 | `osx-arm64` | System WebKit | POSIX shell, `curl`, `jq`, `tar`, `unzip` | Yes | Wired; green run pending |
 | `osx-x64` | System WebKit | POSIX shell, `curl`, `jq`, `tar`, `unzip` | Yes | Wired; green run pending |
 | `win-arm64` | WebView2 Evergreen Runtime | PowerShell 5.1 or later | Yes | Wired; green run pending |
@@ -107,7 +107,7 @@ platform uses. One example, for Debian and Ubuntu family systems:
 
 ```bash
 sudo apt-get update
-sudo apt-get install curl jq tar unzip xz-utils libgtk-4-1 libwebkitgtk-6.0-4
+sudo apt-get install curl jq tar unzip xz-utils libwebkit2gtk-4.1-0
 ```
 
 Equivalent packages exist for other distributions, for Homebrew or MacPorts on macOS, and through the Windows runtime installer linked
@@ -187,7 +187,7 @@ produces reconstruct Monaco's text exactly.
 [CI](.github/workflows/ci.yml) runs both, plus bootstrap, RID-specific publish, the published native-host smoke, and
 performance measurements on every runtime identifier from the same commit. Each row retains its application and JSON
 evidence. The native verifier records disposable browser-profile provisioning separately before its repeatable process
-startup measurements. A green run on the new workflow is still outstanding.
+startup measurements and gates the median of three warm launches. A green run on the new workflow is still outstanding.
 
 > [!NOTE]
 > Monaco is mounted and is the only editor, and the document lifecycle around it — asynchronous edit replication, dirty

@@ -76,9 +76,9 @@ For native qualification only, the macOS rows stage the RID publish in a minimal
 required by the pinned window host. This test scaffold does not decide the release packaging or signing format owned by
 phase 17. The app host remains under `Contents/MacOS`; publish data is sealed under `Contents/Resources` and linked into
 the host's base directory. Unused npm command-shim directories receive resource-safe names because Apple otherwise
-interprets their dotted names as nested bundles during signing. The smoke launches that bundle through Launch Services
-and waits on NovaSharp's bounded result-file/process contract; it does not depend on Launch Services returning a process
-identifier or invoke the inner executable directly.
+interprets their dotted names as nested bundles during signing. The smoke launches the upstream host executable from
+the signed layout and waits on NovaSharp's bounded result-file/process contract, so the verifier owns the process and
+its deadline directly.
 
 ### Parity rule
 
@@ -123,8 +123,9 @@ Budgets must be measured on named fixture hardware and repositories. Set numeric
 | Crash recovery and full-workbench memory | 14 |
 
 `tools/NovaSharp.PhaseVerification` first provisions a disposable browser profile, then launches fresh processes for
-the cold, warm, and generated 10 MB fixtures before measuring managed replication and a 1 MB atomic save. Provisioning
-is retained as a separate functional result; the measured launches share its profile. `tests/editor-host` records paint,
+the cold, three warm samples, and generated 10 MB fixtures before measuring managed replication and a 1 MB atomic save.
+Provisioning is retained as a separate functional result; the measured launches share its profile, and the warm gate
+uses the retained samples' median. `tests/editor-host` records paint,
 browser-thread, replication, queue, and 100-cycle heap measurements. CI names the runner fixture and uploads both JSON
 records; a missing record or a budget failure fails that RID's job.
 

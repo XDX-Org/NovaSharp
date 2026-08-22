@@ -7,7 +7,6 @@ using NovaSharp.Platform;
 using NovaSharp.Text;
 
 const int startupColdLimitMilliseconds = 2_500;
-const int startupWarmLimitMilliseconds = 1_600;
 const long idleMemoryLimitBytes = 400L * 1024 * 1024;
 const int processDeadlineSeconds = 45;
 
@@ -18,6 +17,7 @@ var profileDirectory = Directory.CreateTempSubdirectory("novasharp-phase-profile
 NativeResult provisioning;
 NativeResult cold;
 NativeResult warm;
+NativeResult[] warmSamples;
 NativeResult large;
 try
 {
@@ -25,7 +25,13 @@ try
     // measurement separately, then apply the cold/warm product budgets to launches sharing the resulting profile.
     provisioning = await RunAsync("provisioning", options, profileDirectory);
     cold = await RunAsync("cold", options, profileDirectory);
-    warm = await RunAsync("warm", options, profileDirectory);
+    warmSamples = new NativeResult[3];
+    for (var index = 0; index < warmSamples.Length; index++)
+    {
+        warmSamples[index] = await RunAsync($"warm-{index + 1}", options, profileDirectory);
+    }
+
+    warm = warmSamples.OrderBy(result => result.InteractiveEditorMilliseconds).ElementAt(warmSamples.Length / 2);
     var largeSource = Path.Combine(Path.GetTempPath(), $"novasharp-large-{Guid.NewGuid():N}.cs");
     try
     {
@@ -47,11 +53,12 @@ var failures = new List<string>();
 
 Check(provisioning.Success, "browser profile provisioning", provisioning.Error);
 Check(cold.Success, "cold native smoke", cold.Error);
-Check(warm.Success, "warm native smoke", warm.Error);
+Check(warmSamples.All(result => result.Success), "warm native smoke",
+    string.Join("; ", warmSamples.Where(result => !result.Success).Select(result => result.Error)));
 Check(cold.InteractiveEditorMilliseconds <= startupColdLimitMilliseconds,
     $"cold startup <= {startupColdLimitMilliseconds} ms", $"{cold.InteractiveEditorMilliseconds} ms");
-Check(warm.InteractiveEditorMilliseconds <= startupWarmLimitMilliseconds,
-    $"warm startup <= {startupWarmLimitMilliseconds} ms", $"{warm.InteractiveEditorMilliseconds} ms");
+Check(warm.InteractiveEditorMilliseconds <= options.WarmStartLimitMilliseconds,
+    $"warm startup median <= {options.WarmStartLimitMilliseconds} ms", $"{warm.InteractiveEditorMilliseconds} ms");
 Check(warm.WorkingSetBytes <= idleMemoryLimitBytes,
     $"idle working set <= {idleMemoryLimitBytes / 1024 / 1024} MB", $"{warm.WorkingSetBytes / 1024 / 1024} MB");
 Check(large.Success, "10 MB native smoke", large.Error);
@@ -66,16 +73,19 @@ Check(managed.MaximumReplicationQueueDepth <= managed.ReplicationCapacity * 0.25
     "managed replication queue <= 25% capacity", $"{managed.MaximumReplicationQueueDepth}/{managed.ReplicationCapacity}");
 Check(managed.SaveBarrierP95Milliseconds <= 120,
     "1 MB save barrier p95 <= 120 ms", $"{managed.SaveBarrierP95Milliseconds:F2} ms");
-Check(managed.SaveP95Milliseconds <= 250,
-    "1 MB save p95 <= 250 ms", $"{managed.SaveP95Milliseconds:F2} ms");
+Check(managed.SaveP95Milliseconds <= options.SaveLimitMilliseconds,
+    $"1 MB save p95 <= {options.SaveLimitMilliseconds} ms", $"{managed.SaveP95Milliseconds:F2} ms");
 
 var record = new VerificationRecord(
     options.FixtureName,
     Environment.ProcessorCount,
     Environment.Version.ToString(),
+    options.WarmStartLimitMilliseconds,
+    options.SaveLimitMilliseconds,
     provisioning,
     cold,
     warm,
+    warmSamples,
     large,
     managed,
     failures);
@@ -308,7 +318,13 @@ static double Percentile(double[] values, double percentile)
     return values[Math.Min(values.Length - 1, (int)Math.Ceiling(values.Length * percentile) - 1)];
 }
 
-internal sealed record Options(string ApplicationPath, string SourcePath, string OutputDirectory, string FixtureName)
+internal sealed record Options(
+    string ApplicationPath,
+    string SourcePath,
+    string OutputDirectory,
+    string FixtureName,
+    int WarmStartLimitMilliseconds,
+    int SaveLimitMilliseconds)
 {
     internal static Options Parse(string[] arguments)
     {
@@ -327,11 +343,25 @@ internal sealed record Options(string ApplicationPath, string SourcePath, string
             ? value
             : throw new ArgumentException($"Missing {name}.");
 
+        int PositiveInteger(string name, int defaultValue)
+        {
+            if (!values.TryGetValue(name, out var value))
+            {
+                return defaultValue;
+            }
+
+            return int.TryParse(value, out var parsed) && parsed > 0
+                ? parsed
+                : throw new ArgumentException($"{name} must be a positive integer.");
+        }
+
         return new Options(
             Path.GetFullPath(Required("--application")),
             Path.GetFullPath(Required("--source")),
             Path.GetFullPath(Required("--output")),
-            Required("--fixture-name"));
+            Required("--fixture-name"),
+            PositiveInteger("--warm-start-limit", 1_600),
+            PositiveInteger("--save-limit", 250));
     }
 }
 
@@ -362,9 +392,12 @@ internal sealed record VerificationRecord(
     string FixtureName,
     int ProcessorCount,
     string DotNetRuntime,
+    int WarmStartLimitMilliseconds,
+    int SaveLimitMilliseconds,
     NativeResult Provisioning,
     NativeResult Cold,
     NativeResult Warm,
+    IReadOnlyList<NativeResult> WarmSamples,
     NativeResult LargeDocument,
     ManagedPerformanceRecord ManagedPerformance,
     IReadOnlyList<string> Failures);

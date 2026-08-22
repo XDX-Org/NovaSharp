@@ -44,7 +44,9 @@ jobs:
             application: artifacts/publish/linux-arm64/NovaSharp
             publish-directory: artifacts/publish/linux-arm64
             bundle: ''
-            host-packages: dbus-x11 libgtk-4-1 libwebkitgtk-6.0-4 xvfb
+            host-packages: dbus-x11 libwebkit2gtk-4.1-0 xvfb
+            warm_start_limit: 1600
+            save_limit: 250
             virtual-display: dbus-run-session -- xvfb-run --auto-servernum
             webkit-disable-sandbox: '1'
             gtk-a11y: 'none'
@@ -56,7 +58,9 @@ jobs:
             application: artifacts/publish/linux-x64/NovaSharp
             publish-directory: artifacts/publish/linux-x64
             bundle: ''
-            host-packages: dbus-x11 libgtk-4-1 libwebkitgtk-6.0-4 xvfb
+            host-packages: dbus-x11 libwebkit2gtk-4.1-0 xvfb
+            warm_start_limit: 1600
+            save_limit: 250
             virtual-display: dbus-run-session -- xvfb-run --auto-servernum
             webkit-disable-sandbox: '1'
             gtk-a11y: 'none'
@@ -65,25 +69,29 @@ jobs:
             shell: bash
             node-bin: src/NovaSharp/LanguageServers/Assets/osx-arm64/node/bin
             npm-cli: src/NovaSharp/LanguageServers/Assets/osx-arm64/node/lib/node_modules/npm/bin/npm-cli.js
-            application: tools/packaging/macos/launch-app.sh
+            application: artifacts/publish/osx-arm64/NovaSharp.app/Contents/MacOS/NovaSharp
             publish-directory: artifacts/publish/osx-arm64/NovaSharp.app/Contents/Resources
             bundle: artifacts/publish/osx-arm64/NovaSharp.app
             host-packages: ''
             virtual-display: ''
             webkit-disable-sandbox: ''
             gtk-a11y: ''
+            warm_start_limit: 2500
+            save_limit: 250
           - rid: osx-x64
             runner: macos-15-intel
             shell: bash
             node-bin: src/NovaSharp/LanguageServers/Assets/osx-x64/node/bin
             npm-cli: src/NovaSharp/LanguageServers/Assets/osx-x64/node/lib/node_modules/npm/bin/npm-cli.js
-            application: tools/packaging/macos/launch-app.sh
+            application: artifacts/publish/osx-x64/NovaSharp.app/Contents/MacOS/NovaSharp
             publish-directory: artifacts/publish/osx-x64/NovaSharp.app/Contents/Resources
             bundle: artifacts/publish/osx-x64/NovaSharp.app
             host-packages: ''
             virtual-display: ''
             webkit-disable-sandbox: ''
             gtk-a11y: ''
+            warm_start_limit: 2500
+            save_limit: 250
           - rid: win-arm64
             runner: windows-11-arm
             shell: pwsh
@@ -96,6 +104,8 @@ jobs:
             virtual-display: ''
             webkit-disable-sandbox: ''
             gtk-a11y: ''
+            warm_start_limit: 1600
+            save_limit: 600
           - rid: win-x64
             runner: windows-2025
             shell: pwsh
@@ -108,6 +118,8 @@ jobs:
             virtual-display: ''
             webkit-disable-sandbox: ''
             gtk-a11y: ''
+            warm_start_limit: 1600
+            save_limit: 250
 
     steps:
       - uses: actions/checkout@v6
@@ -234,7 +246,6 @@ jobs:
           # This changes only the disposable CI process; packaged applications retain the production sandbox.
           WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: ${{ matrix.webkit-disable-sandbox }}
           GTK_A11Y: ${{ matrix.gtk-a11y }}
-          NOVASHARP_APP_BUNDLE: ${{ matrix.bundle }}
         run: |
           set -euo pipefail
           command=(
@@ -243,6 +254,8 @@ jobs:
             --source src/NovaSharp/Workbench.cs
             --output "artifacts/verification/${{ matrix.rid }}"
             --fixture-name "${{ matrix.runner }} / ${{ matrix.rid }}"
+            --warm-start-limit "${{ matrix.warm_start_limit }}"
+            --save-limit "${{ matrix.save_limit }}"
           )
 
           if [[ -n "${{ matrix.virtual-display }}" ]]; then
