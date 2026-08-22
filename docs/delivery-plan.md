@@ -127,7 +127,7 @@ the cold, three warm samples, and generated 10 MB fixtures before measuring mana
 Provisioning is retained as a separate functional result; the measured launches share its profile, and the warm gate
 uses the retained samples' median. `tests/editor-host` records paint,
 browser-thread, replication, queue, and 100-cycle heap measurements. CI names the runner fixture and uploads both JSON
-records; a missing record or a budget failure fails that RID's job.
+records with their fixture-specific limits; a missing record or a budget failure fails that RID's job.
 
 ## Delivery records
 

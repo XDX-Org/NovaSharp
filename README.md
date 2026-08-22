@@ -89,8 +89,8 @@ priority: no operating system is the reference platform, and a feature is not fi
 
 | Runtime identifier | Host runtime prerequisites | Bootstrap prerequisites | Pinned assets | Automated smoke test |
 |---|---|---|---|---|
-| `linux-arm64` | GTK 3, WebKitGTK 4.1 | POSIX shell, `curl`, `jq`, `tar`, `unzip`, XZ support | Yes | Wired; green run pending |
-| `linux-x64` | GTK 3, WebKitGTK 4.1 | POSIX shell, `curl`, `jq`, `tar`, `unzip`, XZ support | Yes | Wired; green run pending |
+| `linux-arm64` | GTK 3, libnotify, WebKitGTK 4.1 | POSIX shell, `curl`, `jq`, `tar`, `unzip`, XZ support | Yes | Wired; green run pending |
+| `linux-x64` | GTK 3, libnotify, WebKitGTK 4.1 | POSIX shell, `curl`, `jq`, `tar`, `unzip`, XZ support | Yes | Wired; green run pending |
 | `osx-arm64` | System WebKit | POSIX shell, `curl`, `jq`, `tar`, `unzip` | Yes | Wired; green run pending |
 | `osx-x64` | System WebKit | POSIX shell, `curl`, `jq`, `tar`, `unzip` | Yes | Wired; green run pending |
 | `win-arm64` | WebView2 Evergreen Runtime | PowerShell 5.1 or later | Yes | Wired; green run pending |
@@ -107,7 +107,7 @@ platform uses. One example, for Debian and Ubuntu family systems:
 
 ```bash
 sudo apt-get update
-sudo apt-get install curl jq tar unzip xz-utils libwebkit2gtk-4.1-0
+sudo apt-get install curl jq tar unzip xz-utils libnotify4 libwebkit2gtk-4.1-0
 ```
 
 Equivalent packages exist for other distributions, for Homebrew or MacPorts on macOS, and through the Windows runtime installer linked

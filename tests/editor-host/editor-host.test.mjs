@@ -172,6 +172,22 @@ function startServer() {
 const results = [];
 let measuredPerformance;
 let measuredLifecycle;
+const paintP95Limit = positiveLimit('NOVASHARP_PAINT_P95_LIMIT', 16);
+
+function positiveLimit(name, defaultValue) {
+    const raw = process.env[name];
+    if (raw === undefined) {
+        return defaultValue;
+    }
+
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value <= 0) {
+        throw new Error(`${name} must be a positive number.`);
+    }
+
+    return value;
+}
+
 function check(name, condition, detail = '') {
     results.push({ name, ok: Boolean(condition), detail });
     process.stdout.write(`  ${condition ? 'PASS' : 'FAIL'}  ${name}${condition || !detail ? '' : ` — ${detail}`}\n`);
@@ -439,7 +455,7 @@ try {
             replicationP99: percentile(replication, 0.99),
         };
     });
-    check('keystroke-to-paint p95 stays within 16 ms', measuredPerformance.paintP95 <= 16, `${measuredPerformance.paintP95.toFixed(2)} ms`);
+    check(`keystroke-to-paint p95 stays within ${paintP95Limit} ms`, measuredPerformance.paintP95 <= paintP95Limit, `${measuredPerformance.paintP95.toFixed(2)} ms`);
     check('keystroke-to-paint p99 stays within 33 ms', measuredPerformance.paintP99 <= 33, `${measuredPerformance.paintP99.toFixed(2)} ms`);
     check('the browser thread has no task longer than 50 ms', measuredPerformance.longestTask <= 50, `${measuredPerformance.longestTask.toFixed(2)} ms`);
     check('edit replication p95 stays within 50 ms', measuredPerformance.replicationP95 <= 50, `${measuredPerformance.replicationP95.toFixed(2)} ms`);
@@ -617,6 +633,7 @@ if (process.env.NOVASHARP_BROWSER_METRICS) {
         platform: process.platform,
         architecture: process.arch,
         nodeVersion: process.version,
+        limits: { paintP95Milliseconds: paintP95Limit },
         performance: measuredPerformance,
         lifecycle: measuredLifecycle,
         assertions: results,

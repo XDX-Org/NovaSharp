@@ -6,7 +6,6 @@ using NovaSharp.Editing;
 using NovaSharp.Platform;
 using NovaSharp.Text;
 
-const int startupColdLimitMilliseconds = 2_500;
 const long idleMemoryLimitBytes = 400L * 1024 * 1024;
 const int processDeadlineSeconds = 45;
 
@@ -55,8 +54,8 @@ Check(provisioning.Success, "browser profile provisioning", provisioning.Error);
 Check(cold.Success, "cold native smoke", cold.Error);
 Check(warmSamples.All(result => result.Success), "warm native smoke",
     string.Join("; ", warmSamples.Where(result => !result.Success).Select(result => result.Error)));
-Check(cold.InteractiveEditorMilliseconds <= startupColdLimitMilliseconds,
-    $"cold startup <= {startupColdLimitMilliseconds} ms", $"{cold.InteractiveEditorMilliseconds} ms");
+Check(cold.InteractiveEditorMilliseconds <= options.ColdStartLimitMilliseconds,
+    $"cold startup <= {options.ColdStartLimitMilliseconds} ms", $"{cold.InteractiveEditorMilliseconds} ms");
 Check(warm.InteractiveEditorMilliseconds <= options.WarmStartLimitMilliseconds,
     $"warm startup median <= {options.WarmStartLimitMilliseconds} ms", $"{warm.InteractiveEditorMilliseconds} ms");
 Check(warm.WorkingSetBytes <= idleMemoryLimitBytes,
@@ -80,6 +79,7 @@ var record = new VerificationRecord(
     options.FixtureName,
     Environment.ProcessorCount,
     Environment.Version.ToString(),
+    options.ColdStartLimitMilliseconds,
     options.WarmStartLimitMilliseconds,
     options.SaveLimitMilliseconds,
     provisioning,
@@ -323,6 +323,7 @@ internal sealed record Options(
     string SourcePath,
     string OutputDirectory,
     string FixtureName,
+    int ColdStartLimitMilliseconds,
     int WarmStartLimitMilliseconds,
     int SaveLimitMilliseconds)
 {
@@ -360,6 +361,7 @@ internal sealed record Options(
             Path.GetFullPath(Required("--source")),
             Path.GetFullPath(Required("--output")),
             Required("--fixture-name"),
+            PositiveInteger("--cold-start-limit", 2_500),
             PositiveInteger("--warm-start-limit", 1_600),
             PositiveInteger("--save-limit", 250));
     }
@@ -392,6 +394,7 @@ internal sealed record VerificationRecord(
     string FixtureName,
     int ProcessorCount,
     string DotNetRuntime,
+    int ColdStartLimitMilliseconds,
     int WarmStartLimitMilliseconds,
     int SaveLimitMilliseconds,
     NativeResult Provisioning,

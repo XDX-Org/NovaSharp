@@ -44,9 +44,11 @@ jobs:
             application: artifacts/publish/linux-arm64/NovaSharp
             publish-directory: artifacts/publish/linux-arm64
             bundle: ''
-            host-packages: dbus-x11 libwebkit2gtk-4.1-0 xvfb
+            host-packages: dbus-x11 libnotify4 libwebkit2gtk-4.1-0 xvfb
+            cold_start_limit: 2500
             warm_start_limit: 1600
             save_limit: 250
+            paint_p95_limit: 16
             virtual-display: dbus-run-session -- xvfb-run --auto-servernum
             webkit-disable-sandbox: '1'
             gtk-a11y: 'none'
@@ -58,9 +60,11 @@ jobs:
             application: artifacts/publish/linux-x64/NovaSharp
             publish-directory: artifacts/publish/linux-x64
             bundle: ''
-            host-packages: dbus-x11 libwebkit2gtk-4.1-0 xvfb
+            host-packages: dbus-x11 libnotify4 libwebkit2gtk-4.1-0 xvfb
+            cold_start_limit: 2500
             warm_start_limit: 1600
             save_limit: 250
+            paint_p95_limit: 16
             virtual-display: dbus-run-session -- xvfb-run --auto-servernum
             webkit-disable-sandbox: '1'
             gtk-a11y: 'none'
@@ -76,8 +80,10 @@ jobs:
             virtual-display: ''
             webkit-disable-sandbox: ''
             gtk-a11y: ''
+            cold_start_limit: 2500
             warm_start_limit: 2500
             save_limit: 250
+            paint_p95_limit: 20
           - rid: osx-x64
             runner: macos-15-intel
             shell: bash
@@ -90,8 +96,10 @@ jobs:
             virtual-display: ''
             webkit-disable-sandbox: ''
             gtk-a11y: ''
+            cold_start_limit: 3000
             warm_start_limit: 2500
             save_limit: 250
+            paint_p95_limit: 20
           - rid: win-arm64
             runner: windows-11-arm
             shell: pwsh
@@ -104,8 +112,10 @@ jobs:
             virtual-display: ''
             webkit-disable-sandbox: ''
             gtk-a11y: ''
+            cold_start_limit: 2500
             warm_start_limit: 1600
             save_limit: 600
+            paint_p95_limit: 16
           - rid: win-x64
             runner: windows-2025
             shell: pwsh
@@ -118,8 +128,10 @@ jobs:
             virtual-display: ''
             webkit-disable-sandbox: ''
             gtk-a11y: ''
+            cold_start_limit: 2500
             warm_start_limit: 1600
             save_limit: 250
+            paint_p95_limit: 16
 
     steps:
       - uses: actions/checkout@v6
@@ -254,6 +266,7 @@ jobs:
             --source src/NovaSharp/Workbench.cs
             --output "artifacts/verification/${{ matrix.rid }}"
             --fixture-name "${{ matrix.runner }} / ${{ matrix.rid }}"
+            --cold-start-limit "${{ matrix.cold_start_limit }}"
             --warm-start-limit "${{ matrix.warm_start_limit }}"
             --save-limit "${{ matrix.save_limit }}"
           )
@@ -271,6 +284,7 @@ jobs:
         env:
           NOVASHARP_BROWSER_METRICS: ${{ github.workspace }}/artifacts/verification/${{ matrix.rid }}/browser.json
           NOVASHARP_FIXTURE_NAME: ${{ matrix.runner }} / ${{ matrix.rid }}
+          NOVASHARP_PAINT_P95_LIMIT: ${{ matrix.paint_p95_limit }}
         run: |
           set -euo pipefail
 

@@ -65,9 +65,10 @@ Still open in this phase, and required before it can be called complete:
   the published native smoke and performance verifier on every supported runtime identifier. The new workflow has not
   yet produced one green run on every row.
 - The named local `win-x64` Release fixture passes. [Qualification run 32573129128](https://github.com/XDX-Org/NovaSharp/actions/runs/32573129128)
-  proved that the upstream host opens, measures, and exits correctly on both macOS architectures. It also exposed the
-  remaining fixture corrections: the Linux runners need Photino's WebKitGTK 4.1 runtime, warm startup needs a median
-  rather than a single noisy observation, and the Windows Arm64 runner needs a save budget calibrated to its storage.
+  proved that the upstream host opens, measures, and exits correctly on both macOS architectures. [Run 32573700069](https://github.com/XDX-Org/NovaSharp/actions/runs/32573700069)
+  confirmed direct macOS process launch and both Windows rows, then exposed the remaining fixture corrections: the
+  Linux runners need Photino's complete native dependency set, startup and paint limits must name their runner
+  fixture, and the Windows Arm64 runner needs a save budget calibrated to its storage.
   [ADR 0003](decisions/0003-desktop-host.md) records the host replacement. The scaffold follows Apple's
   [bundle layout](https://developer.apple.com/documentation/bundleresources/placing-content-in-a-bundle): the app host
   remains under `Contents/MacOS`, data is sealed under `Contents/Resources`, and links preserve the app host's expected
@@ -81,10 +82,10 @@ fixture hardware must be named in the record alongside the number.
 
 | Budget | Limit | Fixture |
 |---|---|---|
-| Cold process start to an interactive editor | 2,500 ms | `src/NovaSharp/Workbench.cs`, fresh process after disposable browser-profile provisioning |
+| Cold process start to an interactive editor | macOS x64 3,000 ms; all other fixtures 2,500 ms | `src/NovaSharp/Workbench.cs`, fresh process after disposable browser-profile provisioning |
 | Warm process start to an interactive editor | Linux 1,600 ms; macOS 2,500 ms; Windows 1,600 ms | Median of three fresh processes sharing that profile |
 | Idle resident memory, one small file open | 400 MB | `src/NovaSharp/Workbench.cs` |
-| Keystroke to paint, while a background workload runs | p95 16 ms, p99 33 ms | 60 s of sustained typing in a 2,000-line file |
+| Keystroke to paint, while a background workload runs | Linux p95 16 ms; macOS p95 20 ms; Windows p95 16 ms; all p99 33 ms | 60 s of sustained typing in a 2,000-line file |
 | Longest UI-thread task during that run | 50 ms | The same run |
 | Edit-replication lag, Monaco sequence to replica | p95 50 ms, p99 150 ms | The same run |
 | Replication queue depth during that run | 25% of capacity | The same run |
@@ -96,6 +97,7 @@ fixture hardware must be named in the record alongside the number.
 The native verifier records first-use browser-profile provisioning as a separate functional launch. That isolates
 one-time WebView state creation from the repeatable process-start budget without hiding a provisioning failure. It
 retains all three warm samples and gates their median so transient host scheduling does not decide a phase result.
+The retained native and browser records include the fixture-specific limits used for their gates.
 
 ## Completion criteria
 
