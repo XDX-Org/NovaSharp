@@ -73,6 +73,9 @@ Still open in this phase, and required before it can be called complete:
   Arm64 green; its retained macOS x64 and Windows Arm64 records supply the remaining runner-specific browser ceilings.
   [Run 32574723842](https://github.com/XDX-Org/NovaSharp/actions/runs/32574723842) confirmed those browser ceilings;
   its macOS x64 warm-start median supplies that fixture's final startup ceiling.
+  [Run 32575161311](https://github.com/XDX-Org/NovaSharp/actions/runs/32575161311) then recorded a host-wide macOS x64
+  slowdown affecting bootstrap, publish, cold, and all three warm samples. Qualification now retries a failed complete
+  native fixture at most twice and retains every attempt instead of widening the product budget for runner contention.
   [ADR 0003](decisions/0003-desktop-host.md) records the host replacement. The scaffold follows Apple's
   [bundle layout](https://developer.apple.com/documentation/bundleresources/placing-content-in-a-bundle): the app host
   remains under `Contents/MacOS`, data is sealed under `Contents/Resources`, and links preserve the app host's expected

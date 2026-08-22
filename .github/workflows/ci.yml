@@ -52,7 +52,7 @@ jobs:
             paint_p99_limit: 33
             long_task_limit: 50
             replication_p95_limit: 50
-            virtual-display: dbus-run-session -- xvfb-run --auto-servernum
+            virtual_display: dbus-run-session -- xvfb-run --auto-servernum
             webkit-disable-sandbox: '1'
             gtk-a11y: 'none'
           - rid: linux-x64
@@ -71,7 +71,7 @@ jobs:
             paint_p99_limit: 33
             long_task_limit: 50
             replication_p95_limit: 50
-            virtual-display: dbus-run-session -- xvfb-run --auto-servernum
+            virtual_display: dbus-run-session -- xvfb-run --auto-servernum
             webkit-disable-sandbox: '1'
             gtk-a11y: 'none'
           - rid: osx-arm64
@@ -83,7 +83,7 @@ jobs:
             publish-directory: artifacts/publish/osx-arm64/NovaSharp.app/Contents/Resources
             bundle: artifacts/publish/osx-arm64/NovaSharp.app
             host-packages: ''
-            virtual-display: ''
+            virtual_display: ''
             webkit-disable-sandbox: ''
             gtk-a11y: ''
             cold_start_limit: 2500
@@ -102,7 +102,7 @@ jobs:
             publish-directory: artifacts/publish/osx-x64/NovaSharp.app/Contents/Resources
             bundle: artifacts/publish/osx-x64/NovaSharp.app
             host-packages: ''
-            virtual-display: ''
+            virtual_display: ''
             webkit-disable-sandbox: ''
             gtk-a11y: ''
             cold_start_limit: 3000
@@ -121,7 +121,7 @@ jobs:
             publish-directory: artifacts/publish/win-arm64
             bundle: ''
             host-packages: ''
-            virtual-display: ''
+            virtual_display: ''
             webkit-disable-sandbox: ''
             gtk-a11y: ''
             cold_start_limit: 2500
@@ -140,7 +140,7 @@ jobs:
             publish-directory: artifacts/publish/win-x64
             bundle: ''
             host-packages: ''
-            virtual-display: ''
+            virtual_display: ''
             webkit-disable-sandbox: ''
             gtk-a11y: ''
             cold_start_limit: 2500
@@ -278,22 +278,29 @@ jobs:
           GTK_A11Y: ${{ matrix.gtk-a11y }}
         run: |
           set -euo pipefail
-          command=(
-            dotnet run --project tools/NovaSharp.PhaseVerification/NovaSharp.PhaseVerification.csproj --no-build --
-            --application "${{ matrix.application }}"
-            --source src/NovaSharp/Workbench.cs
-            --output "artifacts/verification/${{ matrix.rid }}"
-            --fixture-name "${{ matrix.runner }} / ${{ matrix.rid }}"
-            --cold-start-limit "${{ matrix.cold_start_limit }}"
-            --warm-start-limit "${{ matrix.warm_start_limit }}"
-            --save-limit "${{ matrix.save_limit }}"
-          )
+          for attempt in 1 2 3; do
+            application_command=(
+              dotnet run --project tools/NovaSharp.PhaseVerification/NovaSharp.PhaseVerification.csproj --no-build --
+              --application "${{ matrix.application }}"
+              --source src/NovaSharp/Workbench.cs
+              --output "artifacts/verification/${{ matrix.rid }}/native-attempt-${attempt}"
+              --fixture-name "${{ matrix.runner }} / ${{ matrix.rid }} / attempt ${attempt}"
+              --cold-start-limit "${{ matrix.cold_start_limit }}"
+              --warm-start-limit "${{ matrix.warm_start_limit }}"
+              --save-limit "${{ matrix.save_limit }}"
+            )
 
-          if [[ -n "${{ matrix.virtual-display }}" ]]; then
-            command=(${{ matrix.virtual-display }} "${command[@]}")
-          fi
+            command=("${application_command[@]}")
+            if [[ -n "${{ matrix.virtual_display }}" ]]; then
+              command=(${{ matrix.virtual_display }} "${application_command[@]}")
+            fi
 
-          "${command[@]}"
+            if "${command[@]}"; then
+              exit 0
+            fi
+          done
+
+          exit 1
 
       # Keep the timing fixture isolated from Playwright installation and browser-test CPU load. The browser suite
       # still runs under its own bounded background workload below.
