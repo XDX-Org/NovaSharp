@@ -60,9 +60,9 @@ The core architecture and initial IDE functionality are being implemented. It is
 
 The current workbench can open a workspace, keep multiple files in URI-deduplicated tabs, reuse a single preview tab,
 reorder and close tabs by pointer or keyboard, and restore open files plus cursor, selection, and scroll state after an
-orderly restart. Phases 1–4.5 are complete and qualified on every supported platform. Phase 5 split views are
-implemented locally: groups split in four directions, tabs move or copy by command or drag/drop, duplicate editors
-share one document model and undo history, and layouts restore safely. Six-platform Phase 5 qualification is pending.
+orderly restart. Phases 1–5 are complete and qualified on every supported platform. Groups split in four directions,
+tabs move or copy by command or drag/drop, duplicate editors share one document model and undo history, and layouts
+restore safely.
 Choose the optional Fast Mono font from View → Change Editor Font… or the command palette.
 
 Expect:
@@ -195,15 +195,15 @@ produces reconstruct Monaco's text exactly.
 [CI](.github/workflows/ci.yml) runs both, plus bootstrap, RID-specific publish, the published native-host smoke, and
 performance measurements on every runtime identifier from the same commit. Each row retains its application and JSON
 evidence. The native verifier records disposable browser-profile provisioning separately before its repeatable process
-startup measurements and gates the median of three warm launches. [Qualification run 32585228606](https://github.com/XDX-Org/NovaSharp/actions/runs/32585228606)
-passes every gate through Phase 4 on all six supported runtime identifiers.
+startup measurements and gates the median of three warm launches. [Qualification run 32759088571](https://github.com/XDX-Org/NovaSharp/actions/runs/32759088571)
+passes every gate through Phase 5 on all six supported runtime identifiers.
 
 > [!NOTE]
 > Monaco is mounted and is the only editor, and the document lifecycle around it — asynchronous edit replication, dirty
 > state, safe save and reload, encoding and line-ending handling, and external-change resolution — is in place.
 > The Phase 3 workspace Explorer implementation is also present, with lazy folders, bounded watcher recovery, file
 > operations, accessible incremental tree rendering, and versioned state. Phase 4's multi-document tab implementation
-> is complete and qualified. Phases 1–4 are complete: their implementation,
+> and Phase 5's editor groups and shared-model split views are complete and qualified. Phases 1–5 are complete: their implementation,
 > foundations, native host, browser behavior, performance, cancellation, disposal, packaging, and retained-evidence
 > gates pass on every supported runtime identifier.
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-In progress.
+Complete.
 
 ## Goal
 
@@ -62,10 +62,9 @@ Creating, moving, resizing, or closing a view must not clone model text or synch
 
 ## Qualification status
 
-Local managed, Chromium, and WebKit gates pass, as does an explicit `win-x64` Release publish and packaged native
-smoke/performance run. Phase 5 remains in progress until the same bootstrap, build/test, browser, RID-specific publish,
-packaged native smoke, performance, disposal, and retained evidence pass on all six supported runtime identifiers from
-the same Phase 5 commit.
+[Qualification run 32759088571](https://github.com/XDX-Org/NovaSharp/actions/runs/32759088571) passed bootstrap,
+270 managed tests, 196 Chromium/WebKit gates, RID-specific publish, packaged native smoke, performance, disposal, and
+retained-evidence checks on all six supported runtime identifiers from commit `c8186e9`.
 
 The layout/model ownership contract is recorded in [ADR 0005](decisions/0005-editor-groups.md). Workspace-state schema
 3 is an additive migration from schema 2; older workspaces restore their documents into one group.
