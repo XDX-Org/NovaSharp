@@ -42,6 +42,35 @@ public interface IEditorHost : IAsyncDisposable
     /// <param name="cancellationToken">Cancels the creation.</param>
     ValueTask InitializeAsync(ElementReference container, EditorBridge bridge, CancellationToken cancellationToken);
 
+    /// <summary>Creates another Monaco editor instance that shares this host's URI-keyed models.</summary>
+    ValueTask CreateViewAsync(string viewId, ElementReference container, CancellationToken cancellationToken) =>
+        ValueTask.CompletedTask;
+
+    /// <summary>Selects the view used by document/session operations that target the active editor.</summary>
+    ValueTask SetActiveViewAsync(string viewId, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+
+    /// <summary>Attaches an open document to one editor view without cloning its model.</summary>
+    async ValueTask SwitchViewDocumentAsync(
+        string viewId,
+        Uri uri,
+        EditorViewState? viewState,
+        bool focus,
+        CancellationToken cancellationToken) =>
+        await SwitchDocumentAsync(uri, viewState, cancellationToken).ConfigureAwait(false);
+
+    /// <summary>Clears one editor view without releasing the document model.</summary>
+    async ValueTask ClearViewAsync(string viewId, CancellationToken cancellationToken) =>
+        await ClearDocumentAsync(cancellationToken).ConfigureAwait(false);
+
+    /// <summary>Captures portable state from one editor view.</summary>
+    ValueTask<EditorViewState?> GetViewStateAsync(
+        string viewId,
+        Uri uri,
+        CancellationToken cancellationToken) => GetViewStateAsync(uri, cancellationToken);
+
+    /// <summary>Releases one editor instance while leaving its shared document models open.</summary>
+    ValueTask RemoveViewAsync(string viewId, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+
     /// <summary>Opens <paramref name="content"/> in the editor, replacing whatever model was shown before.</summary>
     /// <returns>The sequence the new model starts at.</returns>
     ValueTask<EditorSequence> OpenDocumentAsync(DocumentContent content, CancellationToken cancellationToken);

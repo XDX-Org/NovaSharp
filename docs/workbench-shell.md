@@ -7,7 +7,7 @@
 | Global command bar | `global-command` | Workbench shell | File, Workspace, and View command projections plus a compact overflow menu |
 | Activity rail | `activity` | Workbench shell | Rightmost region with one stable Explorer entry; future views contribute entries through the shell boundary |
 | Primary sidebar | `primary-sidebar` | Active workbench view | Docked right of the editor; Explorer stays mounted while hidden and retains width, tree state, selection, and focus |
-| Editor area | `editor` | Document/editor system | Tabs and the existing Monaco instance; phase 5 may add groups inside this region |
+| Editor area | `editor` | Document/editor system | Bounded split groups whose Monaco views share URI-keyed document models |
 | Bottom panel | `bottom-panel` | Workbench shell | Collapsed host only; Problems, Output, Terminal, and Debug retain their governing phases |
 | Status bar | `status` | Workbench shell | Ordered document/status items with text-equivalent accessible names |
 
@@ -30,6 +30,9 @@ host operating system. Native window chrome remains owned by Photino.
   A left or right click outside an open Explorer or tab context menu closes it.
 - `Change Editor Font…` is reachable from the palette. It offers the default monospace stack and packaged
   Fast Mono, then persists the allow-listed identifier in user settings.
+- Editor-group commands are available in View and the palette. `Ctrl/Cmd+Alt+Right` splits right and
+  `Ctrl/Cmd+Alt+Down` splits down; the remaining split, focus, move/copy, close-group, and distribute operations are
+  palette commands. Holding Ctrl or Alt while dropping copies a view instead of moving it.
 
 ## Visual system
 
@@ -65,6 +68,9 @@ Focus order is command bar, tabs/editor, visible panel, visible sidebar, activit
 remembers focus within its retained DOM; restoring Explorer returns focus to that element when it still exists. The
 resize separator supports pointer drag plus Left and Right keys and exposes its value to assistive technology. The
 separator has no product-defined minimum or maximum; Left and Right adjust its persisted pixel width.
+Editor splitters expose orientation and a 10–90 percent value. Arrow keys adjust them by five percent; pointer drag is
+animation-frame-coalesced and commits once on release. Edge, center, and tab insertion targets expose the same split,
+move, and copy operations as the command registry.
 Showing or resizing Explorer changes the width of the shared editor workspace, so the editor and bottom
 panel move together and neither is covered.
 

@@ -15,6 +15,8 @@ public sealed class MonacoEditorHost : IEditorHost
     private IJSObjectReference? _module;
     private IJSObjectReference? _editor;
     private DotNetObjectReference<EditorBridge>? _bridge;
+    private readonly Dictionary<string, Uri?> _viewDocuments = new(StringComparer.Ordinal);
+    private string _activeViewId = EditorGroupManager.MainGroupId;
     private bool _disposed;
 
     /// <summary>Creates a host over the page's JavaScript runtime.</summary>
@@ -46,6 +48,74 @@ public sealed class MonacoEditorHost : IEditorHost
         _bridge = DotNetObjectReference.Create(bridge);
         _editor = await _module.InvokeAsync<IJSObjectReference>("createEditor", cancellationToken, container, _bridge)
             .ConfigureAwait(false);
+        _viewDocuments.Add(EditorGroupManager.MainGroupId, null);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask CreateViewAsync(string viewId, ElementReference container, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(viewId);
+        if (_viewDocuments.ContainsKey(viewId))
+        {
+            await InvokeAsync<object?>("remountView", cancellationToken, viewId, container).ConfigureAwait(false);
+            return;
+        }
+        await InvokeAsync<object?>("createView", cancellationToken, viewId, container).ConfigureAwait(false);
+        _viewDocuments.Add(viewId, null);
+    }
+
+    /// <inheritdoc />
+    public ValueTask SetActiveViewAsync(string viewId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(viewId);
+        if (!_viewDocuments.ContainsKey(viewId))
+            throw new InvalidOperationException($"Editor view is not mounted: {viewId}");
+        _activeViewId = viewId;
+        return ValueTask.CompletedTask;
+    }
+
+    /// <inheritdoc />
+    public async ValueTask SwitchViewDocumentAsync(
+        string viewId,
+        Uri uri,
+        EditorViewState? viewState,
+        bool focus,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(viewId);
+        ArgumentNullException.ThrowIfNull(uri);
+        await InvokeAsync<object?>("switchViewDocument", cancellationToken,
+            viewId, uri.AbsoluteUri, viewState, focus).ConfigureAwait(false);
+        _viewDocuments[viewId] = uri;
+    }
+
+    /// <inheritdoc />
+    public async ValueTask ClearViewAsync(string viewId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(viewId);
+        await InvokeAsync<object?>("clearView", cancellationToken, viewId).ConfigureAwait(false);
+        _viewDocuments[viewId] = null;
+    }
+
+    /// <inheritdoc />
+    public ValueTask<EditorViewState?> GetViewStateAsync(
+        string viewId,
+        Uri uri,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(viewId);
+        ArgumentNullException.ThrowIfNull(uri);
+        return InvokeAsync<EditorViewState?>("viewStateForView", cancellationToken, viewId, uri.AbsoluteUri);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask RemoveViewAsync(string viewId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(viewId);
+        if (viewId == EditorGroupManager.MainGroupId || !_viewDocuments.ContainsKey(viewId)) return;
+        await InvokeAsync<object?>("removeView", cancellationToken, viewId).ConfigureAwait(false);
+        _viewDocuments.Remove(viewId);
+        if (_activeViewId == viewId) _activeViewId = EditorGroupManager.MainGroupId;
     }
 
     /// <inheritdoc />
@@ -56,32 +126,35 @@ public sealed class MonacoEditorHost : IEditorHost
         using var text = new MemoryStream(Encoding.UTF8.GetBytes(content.Text), writable: false);
         using var streamReference = new DotNetStreamReference(text);
 
-        return await InvokeAsync<EditorSequence>(
-            "openDocumentStream",
+        var sequence = await InvokeAsync<EditorSequence>(
+            "openDocumentStreamInView",
             cancellationToken,
+            _activeViewId,
             content.Uri.AbsoluteUri,
             content.LanguageId,
             streamReference,
             content.LineEnding,
             content.ReadOnly).ConfigureAwait(false);
+        _viewDocuments[_activeViewId] = content.Uri;
+        return sequence;
     }
 
     /// <inheritdoc />
     public async ValueTask SwitchDocumentAsync(Uri uri, EditorViewState? viewState, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(uri);
-        await InvokeAsync<object?>("switchDocument", cancellationToken, uri.AbsoluteUri, viewState).ConfigureAwait(false);
+        await SwitchViewDocumentAsync(_activeViewId, uri, viewState, focus: true, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
     public async ValueTask ClearDocumentAsync(CancellationToken cancellationToken) =>
-        await InvokeAsync<object?>("clearDocument", cancellationToken).ConfigureAwait(false);
+        await ClearViewAsync(_activeViewId, cancellationToken).ConfigureAwait(false);
 
     /// <inheritdoc />
     public ValueTask<EditorViewState?> GetViewStateAsync(Uri uri, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(uri);
-        return InvokeAsync<EditorViewState?>("viewState", cancellationToken, uri.AbsoluteUri);
+        return GetViewStateAsync(_activeViewId, uri, cancellationToken);
     }
 
     /// <inheritdoc />
@@ -89,6 +162,8 @@ public sealed class MonacoEditorHost : IEditorHost
     {
         ArgumentNullException.ThrowIfNull(uri);
         await InvokeAsync<object?>("closeDocument", cancellationToken, uri.AbsoluteUri).ConfigureAwait(false);
+        foreach (var viewId in _viewDocuments.Where(item => item.Value == uri).Select(item => item.Key).ToArray())
+            _viewDocuments[viewId] = null;
     }
 
     /// <inheritdoc />
@@ -101,12 +176,15 @@ public sealed class MonacoEditorHost : IEditorHost
         ArgumentNullException.ThrowIfNull(oldUri);
         ArgumentNullException.ThrowIfNull(newUri);
         ArgumentException.ThrowIfNullOrWhiteSpace(languageId);
-        return InvokeAsync<DocumentSnapshot>(
+        var relocation = InvokeAsync<DocumentSnapshot>(
             "relocateDocument",
             cancellationToken,
             oldUri.AbsoluteUri,
             newUri.AbsoluteUri,
             languageId);
+        foreach (var viewId in _viewDocuments.Where(item => item.Value == oldUri).Select(item => item.Key).ToArray())
+            _viewDocuments[viewId] = newUri;
+        return relocation;
     }
 
     /// <inheritdoc />
@@ -120,11 +198,10 @@ public sealed class MonacoEditorHost : IEditorHost
 
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(text), writable: false);
         using var streamReference = new DotNetStreamReference(stream);
-        return await InvokeAsync<EditorSequence>(
-            "replaceDocumentStream",
-            cancellationToken,
-            streamReference,
-            lineEnding).ConfigureAwait(false);
+        var uri = _viewDocuments.GetValueOrDefault(_activeViewId);
+        return uri is null
+            ? await InvokeAsync<EditorSequence>("replaceDocumentStream", cancellationToken, streamReference, lineEnding).ConfigureAwait(false)
+            : await InvokeAsync<EditorSequence>("replaceDocumentStream", cancellationToken, uri.AbsoluteUri, streamReference, lineEnding).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -150,7 +227,9 @@ public sealed class MonacoEditorHost : IEditorHost
 
     /// <inheritdoc />
     public ValueTask<DocumentSnapshot> GetSnapshotAsync(CancellationToken cancellationToken) =>
-        InvokeAsync<DocumentSnapshot>("snapshot", cancellationToken);
+        _viewDocuments.GetValueOrDefault(_activeViewId) is { } uri
+            ? InvokeAsync<DocumentSnapshot>("snapshot", cancellationToken, uri.AbsoluteUri)
+            : InvokeAsync<DocumentSnapshot>("snapshot", cancellationToken);
 
     /// <inheritdoc />
     public ValueTask<DocumentSnapshot> GetSnapshotAsync(Uri uri, CancellationToken cancellationToken)
@@ -161,7 +240,9 @@ public sealed class MonacoEditorHost : IEditorHost
 
     /// <inheritdoc />
     public ValueTask<EditorSequence> GetSequenceAsync(CancellationToken cancellationToken) =>
-        InvokeAsync<EditorSequence>("sequence", cancellationToken);
+        _viewDocuments.GetValueOrDefault(_activeViewId) is { } uri
+            ? InvokeAsync<EditorSequence>("sequence", cancellationToken, uri.AbsoluteUri)
+            : InvokeAsync<EditorSequence>("sequence", cancellationToken);
 
     /// <inheritdoc />
     public ValueTask<EditorSequence> GetSequenceAsync(Uri uri, CancellationToken cancellationToken)
@@ -171,8 +252,13 @@ public sealed class MonacoEditorHost : IEditorHost
     }
 
     /// <inheritdoc />
-    public async ValueTask SetReadOnlyAsync(bool readOnly, CancellationToken cancellationToken) =>
-        await InvokeAsync<object?>("setReadOnly", cancellationToken, readOnly).ConfigureAwait(false);
+    public async ValueTask SetReadOnlyAsync(bool readOnly, CancellationToken cancellationToken)
+    {
+        if (_viewDocuments.GetValueOrDefault(_activeViewId) is { } uri)
+            await InvokeAsync<object?>("setReadOnly", cancellationToken, uri.AbsoluteUri, readOnly).ConfigureAwait(false);
+        else
+            await InvokeAsync<object?>("setReadOnly", cancellationToken, readOnly).ConfigureAwait(false);
+    }
 
     /// <inheritdoc />
     public async ValueTask SetReadOnlyAsync(Uri uri, bool readOnly, CancellationToken cancellationToken)
@@ -201,7 +287,8 @@ public sealed class MonacoEditorHost : IEditorHost
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(originalText);
-        await InvokeAsync<object?>("beginCompare", cancellationToken, diffContainer, originalText).ConfigureAwait(false);
+        await InvokeAsync<object?>("beginCompareInView", cancellationToken,
+            _activeViewId, diffContainer, originalText).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -260,6 +347,8 @@ public sealed class MonacoEditorHost : IEditorHost
             _module = null;
             _bridge?.Dispose();
             _bridge = null;
+            _viewDocuments.Clear();
+            _activeViewId = EditorGroupManager.MainGroupId;
         }
     }
 }

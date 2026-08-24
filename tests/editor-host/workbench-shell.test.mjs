@@ -76,8 +76,39 @@ const FIXTURE = `<!doctype html>
 <script type="module">
   await import('/workbench-shell.js');
   await import('/workspace-explorer.js');
+  await import('/editor-groups.js');
   globalThis.invoked = [];
   globalThis.resizeCommits = [];
+  globalThis.editorGroupCommits = [];
+  globalThis.editorGroupDrops = [];
+  globalThis.mountEditorGroupsFixture = () => {
+    document.getElementById('editor-groups-fixture')?.remove();
+    const root = document.createElement('div');
+    root.id = 'editor-groups-fixture';
+    root.className = 'editor-groups-root';
+    root.style.cssText = 'position:fixed;left:10px;top:70px;width:min(520px,calc(100vw - 20px));height:min(280px,calc(100vh - 90px));z-index:30;';
+    root.innerHTML = '<div class="editor-split horizontal" style="--split-first:50%"><section class="editor-group active"><div class="tabs-bar"><div class="tabs-strip" role="tablist"><div class="document-tab active" role="tab" draggable="true">First.cs</div></div></div><div class="editor-group-host"></div><div class="group-drop-zone left"></div><div class="group-drop-zone right"></div><div class="group-drop-zone up"></div><div class="group-drop-zone down"></div><div class="group-drop-zone center"></div></section><div class="editor-splitter" role="separator" tabindex="0" aria-label="Resize editor groups" aria-orientation="vertical" aria-valuemin="10" aria-valuemax="90" aria-valuenow="50"></div><section class="editor-group"><div class="tabs-bar"><div class="tabs-strip" role="tablist"><div class="document-tab" role="tab" draggable="true">Second.cs</div></div></div><div class="editor-group-host"></div><div class="group-drop-zone left"></div><div class="group-drop-zone right"></div><div class="group-drop-zone up"></div><div class="group-drop-zone down"></div><div class="group-drop-zone center"></div></section></div>';
+    document.body.append(root);
+    NovaEditorGroups.attachDragSurface(root);
+    const splitter = root.querySelector('.editor-splitter');
+    NovaEditorGroups.attachSplitter(splitter, {
+      async invokeMethodAsync(_name, splitId, ratio) { editorGroupCommits.push({ splitId, ratio }); }
+    }, 'fixture-split', 'horizontal', 0.5);
+    splitter.addEventListener('keydown', event => {
+      const delta = event.key === 'ArrowLeft' ? -5 : event.key === 'ArrowRight' ? 5 : 0;
+      if (!delta) return;
+      const ratio = Math.max(10, Math.min(90, Number(splitter.getAttribute('aria-valuenow')) + delta));
+      splitter.setAttribute('aria-valuenow', String(ratio));
+      root.firstElementChild.style.setProperty('--split-first', ratio + '%');
+    });
+    for (const zone of root.querySelectorAll('.group-drop-zone')) {
+      zone.addEventListener('dragover', event => event.preventDefault());
+      zone.addEventListener('drop', event => { event.preventDefault(); editorGroupDrops.push(zone.classList[1]); });
+    }
+    root.querySelector('.tabs-strip').addEventListener('dragover', event => event.preventDefault());
+    root.querySelector('.tabs-strip').addEventListener('drop', event => { event.preventDefault(); editorGroupDrops.push('center'); });
+    return root;
+  };
   const paletteResults = document.querySelector('.command-palette-results');
   for (let index = 1; index <= 24; index++) {
     const command = document.createElement('button');
@@ -247,11 +278,31 @@ async function capture(browser, origin, engine, name, viewport, deviceScaleFacto
             return box.left < 0 || box.top < 0 || box.right > innerWidth || box.bottom > innerHeight;
         }).length,
     }));
+    const editorGroups = await page.evaluate(() => {
+        const root = mountEditorGroupsFixture();
+        const bounds = root.getBoundingClientRect();
+        const splitter = root.querySelector('.editor-splitter').getBoundingClientRect();
+        const edge = root.querySelector('.group-drop-zone.left').getBoundingClientRect();
+        const result = {
+            bounded: bounds.left >= 0 && bounds.right <= innerWidth && bounds.top >= 0 && bounds.bottom <= innerHeight,
+            splitterPhysicalPixels: splitter.width * devicePixelRatio,
+            edgeWidth: edge.width,
+            separatorCount: root.querySelectorAll('[role="separator"][tabindex="0"]').length,
+        };
+        NovaEditorGroups.detachSplitter(root.querySelector('.editor-splitter'));
+        NovaEditorGroups.detachDragSurface(root);
+        root.remove();
+        return result;
+    });
     check(`${engine} ${name} keeps global controls reachable`, layout.clipped === 0, JSON.stringify(layout));
     check(`${engine} ${name} keeps Explorer docked on the right`, layout.docked, JSON.stringify(layout));
     check(`${engine} ${name} hides horizontal panel scrollbars`,
         layout.horizontalOverflowHidden && layout.tabScrollbarHidden, JSON.stringify(layout));
     if (viewport.width < 720) check(`${engine} ${name} uses the narrow shell`, layout.narrow, JSON.stringify(layout));
+    check(`${engine} ${name} keeps split controls usable`,
+        editorGroups.bounded && editorGroups.splitterPhysicalPixels >= 5
+            && editorGroups.edgeWidth >= 30 && editorGroups.separatorCount === 1,
+        JSON.stringify(editorGroups));
     await compare(`${engine}-${name}`, await page.screenshot({ animations: 'disabled' }));
     await context.close();
 }
@@ -381,6 +432,39 @@ try {
             check(`${engine} pointer resize is frame-coalesced and committed once`,
                 resizeResult.commits.length === 1 && resizeResult.width === resizeResult.aria && resizeResult.width < 280,
                 JSON.stringify(resizeResult));
+            await page.evaluate(() => mountEditorGroupsFixture());
+            const groupSplitter = await page.locator('#editor-groups-fixture .editor-splitter').boundingBox();
+            await page.mouse.move(groupSplitter.x + groupSplitter.width / 2, groupSplitter.y + 40);
+            await page.mouse.down();
+            await page.mouse.move(groupSplitter.x + 70, groupSplitter.y + 40, { steps: 8 });
+            await page.mouse.up();
+            await page.waitForFunction(() => globalThis.editorGroupCommits.length === 1);
+            const groupResize = await page.evaluate(() => ({
+                commits: globalThis.editorGroupCommits,
+                ratio: parseFloat(document.querySelector('#editor-groups-fixture .editor-split').style
+                    .getPropertyValue('--split-first')),
+            }));
+            check(`${engine} editor splitter pointer resize commits once`,
+                groupResize.commits.length === 1 && groupResize.ratio > 50,
+                JSON.stringify(groupResize));
+            await page.locator('#editor-groups-fixture .editor-splitter').focus();
+            const beforeKeyboardResize = await page.locator('#editor-groups-fixture .editor-splitter').getAttribute('aria-valuenow');
+            await page.keyboard.press('ArrowRight');
+            const afterKeyboardResize = await page.locator('#editor-groups-fixture .editor-splitter').getAttribute('aria-valuenow');
+            check(`${engine} editor splitter is keyboard adjustable`,
+                Number(afterKeyboardResize) === Number(beforeKeyboardResize) + 5,
+                `${beforeKeyboardResize} -> ${afterKeyboardResize}`);
+            await page.dragAndDrop('#editor-groups-fixture .document-tab', '#editor-groups-fixture .group-drop-zone.left', { force: true });
+            await page.dragAndDrop('#editor-groups-fixture .document-tab', '#editor-groups-fixture .tabs-strip', { force: true });
+            const groupDrops = await page.evaluate(() => globalThis.editorGroupDrops);
+            check(`${engine} editor edge and center drop targets are operable`,
+                groupDrops.includes('left') && groupDrops.includes('center'), JSON.stringify(groupDrops));
+            await page.evaluate(() => {
+                const fixture = document.getElementById('editor-groups-fixture');
+                NovaEditorGroups.detachSplitter(fixture.querySelector('.editor-splitter'));
+                NovaEditorGroups.detachDragSurface(fixture);
+                fixture.remove();
+            });
             const focusRestored = await page.evaluate(() => {
                 const selected = document.querySelector('.tree-item.selected .tree-row');
                 const explorer = document.querySelector('.explorer');

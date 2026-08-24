@@ -1,5 +1,9 @@
 # Phase 5: editor groups and split views
 
+## Status
+
+In progress.
+
 ## Goal
 
 Arrange documents side by side, move or copy tabs between groups, and view two locations in the same document.
@@ -39,6 +43,32 @@ Creating, moving, resizing, or closing a view must not clone model text or synch
 - Layout restoration is deterministic and safely falls back to one group on invalid data.
 - Pointer, keyboard, high-DPI, and narrow-window interaction tests cover splitters and drop zones.
 - Split creation, rapid resize, movement, and closure stay within frame-time and memory budgets with two views editing concurrently.
+
+## Delivered implementation
+
+- `EditorGroupManager` owns a bounded, normalized horizontal/vertical split tree, group-local views, focus, movement,
+  copying, closure, even distribution, and immutable UI snapshots. Palette and shortcut commands split in every
+  direction, move or copy to the next group, focus neighboring groups, close a group, and distribute sizes.
+- Recursive group panes provide accessible tablists and splitters plus tab insertion, center, and edge drop targets.
+  Native drag metadata makes the four broad edge previews and center/tab targets work consistently across browser
+  engines. Pointer resizing is animation-frame-coalesced and commits once; arrow keys resize through the same ratio operation.
+- Every duplicate view is a separate Monaco editor attached to the existing URI-keyed `ITextModel`. Browser gates
+  prove shared text and undo, independent cursor/scroll state, and model survival after a copied view closes.
+- Workspace-state schema 3 persists the split tree, ratios, ordered views, active view per group, focused group, and
+  validated per-view state. Malformed, duplicate, excessive, or unknown persisted state falls back to one group.
+- Managed tests cover movement/copy equivalence, normalized closure, layout bounds, persistence, and invalid-state
+  recovery. Chromium and WebKit fixtures cover pointer/keyboard resizing, edge/center drops, narrow windows, high DPI,
+  200% zoom, and lifecycle/performance budgets.
+
+## Qualification status
+
+Local managed, Chromium, and WebKit gates pass, as does an explicit `win-x64` Release publish and packaged native
+smoke/performance run. Phase 5 remains in progress until the same bootstrap, build/test, browser, RID-specific publish,
+packaged native smoke, performance, disposal, and retained evidence pass on all six supported runtime identifiers from
+the same Phase 5 commit.
+
+The layout/model ownership contract is recorded in [ADR 0005](decisions/0005-editor-groups.md). Workspace-state schema
+3 is an additive migration from schema 2; older workspaces restore their documents into one group.
 
 ## Next phase
 

@@ -1,0 +1,164 @@
+@using Microsoft.JSInterop
+@using NovaSharp.Editing
+@using NovaSharp.Shell
+@implements IAsyncDisposable
+@inject IJSRuntime JSRuntime
+
+@if (Node is EditorSplitNodeSnapshot split)
+{
+    <div class="editor-split @(split.Orientation == EditorSplitOrientation.Horizontal ? "horizontal" : "vertical")"
+         style="--split-first:@(split.Ratio * 100)%" data-split-id="@split.Id">
+        <EditorGroupPane Node="split.First" Snapshot="Snapshot" OnGroupReady="OnGroupReady"
+                         OnActivate="OnActivate" OnPromote="OnPromote" OnClose="OnClose"
+                         OnContextMenu="OnContextMenu" OnDragStart="OnDragStart" OnDrop="OnDrop"
+                         OnDragEnd="OnDragEnd"
+                         OnEdgeDrop="OnEdgeDrop" OnResize="OnResize" />
+        <div class="editor-splitter" role="separator" tabindex="0" @ref="_splitter"
+             aria-label="Resize editor groups" aria-orientation="@(split.Orientation == EditorSplitOrientation.Horizontal ? "vertical" : "horizontal")"
+             aria-valuemin="10" aria-valuemax="90" aria-valuenow="@Math.Round(split.Ratio * 100)"
+             @onkeydown="args => ResizeKeyAsync(split, args)"></div>
+        <EditorGroupPane Node="split.Second" Snapshot="Snapshot" OnGroupReady="OnGroupReady"
+                         OnActivate="OnActivate" OnPromote="OnPromote" OnClose="OnClose"
+                         OnContextMenu="OnContextMenu" OnDragStart="OnDragStart" OnDrop="OnDrop"
+                         OnDragEnd="OnDragEnd"
+                         OnEdgeDrop="OnEdgeDrop" OnResize="OnResize" />
+    </div>
+}
+else if (Node is EditorGroupNodeSnapshot leaf && Snapshot.Groups.TryGetValue(leaf.GroupId, out var group))
+{
+    <section class="editor-group @(group.IsActive ? "active" : null)" aria-label="Editor group" data-group-id="@group.Id">
+        <div class="tabs-bar">
+            <div class="tabs-strip" role="tablist" aria-label="Open editors in group"
+                 @ondragover:preventDefault @ondrop="args => DropAsync(group.Id, group.Tabs.Count, args)">
+                @for (var tabIndex = 0; tabIndex < group.Tabs.Count; tabIndex++)
+                {
+                    var tab = group.Tabs[tabIndex];
+                    var dropIndex = tabIndex;
+                    <div class="document-tab @(tab.IsActive ? "active" : null) @(tab.IsPreview ? "preview" : null)"
+                         role="tab" aria-selected="@tab.IsActive" aria-label="@tab.AccessibleLabel"
+                         title="@tab.Path" tabindex="@(tab.IsActive ? 0 : -1)" draggable="true" data-view-id="@tab.ViewId"
+                         @onclick="() => OnActivate.InvokeAsync(new(group.Id, tab.ViewId))"
+                         @ondblclick="() => OnPromote.InvokeAsync(new(group.Id, tab.ViewId))"
+                         @onauxclick="args => MiddleClickAsync(group.Id, tab.ViewId, args)"
+                         @oncontextmenu="args => ContextAsync(group.Id, tab.ViewId, args)"
+                         @oncontextmenu:preventDefault @oncontextmenu:stopPropagation
+                         @ondragstart="() => OnDragStart.InvokeAsync(new(group.Id, tab.ViewId))"
+                         @ondragend="() => OnDragEnd.InvokeAsync()"
+                         @ondragover:preventDefault @ondrop:stopPropagation
+                         @ondrop="args => DropAsync(group.Id, dropIndex, args)">
+                        <span class="tab-state" aria-hidden="true">
+                            @if (tab.IsMissing) { <ShellIcon Name="SemanticIcon.Missing" /> }
+                            else if (tab.IsReadOnly) { <ShellIcon Name="SemanticIcon.ReadOnly" /> }
+                            else if (tab.IsDirty) { <ShellIcon Name="SemanticIcon.Dirty" /> }
+                        </span>
+                        <span class="tab-label">@tab.Label</span>
+                        <button type="button" class="tab-close" aria-label="Close @tab.Label"
+                                @onclick="() => OnClose.InvokeAsync(new(group.Id, tab.ViewId))" @onclick:stopPropagation>
+                            <ShellIcon Name="SemanticIcon.Close" />
+                        </button>
+                    </div>
+                }
+            </div>
+        </div>
+        <div class="editor-group-host" @ref="_editorContainer"></div>
+        <div class="group-drop-zone left" aria-hidden="true" @ondragover:preventDefault
+             @ondrop="args => EdgeDropAsync(group.Id, EditorSplitDirection.Left, args)"></div>
+        <div class="group-drop-zone right" aria-hidden="true" @ondragover:preventDefault
+             @ondrop="args => EdgeDropAsync(group.Id, EditorSplitDirection.Right, args)"></div>
+        <div class="group-drop-zone up" aria-hidden="true" @ondragover:preventDefault
+             @ondrop="args => EdgeDropAsync(group.Id, EditorSplitDirection.Up, args)"></div>
+        <div class="group-drop-zone down" aria-hidden="true" @ondragover:preventDefault
+             @ondrop="args => EdgeDropAsync(group.Id, EditorSplitDirection.Down, args)"></div>
+        <div class="group-drop-zone center" aria-hidden="true" @ondragover:preventDefault
+             @ondrop="args => DropAsync(group.Id, group.Tabs.Count, args)"></div>
+    </section>
+}
+
+@code {
+    [Parameter, EditorRequired] public EditorLayoutNodeSnapshot Node { get; set; } = null!;
+    [Parameter, EditorRequired] public EditorGroupsSnapshot Snapshot { get; set; } = null!;
+    [Parameter] public EventCallback<(string GroupId, ElementReference Container)> OnGroupReady { get; set; }
+    [Parameter] public EventCallback<EditorGroupTabEvent> OnActivate { get; set; }
+    [Parameter] public EventCallback<EditorGroupTabEvent> OnPromote { get; set; }
+    [Parameter] public EventCallback<EditorGroupTabEvent> OnClose { get; set; }
+    [Parameter] public EventCallback<(EditorGroupTabEvent Tab, MouseEventArgs Mouse)> OnContextMenu { get; set; }
+    [Parameter] public EventCallback<EditorGroupTabEvent> OnDragStart { get; set; }
+    [Parameter] public EventCallback OnDragEnd { get; set; }
+    [Parameter] public EventCallback<EditorGroupDropEvent> OnDrop { get; set; }
+    [Parameter] public EventCallback<EditorGroupEdgeDropEvent> OnEdgeDrop { get; set; }
+    [Parameter] public EventCallback<EditorSplitResizeEvent> OnResize { get; set; }
+
+    private ElementReference _editorContainer;
+    private ElementReference _splitter;
+    private DotNetObjectReference<EditorGroupPane>? _self;
+    private string? _attachedSplit;
+    private string? _renderedNodeKey;
+    private bool _needsAttach;
+
+    protected override void OnParametersSet()
+    {
+        var key = Node switch
+        {
+            EditorGroupNodeSnapshot group => $"group:{group.GroupId}",
+            EditorSplitNodeSnapshot split => $"split:{split.Id}",
+            _ => string.Empty,
+        };
+        if (_renderedNodeKey == key) return;
+        _renderedNodeKey = key;
+        _needsAttach = true;
+        if (Node is not EditorSplitNodeSnapshot) _attachedSplit = null;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_needsAttach) return;
+        _needsAttach = false;
+        if (Node is EditorGroupNodeSnapshot group)
+        {
+            await OnGroupReady.InvokeAsync((group.GroupId, _editorContainer));
+        }
+        else if (Node is EditorSplitNodeSnapshot split)
+        {
+            _self ??= DotNetObjectReference.Create(this);
+            _attachedSplit = split.Id;
+            await JSRuntime.InvokeVoidAsync("NovaEditorGroups.attachSplitter", _splitter, _self, split.Id,
+                split.Orientation.ToString().ToLowerInvariant(), split.Ratio);
+        }
+    }
+
+    private Task DropAsync(string groupId, int index, DragEventArgs args) =>
+        OnDrop.InvokeAsync(new(groupId, index, args.CtrlKey || args.AltKey));
+
+    private Task EdgeDropAsync(string groupId, EditorSplitDirection direction, DragEventArgs args) =>
+        OnEdgeDrop.InvokeAsync(new(groupId, direction, args.CtrlKey || args.AltKey));
+
+    private async Task MiddleClickAsync(string groupId, string viewId, MouseEventArgs args)
+    {
+        if (args.Button == 1) await OnClose.InvokeAsync(new(groupId, viewId));
+    }
+
+    private Task ContextAsync(string groupId, string viewId, MouseEventArgs args) =>
+        OnContextMenu.InvokeAsync((new(groupId, viewId), args));
+
+    private Task ResizeKeyAsync(EditorSplitNodeSnapshot split, KeyboardEventArgs args)
+    {
+        var delta = args.Key is "ArrowLeft" or "ArrowUp" ? -0.05
+            : args.Key is "ArrowRight" or "ArrowDown" ? 0.05 : 0;
+        return delta == 0 ? Task.CompletedTask
+            : OnResize.InvokeAsync(new(split.Id, Math.Clamp(split.Ratio + delta, 0.1, 0.9)));
+    }
+
+    [JSInvokable]
+    public Task CommitSplitRatioAsync(string splitId, double ratio) =>
+        OnResize.InvokeAsync(new(splitId, Math.Clamp(ratio, 0.1, 0.9)));
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_attachedSplit is not null)
+        {
+            try { await JSRuntime.InvokeVoidAsync("NovaEditorGroups.detachSplitter", _splitter); }
+            catch (JSDisconnectedException) { }
+        }
+        _self?.Dispose();
+    }
+}

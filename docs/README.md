@@ -33,7 +33,9 @@ The sequence is dependency order, not a promise that every phase has equal size.
 - [Desktop host decision](decisions/0003-desktop-host.md) for the pinned cross-platform window host and why the
   preview fork was replaced.
 - [Workbench shell decision](decisions/0004-workbench-shell.md) for stable regions, command surfaces, semantic assets,
-  and responsive accessibility.
+  responsive behavior, and accessibility fixtures.
+- [Editor groups decision](decisions/0005-editor-groups.md) for bounded split layout ownership, shared Monaco models,
+  per-view state, and persistence.
 - [Workbench shell contract](workbench-shell.md) for region ownership, keyboard behavior, tokens, and visual fixtures.
 - [Supported platform matrix](delivery-plan.md#supported-platform-matrix) and its parity rule, which govern every phase equally.
 - [Language-server assets](language-server-assets.md) for automatic acquisition, pinned versions, hashes, and runtime policy.

@@ -244,7 +244,7 @@ export function createEditor(container, bridge) {
     }
 
     let editorFontFamily = EDITOR_FONT_FAMILIES.default;
-    const editor = monaco.editor.create(container, {
+    const createCodeEditor = host => monaco.editor.create(host, {
         // Layout is driven by the ResizeObserver below, so the editor is not polling on a timer.
         automaticLayout: false,
         theme: 'vs-dark',
@@ -261,8 +261,9 @@ export function createEditor(container, bridge) {
         scrollBeyondLastLine: false,
         tabSize: 4,
     });
+    let editor = createCodeEditor(container);
 
-    const observer = new ResizeObserver(() => editor.layout());
+    let observer = new ResizeObserver(() => editor.layout());
     observer.observe(container);
 
     let currentModel = null;
@@ -271,9 +272,12 @@ export function createEditor(container, bridge) {
     let disposed = false;
     let workerVerified;
     let registeredCommands = [];
+    let registeredCommandDescriptors = [];
+    const secondaryViews = new Map();
     let diffEditor = null;
     let diffObserver = null;
     let originalModel = null;
+    let comparisonSource = null;
 
     let maximumQueueDepth = 0;
     let overflowCount = 0;
@@ -410,10 +414,11 @@ export function createEditor(container, bridge) {
         originalModel?.dispose();
         originalModel = null;
 
-        if (currentModel && !disposed) {
-            editor.setModel(currentModel);
-            editor.focus();
+        if (comparisonSource && !disposed) {
+            comparisonSource.editor.setModel(comparisonSource.document.model);
+            comparisonSource.editor.focus();
         }
+        comparisonSource = null;
     }
 
     function portableViewState() {
@@ -485,7 +490,226 @@ export function createEditor(container, bridge) {
         }
     }
 
+    function portableStateFor(editorView) {
+        if (!editorView.currentDocument) return null;
+        const selection = editorView.editor.getSelection();
+        const position = editorView.editor.getPosition();
+        return {
+            lineNumber: position?.lineNumber ?? 1,
+            column: position?.column ?? 1,
+            selectionStartLineNumber: selection?.selectionStartLineNumber ?? position?.lineNumber ?? 1,
+            selectionStartColumn: selection?.selectionStartColumn ?? position?.column ?? 1,
+            positionLineNumber: selection?.positionLineNumber ?? position?.lineNumber ?? 1,
+            positionColumn: selection?.positionColumn ?? position?.column ?? 1,
+            scrollTop: editorView.editor.getScrollTop(),
+            scrollLeft: editorView.editor.getScrollLeft(),
+        };
+    }
+
+    function captureSecondaryView(editorView) {
+        if (!editorView.currentDocument) return;
+        const key = editorView.currentDocument.model.uri.toString();
+        editorView.monacoStates.set(key, editorView.editor.saveViewState());
+        editorView.portableStates.set(key, portableStateFor(editorView));
+    }
+
+    function restoreStateFor(editorView, document, state) {
+        if (!state) return;
+        const start = clampPosition(document.model, state.selectionStartLineNumber, state.selectionStartColumn);
+        const end = clampPosition(document.model, state.positionLineNumber, state.positionColumn);
+        editorView.editor.setSelection({
+            selectionStartLineNumber: start.lineNumber,
+            selectionStartColumn: start.column,
+            positionLineNumber: end.lineNumber,
+            positionColumn: end.column,
+        });
+        editorView.editor.setScrollPosition({
+            scrollTop: Math.max(0, Number(state.scrollTop) || 0),
+            scrollLeft: Math.max(0, Number(state.scrollLeft) || 0),
+        });
+    }
+
+    function attachSecondaryView(editorView, document, restoredViewState = null, focus = true) {
+        if (editorView.currentDocument !== document) {
+            captureSecondaryView(editorView);
+            editorView.currentDocument = document;
+            editorView.editor.setModel(document.model);
+        }
+        editorView.editor.updateOptions({ readOnly: document.readOnly });
+        const key = document.model.uri.toString();
+        if (restoredViewState) restoreStateFor(editorView, document, restoredViewState);
+        else if (editorView.monacoStates.has(key)) editorView.editor.restoreViewState(editorView.monacoStates.get(key));
+        if (focus) editorView.editor.focus();
+    }
+
+    function addActions(targetEditor, descriptors) {
+        const registrations = [];
+        const unresolved = [];
+        for (const descriptor of descriptors ?? []) {
+            const keybindings = [];
+            for (const keybinding of descriptor.keybindings ?? []) {
+                const resolved = resolveKeybinding(keybinding);
+                if (resolved === null) {
+                    unresolved.push(`${descriptor.id}: ${keybinding}`);
+                    continue;
+                }
+                keybindings.push(resolved);
+            }
+            registrations.push(targetEditor.addAction({
+                id: descriptor.id,
+                label: descriptor.title,
+                keybindings,
+                contextMenuGroupId: descriptor.showInPalette ? 'navigation' : undefined,
+                run: () => void bridge.invokeMethodAsync('InvokeCommandAsync', descriptor.id),
+            }));
+        }
+        return { registrations, unresolved };
+    }
+
+    function ensureDocument(uriString, languageId, text, lineEnding, readOnly) {
+        const key = monaco.Uri.parse(uriString).toString();
+        let document = documents.get(key);
+        if (!document) {
+            const model = acquireModel(uriString, languageId, text, lineEnding);
+            document = {
+                model,
+                readOnly: readOnly === true,
+                sentSequence: model.getVersionId(),
+                queued: [],
+                sending: false,
+                resyncing: false,
+                resyncRequestPending: false,
+                suppressed: false,
+                monacoViewState: null,
+                portableViewState: null,
+                contentSubscription: null,
+            };
+            document.contentSubscription = model.onDidChangeContent(event => onContentChanged(document, event));
+            documents.set(key, document);
+        }
+        document.readOnly = readOnly === true;
+        return document;
+    }
+
     const handle = {
+        /** Creates another editor instance over the same URI-keyed document map. */
+        createView(viewId, viewContainer) {
+            ensureLive();
+            if (!viewId) return null;
+            if (viewId === 'main' || secondaryViews.has(viewId)) return handle.remountView(viewId, viewContainer);
+            if (!(viewContainer instanceof HTMLElement)) throw new TypeError('An editor view container is required.');
+            const viewEditor = createCodeEditor(viewContainer);
+            const view = {
+                editor: viewEditor,
+                observer: new ResizeObserver(() => viewEditor.layout()),
+                currentDocument: null,
+                monacoStates: new Map(),
+                portableStates: new Map(),
+                registrations: [],
+                container: viewContainer,
+            };
+            view.observer.observe(viewContainer);
+            view.registrations = addActions(viewEditor, registeredCommandDescriptors).registrations;
+            secondaryViews.set(viewId, view);
+            return null;
+        },
+
+        /** Recreates only an editor instance when its split-tree leaf receives a new Blazor container. */
+        remountView(viewId, viewContainer) {
+            ensureLive();
+            if (!(viewContainer instanceof HTMLElement)) throw new TypeError('An editor view container is required.');
+            if (viewId === 'main') {
+                if (container === viewContainer) return null;
+                const document = currentDocument;
+                captureCurrentView();
+                editor.setModel(null);
+                for (const registration of registeredCommands) registration.dispose();
+                observer.disconnect();
+                editor.dispose();
+                editor = createCodeEditor(viewContainer);
+                observer = new ResizeObserver(() => editor.layout());
+                observer.observe(viewContainer);
+                registeredCommands = addActions(editor, registeredCommandDescriptors).registrations;
+                container = viewContainer;
+                currentDocument = null;
+                currentModel = null;
+                if (document) attach(document);
+                return null;
+            }
+            const view = secondaryViews.get(viewId);
+            if (!view) throw new Error(`Editor view is not mounted: ${viewId}`);
+            if (view.container === viewContainer) return null;
+            const document = view.currentDocument;
+            captureSecondaryView(view);
+            view.editor.setModel(null);
+            for (const registration of view.registrations) registration.dispose();
+            view.observer.disconnect();
+            view.editor.dispose();
+            view.editor = createCodeEditor(viewContainer);
+            view.observer = new ResizeObserver(() => view.editor.layout());
+            view.observer.observe(viewContainer);
+            view.container = viewContainer;
+            view.registrations = addActions(view.editor, registeredCommandDescriptors).registrations;
+            view.currentDocument = null;
+            if (document) attachSecondaryView(view, document, null, false);
+            return null;
+        },
+
+        /** Attaches one shared model to a named view. */
+        switchViewDocument(viewId, uriString, restoredViewState, focus = true) {
+            ensureLive();
+            const document = documents.get(monaco.Uri.parse(uriString).toString());
+            if (!document) throw new Error(`Document is not open: ${uriString}`);
+            if (viewId === 'main') {
+                attach(document, restoredViewState);
+                if (focus) editor.focus();
+            } else {
+                const view = secondaryViews.get(viewId);
+                if (!view) throw new Error(`Editor view is not mounted: ${viewId}`);
+                attachSecondaryView(view, document, restoredViewState, focus);
+            }
+            return readSequence(document.model);
+        },
+
+        /** Detaches one view without changing document/model ownership. */
+        clearView(viewId) {
+            ensureLive();
+            if (viewId === 'main') return handle.clearDocument();
+            const view = secondaryViews.get(viewId);
+            if (!view) return null;
+            captureSecondaryView(view);
+            view.editor.setModel(null);
+            view.currentDocument = null;
+            return null;
+        },
+
+        /** Captures portable state from a named view. */
+        viewStateForView(viewId, uriString) {
+            ensureLive();
+            if (viewId === 'main') return handle.viewState(uriString);
+            const view = secondaryViews.get(viewId);
+            if (!view) return null;
+            const key = monaco.Uri.parse(uriString).toString();
+            if (view.currentDocument?.model.uri.toString() === key) captureSecondaryView(view);
+            return view.portableStates.get(key) ?? null;
+        },
+
+        /** Releases one secondary editor instance while retaining all document models. */
+        removeView(viewId) {
+            ensureLive();
+            const view = secondaryViews.get(viewId);
+            if (!view) return null;
+            captureSecondaryView(view);
+            for (const registration of view.registrations) registration.dispose();
+            view.observer.disconnect();
+            view.editor.setModel(null);
+            view.editor.dispose();
+            view.monacoStates.clear();
+            view.portableStates.clear();
+            secondaryViews.delete(viewId);
+            return null;
+        },
+
         /**
          * Replaces the editor's actions with the ones NovaSharp's command registry describes.
          *
@@ -503,33 +727,20 @@ export function createEditor(container, bridge) {
                 registration.dispose();
             }
 
-            registeredCommands = [];
-            const unresolved = [];
-
-            for (const descriptor of descriptors ?? []) {
-                const keybindings = [];
-                for (const keybinding of descriptor.keybindings ?? []) {
-                    const resolved = resolveKeybinding(keybinding);
-                    if (resolved === null) {
-                        unresolved.push(`${descriptor.id}: ${keybinding}`);
-                        continue;
-                    }
-
-                    keybindings.push(resolved);
-                }
-
-                registeredCommands.push(editor.addAction({
-                    id: descriptor.id,
-                    label: descriptor.title,
-                    keybindings,
-                    contextMenuGroupId: descriptor.showInPalette ? 'navigation' : undefined,
-                    // The action does not decide anything. It names the command, and .NET's registry resolves
-                    // enablement and behaviour, so a keybinding and a button cannot diverge.
-                    run: () => void bridge.invokeMethodAsync('InvokeCommandAsync', descriptor.id),
-                }));
+            for (const view of secondaryViews.values()) {
+                for (const registration of view.registrations) registration.dispose();
+                view.registrations = [];
             }
-
-            return unresolved;
+            registeredCommandDescriptors = descriptors ?? [];
+            const primary = addActions(editor, registeredCommandDescriptors);
+            registeredCommands = primary.registrations;
+            const unresolved = [...primary.unresolved];
+            for (const view of secondaryViews.values()) {
+                const result = addActions(view.editor, registeredCommandDescriptors);
+                view.registrations = result.registrations;
+                unresolved.push(...result.unresolved);
+            }
+            return [...new Set(unresolved)];
         },
 
         /**
@@ -540,13 +751,23 @@ export function createEditor(container, bridge) {
          * the duration; nothing about the document's identity or its undo history changes.
          */
         beginCompare(diffContainer, originalText) {
+            return handle.beginCompareInView('main', diffContainer, originalText);
+        },
+
+        /** Shows a comparison for the document attached to a named editor view. */
+        beginCompareInView(viewId, diffContainer, originalText) {
             ensureLive();
             if (!(diffContainer instanceof HTMLElement)) {
                 throw new TypeError('A container element is required to compare in.');
             }
 
-            const model = currentModel;
-            if (!model) {
+            const source = viewId === 'main'
+                ? { editor, document: currentDocument }
+                : secondaryViews.has(viewId)
+                    ? { editor: secondaryViews.get(viewId).editor, document: secondaryViews.get(viewId).currentDocument }
+                    : null;
+            const model = source?.document?.model;
+            if (!source || !model) {
                 throw new Error('No document is open.');
             }
 
@@ -569,7 +790,8 @@ export function createEditor(container, bridge) {
                 scrollbar: { horizontal: 'hidden' },
             });
 
-            editor.setModel(null);
+            source.editor.setModel(null);
+            comparisonSource = source;
             diffEditor.setModel({ original: originalModel, modified: model });
 
             diffObserver = new ResizeObserver(() => diffEditor?.layout());
@@ -596,29 +818,7 @@ export function createEditor(container, bridge) {
          */
         openDocument(uriString, languageId, text, lineEnding, readOnly) {
             ensureLive();
-
-            const key = monaco.Uri.parse(uriString).toString();
-            let document = documents.get(key);
-            if (!document) {
-                const model = acquireModel(uriString, languageId, text, lineEnding);
-                document = {
-                    model,
-                    readOnly: readOnly === true,
-                    sentSequence: model.getVersionId(),
-                    queued: [],
-                    sending: false,
-                    resyncing: false,
-                    resyncRequestPending: false,
-                    suppressed: false,
-                    monacoViewState: null,
-                    portableViewState: null,
-                    contentSubscription: null,
-                };
-                document.contentSubscription = model.onDidChangeContent(event => onContentChanged(document, event));
-                documents.set(key, document);
-            }
-
-            document.readOnly = readOnly === true;
+            const document = ensureDocument(uriString, languageId, text, lineEnding, readOnly);
             attach(document);
             editor.focus();
             return readSequence(document.model);
@@ -628,6 +828,15 @@ export function createEditor(container, bridge) {
         async openDocumentStream(uriString, languageId, textStream, lineEnding, readOnly) {
             const text = new TextDecoder().decode(await textStream.arrayBuffer());
             return handle.openDocument(uriString, languageId, text, lineEnding, readOnly);
+        },
+
+        /** Opens a model once and attaches it to the requested editor view. */
+        async openDocumentStreamInView(viewId, uriString, languageId, textStream, lineEnding, readOnly) {
+            const text = new TextDecoder().decode(await textStream.arrayBuffer());
+            ensureLive();
+            const document = ensureDocument(uriString, languageId, text, lineEnding, readOnly);
+            handle.switchViewDocument(viewId, uriString, null, true);
+            return readSequence(document.model);
         },
 
         /** Attaches an existing model without copying its text or recreating its undo history. */
@@ -684,6 +893,14 @@ export function createEditor(container, bridge) {
                 currentDocument = null;
                 currentModel = null;
             }
+            for (const view of secondaryViews.values()) {
+                if (view.currentDocument !== document) continue;
+                captureSecondaryView(view);
+                view.editor.setModel(null);
+                view.currentDocument = null;
+                view.monacoStates.delete(key);
+                view.portableStates.delete(key);
+            }
 
             document.queued = [];
             document.contentSubscription?.dispose();
@@ -710,6 +927,8 @@ export function createEditor(container, bridge) {
             }
 
             const wasCurrent = oldDocument === currentDocument;
+            const secondaryAttachments = [...secondaryViews.values()].filter(view => view.currentDocument === oldDocument);
+            for (const view of secondaryAttachments) captureSecondaryView(view);
             if (wasCurrent) {
                 stopCompare();
             }
@@ -736,6 +955,13 @@ export function createEditor(container, bridge) {
                 currentDocument = null;
                 currentModel = null;
                 attach(document);
+            }
+            for (const view of secondaryAttachments) {
+                const state = view.portableStates.get(oldKey) ?? null;
+                view.monacoStates.delete(oldKey);
+                view.portableStates.delete(oldKey);
+                view.currentDocument = null;
+                attachSecondaryView(view, document, state, false);
             }
             releaseModel(oldDocument.model);
             return { text: model.getValue(), ...readSequence(model) };
@@ -848,6 +1074,9 @@ export function createEditor(container, bridge) {
             if (document === currentDocument) {
                 editor.updateOptions({ readOnly: document.readOnly });
             }
+            for (const view of secondaryViews.values()) {
+                if (view.currentDocument === document) view.editor.updateOptions({ readOnly: document.readOnly });
+            }
             return null;
         },
 
@@ -866,6 +1095,7 @@ export function createEditor(container, bridge) {
 
             editorFontFamily = family;
             editor.updateOptions({ fontFamily: family });
+            for (const view of secondaryViews.values()) view.editor.updateOptions({ fontFamily: family });
             diffEditor?.updateOptions({ fontFamily: family });
             monaco.editor.remeasureFonts();
             return null;
@@ -880,6 +1110,7 @@ export function createEditor(container, bridge) {
                 monacoVersion: await readMonacoVersion(),
                 dedicatedWorker: workerVerified || workerFactory.state.observed,
                 modelCount: monaco.editor.getModels().length,
+                viewCount: 1 + secondaryViews.size,
                 documentLength: currentModel?.getValueLength() ?? 0,
                 externalRequestCount: countExternalRequests(),
                 replicationCapacity: REPLICATION_CAPACITY,
@@ -899,12 +1130,14 @@ export function createEditor(container, bridge) {
             // while the diff view still has it would dispose the document out from under it.
             stopCompare();
 
+            for (const viewId of [...secondaryViews.keys()]) handle.removeView(viewId);
             disposed = true;
             for (const registration of registeredCommands) {
                 registration.dispose();
             }
 
             registeredCommands = [];
+            registeredCommandDescriptors = [];
             observer.disconnect();
             editor.setModel(null);
             editor.dispose();

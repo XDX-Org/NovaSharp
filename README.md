@@ -60,10 +60,10 @@ The core architecture and initial IDE functionality are being implemented. It is
 
 The current workbench can open a workspace, keep multiple files in URI-deduplicated tabs, reuse a single preview tab,
 reorder and close tabs by pointer or keyboard, and restore open files plus cursor, selection, and scroll state after an
-orderly restart. Phase 4 is complete and qualified on every supported platform.
-Phase 4.5 is in progress: the graphite workbench shell, global command palette, semantic icons, responsive regions,
-optional Fast Mono editor font, and cross-engine visual/accessibility fixtures are implemented locally and await
-six-platform qualification. Choose the font from View → Change Editor Font… or the command palette.
+orderly restart. Phases 1–4.5 are complete and qualified on every supported platform. Phase 5 split views are
+implemented locally: groups split in four directions, tabs move or copy by command or drag/drop, duplicate editors
+share one document model and undo history, and layouts restore safely. Six-platform Phase 5 qualification is pending.
+Choose the optional Fast Mono font from View → Change Editor Font… or the command palette.
 
 Expect:
 

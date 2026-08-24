@@ -224,13 +224,67 @@ internal sealed class RegistryEditorHost : IEditorHost
     }
 
     private readonly Dictionary<string, Model> _models = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _mountedViews = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Uri?> _viewDocuments = new(StringComparer.Ordinal);
     private EditorBridge? _bridge;
+    private string _activeViewId = EditorGroupManager.MainGroupId;
     public string? ActiveUri { get; private set; }
     public int ModelCount => _models.Count;
+    public Uri? UriForView(string viewId) => _viewDocuments.GetValueOrDefault(viewId);
 
     public ValueTask InitializeAsync(ElementReference container, EditorBridge bridge, CancellationToken cancellationToken)
     {
         _bridge = bridge;
+        _mountedViews.Add(EditorGroupManager.MainGroupId);
+        _viewDocuments[EditorGroupManager.MainGroupId] = null;
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask CreateViewAsync(string viewId, ElementReference container, CancellationToken cancellationToken)
+    {
+        _mountedViews.Add(viewId);
+        _viewDocuments[viewId] = null;
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask SetActiveViewAsync(string viewId, CancellationToken cancellationToken)
+    {
+        if (!_mountedViews.Contains(viewId)) throw new InvalidOperationException($"Editor view is not mounted: {viewId}");
+        _activeViewId = viewId;
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask SwitchViewDocumentAsync(
+        string viewId,
+        Uri uri,
+        EditorViewState? viewState,
+        bool focus,
+        CancellationToken cancellationToken)
+    {
+        if (!_mountedViews.Contains(viewId)) throw new InvalidOperationException($"Editor view is not mounted: {viewId}");
+        var model = Get(uri);
+        if (viewState is not null) model.ViewState = viewState;
+        _viewDocuments[viewId] = uri;
+        ActiveUri = uri.AbsoluteUri;
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask ClearViewAsync(string viewId, CancellationToken cancellationToken)
+    {
+        _viewDocuments[viewId] = null;
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask<EditorViewState?> GetViewStateAsync(
+        string viewId,
+        Uri uri,
+        CancellationToken cancellationToken) => GetViewStateAsync(uri, cancellationToken);
+
+    public ValueTask RemoveViewAsync(string viewId, CancellationToken cancellationToken)
+    {
+        if (viewId != EditorGroupManager.MainGroupId) _mountedViews.Remove(viewId);
+        _viewDocuments.Remove(viewId);
+        if (_activeViewId == viewId) _activeViewId = EditorGroupManager.MainGroupId;
         return ValueTask.CompletedTask;
     }
 
@@ -243,6 +297,7 @@ internal sealed class RegistryEditorHost : IEditorHost
             _models.Add(content.Uri.AbsoluteUri, model);
         }
         ActiveUri = content.Uri.AbsoluteUri;
+        _viewDocuments[_activeViewId] = content.Uri;
         return ValueTask.FromResult(Sequence(model));
     }
 
@@ -251,12 +306,14 @@ internal sealed class RegistryEditorHost : IEditorHost
         var model = Get(uri);
         if (viewState is not null) model.ViewState = viewState;
         ActiveUri = uri.AbsoluteUri;
+        _viewDocuments[_activeViewId] = uri;
         return ValueTask.CompletedTask;
     }
 
     public ValueTask ClearDocumentAsync(CancellationToken cancellationToken)
     {
         ActiveUri = null;
+        _viewDocuments[_activeViewId] = null;
         return ValueTask.CompletedTask;
     }
 
@@ -267,6 +324,8 @@ internal sealed class RegistryEditorHost : IEditorHost
     {
         _models.Remove(uri.AbsoluteUri);
         if (ActiveUri == uri.AbsoluteUri) ActiveUri = null;
+        foreach (var viewId in _viewDocuments.Where(item => item.Value == uri).Select(item => item.Key).ToArray())
+            _viewDocuments[viewId] = null;
         return ValueTask.CompletedTask;
     }
 
@@ -278,6 +337,8 @@ internal sealed class RegistryEditorHost : IEditorHost
         _models.Remove(oldUri.AbsoluteUri);
         _models[newUri.AbsoluteUri] = model;
         if (ActiveUri == oldUri.AbsoluteUri) ActiveUri = newUri.AbsoluteUri;
+        foreach (var viewId in _viewDocuments.Where(item => item.Value == oldUri).Select(item => item.Key).ToArray())
+            _viewDocuments[viewId] = newUri;
         return ValueTask.FromResult(new DocumentSnapshot(model.Text.ToString(), model.Sequence, model.AlternativeSequence));
     }
 
@@ -343,6 +404,8 @@ internal sealed class RegistryEditorHost : IEditorHost
     public ValueTask DisposeAsync()
     {
         _models.Clear();
+        _mountedViews.Clear();
+        _viewDocuments.Clear();
         return ValueTask.CompletedTask;
     }
 

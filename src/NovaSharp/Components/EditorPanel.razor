@@ -39,32 +39,15 @@
     <div class="workbench-body">
         <div class="editor-workspace">
           <section class="editor-panel">
-            <div class="tabs-bar">
-                <div class="tabs-strip" role="tablist" aria-label="Open editors">
-                    @foreach (var tab in _tabs.Tabs)
-                    {
-                        <div class="document-tab @(tab.IsActive ? "active" : null) @(tab.IsPreview ? "preview" : null)"
-                             role="tab" aria-selected="@tab.IsActive" aria-label="@tab.AccessibleLabel"
-                             title="@tab.Path" tabindex="@(tab.IsActive ? 0 : -1)" draggable="true"
-                             @onclick="() => ActivateTabAsync(tab.Id)" @ondblclick="() => PromoteTabAsync(tab.Id)"
-                             @onauxclick="args => MiddleClickAsync(tab.Id, args)"
-                             @oncontextmenu="args => OpenTabContextAsync(tab.Id, args)"
-                             @oncontextmenu:preventDefault @oncontextmenu:stopPropagation
-                             @ondragstart="() => _draggedTabId = tab.Id"
-                             @ondragover:preventDefault @ondrop="() => DropTabAsync(tab.Id)">
-                            <span class="tab-state" aria-hidden="true">
-                                @if (tab.IsMissing) { <ShellIcon Name="SemanticIcon.Missing" /> }
-                                else if (tab.IsReadOnly) { <ShellIcon Name="SemanticIcon.ReadOnly" /> }
-                                else if (tab.IsDirty) { <ShellIcon Name="SemanticIcon.Dirty" /> }
-                            </span>
-                            <span class="tab-label">@tab.Label</span>
-                            <button type="button" class="tab-close" aria-label="Close @tab.Label"
-                                    @onclick="() => CloseOneAsync(tab.Id)" @onclick:stopPropagation>
-                                <ShellIcon Name="SemanticIcon.Close" />
-                            </button>
-                        </div>
-                    }
-                </div>
+            <div class="editor-groups-root @(_status.IsComparing ? "hidden" : null) @(_draggedViewId is null ? null : "dragging")"
+                 @ref="_editorGroupsRoot">
+                <EditorGroupPane Node="_groups.Layout" Snapshot="_groups"
+                                 OnGroupReady="GroupReadyAsync" OnActivate="ActivateTabAsync"
+                                 OnPromote="PromoteTabAsync" OnClose="CloseGroupTabAsync"
+                                 OnContextMenu="OpenTabContextAsync" OnDragStart="BeginTabDrag"
+                                 OnDragEnd="EndTabDrag"
+                                 OnDrop="DropTabAsync" OnEdgeDrop="DropTabAtEdgeAsync"
+                                 OnResize="ResizeGroupsAsync" />
             </div>
 
             @if (_notifications.Count > 0)
@@ -89,10 +72,9 @@
                 </div>
             }
 
-            <div class="editor-host @(_status.IsComparing ? "hidden" : null)" @ref="_editorContainer"></div>
             @if (_status.IsComparing)
             {
-                <div class="editor-host" @ref="_diffContainer"></div>
+                <div class="editor-host comparison-host" @ref="_diffContainer"></div>
             }
           </section>
           @if (_panelVisible)
@@ -125,7 +107,7 @@
             </button>
             @if (_status.IsReadOnly) { <span class="status-item badge">Read-only</span> }
         }
-        @if (_tabs.ActiveTab?.IsMissing == true) { <span class="status-item badge">Missing file</span> }
+        @if (_groups.ActiveTab?.IsMissing == true) { <span class="status-item badge">Missing file</span> }
     </footer>
 
     @if (_lineEndingPickerOpen)
@@ -194,22 +176,25 @@
     private const string OverflowMenuId = "application";
     private static readonly string[] MenuCategories = ["File", "Workspace", "View"];
     private readonly List<IDisposable> _registrations = [];
-    private ElementReference _editorContainer;
     private ElementReference _diffContainer;
+    private ElementReference _editorGroupsRoot;
     private IEditorHost? _host;
     private DocumentRegistry? _documents;
+    private EditorGroupManager? _groupManager;
     private DocumentSession? _smokeSession;
     private DocumentTabsSnapshot _tabs = new([]);
     private DocumentStatus _status = new();
     private IReadOnlyList<Notification> _notifications = [];
     private bool _diffAttached;
-    private string? _draggedTabId;
+    private bool _dragSurfaceAttached;
+    private string? _draggedViewId;
     private bool _encodingPickerOpen;
     private bool _lineEndingPickerOpen;
     private bool _editorFontPickerOpen;
     private bool _commandPaletteOpen;
     private bool _panelVisible;
     private bool _tabContextOpen;
+    private string? _tabContextViewId;
     private string? _openCommandMenu;
     private double _tabContextX;
     private double _tabContextY;
@@ -218,6 +203,7 @@
     private EditorFontPreference _pickedEditorFont = EditorFontPreference.Default;
     private FrozenDictionary<string, bool> _representable = FrozenDictionary<string, bool>.Empty;
     private DotNetObjectReference<EditorPanel>? _shellBridge;
+    private EditorGroupsSnapshot _groups = EmptyGroups();
 
     private DocumentSession? Active => _documents?.ActiveDocument;
     private static IEnumerable<TextEncodingProfile> Favorites =>
@@ -232,11 +218,26 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender) { await StartAsync(); return; }
+        if (!_dragSurfaceAttached)
+        {
+            await JSRuntime.InvokeVoidAsync("NovaEditorGroups.attachDragSurface", _editorGroupsRoot);
+            _dragSurfaceAttached = true;
+        }
         if (_status.IsComparing && !_diffAttached) await AttachComparisonAsync();
     }
 
-    private async Task StartAsync()
+    private async Task GroupReadyAsync((string GroupId, ElementReference Container) ready)
+    {
+        if (_host is null && ready.GroupId == EditorGroupManager.MainGroupId)
+        {
+            await StartAsync(ready.Container);
+            return;
+        }
+        if (_groupManager is not null)
+            await _groupManager.RegisterGroupAsync(ready.GroupId, ready.Container);
+    }
+
+    private async Task StartAsync(ElementReference editorContainer)
     {
         var host = new MonacoEditorHost(JSRuntime);
         Workbench.Notifications.Changed += OnNotificationsChanged;
@@ -245,7 +246,7 @@
             if (NativeSmokeTest.IsEnabled)
             {
                 var session = Workbench.CreateSession(host);
-                await host.InitializeAsync(_editorContainer,
+                await host.InitializeAsync(editorContainer,
                     new EditorBridge(session.Replicate, session.RequestResync, InvokeAsync), CancellationToken.None);
                 _host = host;
                 _smokeSession = session;
@@ -257,7 +258,7 @@
             }
 
             var documents = Workbench.CreateDocumentRegistry(host);
-            await host.InitializeAsync(_editorContainer,
+            await host.InitializeAsync(editorContainer,
                 new EditorBridge(documents.Replicate, documents.RequestResync, InvokeAsync), CancellationToken.None);
             _host = host;
             _documents = documents;
@@ -279,6 +280,11 @@
             await host.SetEditorFontAsync(Workbench.Configuration.Current.Settings.EditorFont, CancellationToken.None);
             await documents.RestoreAsync();
             _tabs = documents.Snapshot;
+            var groups = new EditorGroupManager(host, documents, Workbench.WorkspacePersistence, Workbench.Notifications);
+            groups.Changed += OnGroupsChanged;
+            _groupManager = groups;
+            await groups.RestoreAsync();
+            _groups = groups.Snapshot;
             _status = documents.ActiveDocument?.Status ?? new();
         }
         catch (Exception exception) when (exception is JSException or JSDisconnectedException)
@@ -304,19 +310,31 @@
         Register(WorkbenchCommands.KeepEditorText, token => Active?.ResolveExternalChangeAsync(ExternalChangeChoice.Keep, token) ?? Task.CompletedTask, () => _status.IsOpen);
         Register(WorkbenchCommands.ChooseEncoding, _ => ToggleEncodingPickerAsync(), () => _status.IsOpen);
         Register(WorkbenchCommands.ChooseLineEnding, _ => { ToggleLineEndingPicker(); return Task.CompletedTask; }, () => _status.IsOpen);
-        Register(WorkbenchCommands.Close, token => CloseKindAsync(DocumentCloseKind.One, token), () => _tabs.ActiveId is not null);
-        Register(WorkbenchCommands.CloseOthers, token => CloseKindAsync(DocumentCloseKind.Others, token), () => _tabs.Tabs.Count > 1);
-        Register(WorkbenchCommands.CloseRight, token => CloseKindAsync(DocumentCloseKind.Right, token), () => ActiveIndex >= 0 && ActiveIndex < _tabs.Tabs.Count - 1);
-        Register(WorkbenchCommands.CloseSaved, token => CloseKindAsync(DocumentCloseKind.Saved, token), () => _tabs.Tabs.Any(tab => !tab.IsDirty));
-        Register(WorkbenchCommands.CloseAll, token => CloseKindAsync(DocumentCloseKind.All, token), () => _tabs.Tabs.Count > 0);
+        Register(WorkbenchCommands.Close, token => CloseKindAsync(DocumentCloseKind.One, token), () => _groups.ActiveTab is not null);
+        Register(WorkbenchCommands.CloseOthers, token => CloseKindAsync(DocumentCloseKind.Others, token), () => _groups.ActiveGroup.Tabs.Count > 1);
+        Register(WorkbenchCommands.CloseRight, token => CloseKindAsync(DocumentCloseKind.Right, token), () => ActiveIndex >= 0 && ActiveIndex < _groups.ActiveGroup.Tabs.Count - 1);
+        Register(WorkbenchCommands.CloseSaved, token => CloseKindAsync(DocumentCloseKind.Saved, token), () => _groups.ActiveGroup.Tabs.Any(tab => !tab.IsDirty));
+        Register(WorkbenchCommands.CloseAll, token => CloseKindAsync(DocumentCloseKind.All, token), () => _groups.ActiveGroup.Tabs.Count > 0);
         Register(WorkbenchCommands.MoveTabLeft, token => MoveActiveAsync(-1, token), () => ActiveIndex > 0);
-        Register(WorkbenchCommands.MoveTabRight, token => MoveActiveAsync(1, token), () => ActiveIndex >= 0 && ActiveIndex < _tabs.Tabs.Count - 1);
-        Register(WorkbenchCommands.PreviousTab, token => CycleAsync(-1, token), () => _tabs.Tabs.Count > 1);
-        Register(WorkbenchCommands.NextTab, token => CycleAsync(1, token), () => _tabs.Tabs.Count > 1);
-        Register(WorkbenchCommands.PinTab, token => _tabs.ActiveId is { } id ? _documents!.PromoteAsync(id, token) : Task.CompletedTask, () => _tabs.ActiveTab?.IsPreview == true);
+        Register(WorkbenchCommands.MoveTabRight, token => MoveActiveAsync(1, token), () => ActiveIndex >= 0 && ActiveIndex < _groups.ActiveGroup.Tabs.Count - 1);
+        Register(WorkbenchCommands.PreviousTab, token => CycleAsync(-1, token), () => _groups.ActiveGroup.Tabs.Count > 1);
+        Register(WorkbenchCommands.NextTab, token => CycleAsync(1, token), () => _groups.ActiveGroup.Tabs.Count > 1);
+        Register(WorkbenchCommands.PinTab, token => _groups.ActiveTab is { } tab ? _documents!.PromoteAsync(tab.DocumentId, token) : Task.CompletedTask, () => _groups.ActiveTab?.IsPreview == true);
         Register(WorkbenchCommands.ShowCommandPalette, _ => { ShowCommandPalette(); return Task.CompletedTask; });
         Register(WorkbenchCommands.TogglePanel, _ => { _panelVisible = !_panelVisible; StateHasChanged(); return Task.CompletedTask; });
         Register(WorkbenchCommands.ChooseEditorFont, _ => { ToggleEditorFontPicker(); return Task.CompletedTask; });
+        Register(WorkbenchCommands.SplitEditorLeft, token => _groupManager?.SplitAsync(EditorSplitDirection.Left, token) ?? Task.CompletedTask, CanSplit);
+        Register(WorkbenchCommands.SplitEditorRight, token => _groupManager?.SplitAsync(EditorSplitDirection.Right, token) ?? Task.CompletedTask, CanSplit);
+        Register(WorkbenchCommands.SplitEditorUp, token => _groupManager?.SplitAsync(EditorSplitDirection.Up, token) ?? Task.CompletedTask, CanSplit);
+        Register(WorkbenchCommands.SplitEditorDown, token => _groupManager?.SplitAsync(EditorSplitDirection.Down, token) ?? Task.CompletedTask, CanSplit);
+        Register(WorkbenchCommands.FocusPreviousGroup, token => _groupManager?.FocusRelativeAsync(-1, token) ?? Task.CompletedTask, () => _groups.Groups.Count > 1);
+        Register(WorkbenchCommands.FocusNextGroup, token => _groupManager?.FocusRelativeAsync(1, token) ?? Task.CompletedTask, () => _groups.Groups.Count > 1);
+        Register(WorkbenchCommands.MoveEditorToNextGroup, token => _groupManager?.TransferActiveToRelativeGroupAsync(false, token) ?? Task.CompletedTask, () => _groups.Groups.Count > 1 && _groups.ActiveTab is not null);
+        Register(WorkbenchCommands.CopyEditorToNextGroup, token => _groupManager?.TransferActiveToRelativeGroupAsync(true, token) ?? Task.CompletedTask, () => _groups.Groups.Count > 1 && _groups.ActiveTab is not null);
+        Register(WorkbenchCommands.CloseEditorGroup, token => CloseActiveGroupAsync(token), () => _groups.Groups.Count > 1);
+        Register(WorkbenchCommands.DistributeEditorGroups, token => _groupManager?.DistributeEvenlyAsync(token) ?? Task.CompletedTask, () => _groups.Groups.Count > 1);
+
+        bool CanSplit() => _groups.ActiveTab is not null && !_status.IsComparing;
     }
 
     [JSInvokable]
@@ -360,8 +378,16 @@
 
     private async Task InvokeNotificationActionAsync(NotificationAction action)
     {
-        if (action.DocumentId is { } id && _tabs.Tabs.Any(tab => tab.Id == id))
-            await ActivateTabAsync(id);
+        if (action.DocumentId is { } id)
+        {
+            var tab = _groups.Groups.Values.SelectMany(group => group.Tabs)
+                .FirstOrDefault(tab => tab.DocumentId == id);
+            if (tab is not null)
+            {
+                var group = _groups.Groups.Values.First(candidate => candidate.Tabs.Contains(tab));
+                await ActivateTabAsync(new(group.Id, tab.ViewId));
+            }
+        }
         await InvokeAsync(action.CommandId);
     }
 
@@ -371,6 +397,13 @@
         _tabs = tabs;
         _status = _documents?.ActiveDocument?.Status ?? new();
         if (wasComparing && !_status.IsComparing) _diffAttached = false;
+        StateHasChanged();
+    });
+
+    private void OnGroupsChanged(EditorGroupsSnapshot groups) => _ = InvokeAsync(() =>
+    {
+        _groups = groups;
+        _status = _documents?.ActiveDocument?.Status ?? new();
         StateHasChanged();
     });
 
@@ -398,66 +431,103 @@
         if (files is [var path])
         {
             await EndCompareAsync();
-            await _documents.OpenPinnedAsync(path);
+            if (_groupManager is not null) await _groupManager.OpenPinnedAsync(path);
         }
     }
 
     private async Task OpenWorkspaceFileAsync(string path)
     {
         await EndCompareAsync();
-        if (_documents is not null) await _documents.OpenPinnedAsync(path);
+        if (_groupManager is not null) await _groupManager.OpenPinnedAsync(path);
     }
 
     private async Task PreviewWorkspaceFileAsync(string path)
     {
         await EndCompareAsync();
-        if (_documents is not null) await _documents.OpenPreviewAsync(path);
+        if (_groupManager is not null) await _groupManager.OpenPreviewAsync(path);
     }
 
-    private async Task ActivateTabAsync(string id)
+    private async Task ActivateTabAsync(EditorGroupTabEvent tab)
     {
         await EndCompareAsync();
-        if (_documents is not null)
+        if (_groupManager is not null)
         {
-            await _documents.ActivateAsync(id);
-            _tabs = _documents.Snapshot;
+            await _groupManager.ActivateAsync(tab.GroupId, tab.ViewId);
+            _tabs = _documents!.Snapshot;
             _status = _documents.ActiveDocument?.Status ?? new();
         }
     }
 
-    private Task PromoteTabAsync(string id) => _documents?.PromoteAsync(id) ?? Task.CompletedTask;
-
-    private async Task MiddleClickAsync(string id, MouseEventArgs args)
+    private Task PromoteTabAsync(EditorGroupTabEvent tab)
     {
-        if (args.Button == 1) await CloseOneAsync(id);
+        var documentId = _groups.Groups[tab.GroupId].Tabs.First(candidate => candidate.ViewId == tab.ViewId).DocumentId;
+        return _documents?.PromoteAsync(documentId) ?? Task.CompletedTask;
     }
 
-    private async Task OpenTabContextAsync(string id, MouseEventArgs args)
+    private async Task OpenTabContextAsync((EditorGroupTabEvent Tab, MouseEventArgs Mouse) context)
     {
-        await ActivateTabAsync(id);
-        _tabContextX = args.ClientX;
-        _tabContextY = args.ClientY;
+        await ActivateTabAsync(context.Tab);
+        _tabContextViewId = context.Tab.ViewId;
+        _tabContextX = context.Mouse.ClientX;
+        _tabContextY = context.Mouse.ClientY;
         _tabContextOpen = true;
     }
 
-    private void CloseTabContext() => _tabContextOpen = false;
-
-    private async Task DropTabAsync(string targetId)
+    private void CloseTabContext()
     {
-        if (_documents is null || _draggedTabId is not { } dragged) return;
-        _draggedTabId = null;
-        var target = _tabs.Tabs.ToList().FindIndex(tab => tab.Id == targetId);
-        await _documents.MoveAsync(dragged, target);
+        _tabContextOpen = false;
+        _tabContextViewId = null;
     }
 
-    private Task CloseOneAsync(string id) => CloseCandidatesAsync(_documents?.GetCloseCandidates(DocumentCloseKind.One, id) ?? []);
-    private Task CloseKindAsync(DocumentCloseKind kind, CancellationToken token) =>
-        CloseCandidatesAsync(_documents?.GetCloseCandidates(kind) ?? [], token);
-
-    private async Task CloseCandidatesAsync(IReadOnlyList<DocumentTabSnapshot> candidates, CancellationToken token = default)
+    private void BeginTabDrag(EditorGroupTabEvent tab)
     {
-        if (_documents is null || candidates.Count == 0) return;
-        var dirty = candidates.Where(tab => tab.IsDirty).ToArray();
+        _draggedViewId = tab.ViewId;
+    }
+
+    private void EndTabDrag() => _draggedViewId = null;
+
+    private async Task DropTabAsync(EditorGroupDropEvent drop)
+    {
+        if (_groupManager is null || _draggedViewId is not { } viewId) return;
+        _draggedViewId = null;
+        if (drop.Copy) await _groupManager.CopyViewAsync(viewId, drop.TargetGroupId, drop.TargetIndex);
+        else await _groupManager.MoveViewAsync(viewId, drop.TargetGroupId, drop.TargetIndex);
+    }
+
+    private async Task DropTabAtEdgeAsync(EditorGroupEdgeDropEvent drop)
+    {
+        if (_groupManager is null || _draggedViewId is not { } viewId) return;
+        _draggedViewId = null;
+        await _groupManager.SplitViewAsync(viewId, drop.TargetGroupId, drop.Direction, drop.Copy);
+    }
+
+    private Task ResizeGroupsAsync(EditorSplitResizeEvent resize) =>
+        _groupManager?.ResizeAsync(resize.SplitId, resize.Ratio) ?? Task.CompletedTask;
+
+    private Task CloseGroupTabAsync(EditorGroupTabEvent tab) => CloseViewsAsync([tab.ViewId]);
+
+    private Task CloseKindAsync(DocumentCloseKind kind, CancellationToken token)
+    {
+        var group = _groups.ActiveGroup;
+        var activeIndex = group.Tabs.ToList().FindIndex(tab => tab.ViewId == group.ActiveViewId);
+        IEnumerable<EditorGroupTabSnapshot> selected = kind switch
+        {
+            DocumentCloseKind.One => group.Tabs.Where(tab => tab.ViewId == group.ActiveViewId),
+            DocumentCloseKind.Others => group.Tabs.Where(tab => tab.ViewId != group.ActiveViewId),
+            DocumentCloseKind.Right => group.Tabs.Skip(activeIndex + 1),
+            DocumentCloseKind.Saved => group.Tabs.Where(tab => !tab.IsDirty),
+            DocumentCloseKind.All => group.Tabs,
+            _ => [],
+        };
+        return CloseViewsAsync(selected.Select(tab => tab.ViewId).ToArray(), token);
+    }
+
+    private async Task CloseViewsAsync(IReadOnlyList<string> viewIds, CancellationToken token = default)
+    {
+        if (_groupManager is null || viewIds.Count == 0) return;
+        var candidates = _groups.Groups.Values.SelectMany(group => group.Tabs)
+            .Where(tab => viewIds.Contains(tab.ViewId, StringComparer.Ordinal)).ToArray();
+        var dirty = candidates.Where(tab => tab.IsDirty && _groupManager.ViewCount(tab.DocumentId) == 1).ToArray();
         if (dirty.Length > 0)
         {
             var list = string.Join("\n", dirty.Select(tab => $"• {tab.Label}"));
@@ -467,20 +537,44 @@
             if (answer != PhotinoDialogResult.Yes) return;
         }
         await EndCompareAsync();
-        await _documents.CloseAsync(candidates.Select(tab => tab.Id).ToArray(), discardDirty: true, token);
+        foreach (var viewId in viewIds)
+            await _groupManager.CloseViewAsync(viewId, discardDirty: true, token);
+    }
+
+    private async Task CloseActiveGroupAsync(CancellationToken token)
+    {
+        if (_groupManager is null) return;
+        var dirty = _groups.ActiveGroup.Tabs
+            .Where(tab => tab.IsDirty && _groupManager.ViewCount(tab.DocumentId) == 1).ToArray();
+        if (dirty.Length > 0)
+        {
+            var list = string.Join("\n", dirty.Select(tab => $"• {tab.Label}"));
+            var answer = await Program.App.MainWindow.ShowMessageAsync("NovaSharp",
+                $"Close this group and discard changes in these documents?\n\n{list}",
+                PhotinoDialogButtons.YesNo, PhotinoDialogIcon.Warning);
+            if (answer != PhotinoDialogResult.Yes) return;
+        }
+        await EndCompareAsync();
+        await _groupManager.CloseActiveGroupAsync(discardDirty: true, token);
     }
 
     private Task MoveActiveAsync(int offset, CancellationToken token) =>
-        _tabs.ActiveId is { } id ? _documents!.MoveRelativeAsync(id, offset, token) : Task.CompletedTask;
+        _groups.ActiveTab is { } tab
+            ? _groupManager!.MoveViewAsync(tab.ViewId, _groups.ActiveGroupId,
+                _groups.ActiveGroup.Tabs.ToList().FindIndex(candidate => candidate.ViewId == tab.ViewId)
+                    + (offset < 0 ? -1 : 2), token)
+            : Task.CompletedTask;
 
-    private Task CycleAsync(int offset, CancellationToken token)
+    private async Task CycleAsync(int offset, CancellationToken token)
     {
-        if (_tabs.Tabs.Count == 0) return Task.CompletedTask;
-        var index = (ActiveIndex + offset + _tabs.Tabs.Count) % _tabs.Tabs.Count;
-        return _documents!.ActivateAsync(_tabs.Tabs[index].Id, token);
+        var group = _groups.ActiveGroup;
+        if (group.Tabs.Count == 0) return;
+        var current = group.Tabs.ToList().FindIndex(tab => tab.ViewId == group.ActiveViewId);
+        var tab = group.Tabs[(current + offset + group.Tabs.Count) % group.Tabs.Count];
+        await _groupManager!.ActivateAsync(group.Id, tab.ViewId, token);
     }
 
-    private int ActiveIndex => _tabs.Tabs.ToList().FindIndex(tab => tab.Id == _tabs.ActiveId);
+    private int ActiveIndex => _groups.ActiveGroup.Tabs.ToList().FindIndex(tab => tab.ViewId == _groups.ActiveGroup.ActiveViewId);
 
     private async Task SaveAsync()
     {
@@ -503,7 +597,10 @@
         {
             Workbench.Notifications.Raise("novasharp.documents.saveAsOpen", NotificationSeverity.Warning,
                 $"{existing.Label} is already open in another tab.");
-            await ActivateTabAsync(existing.Id);
+            var view = _groups.Groups.Values.SelectMany(group => group.Tabs)
+                .First(tab => tab.DocumentId == existing.Id);
+            var group = _groups.Groups.Values.First(candidate => candidate.Tabs.Contains(view));
+            await ActivateTabAsync(new(group.Id, view.ViewId));
             return;
         }
         await EndCompareAsync();
@@ -611,16 +708,40 @@
         _ => SemanticIcon.Information,
     };
 
+    private static EditorGroupsSnapshot EmptyGroups()
+    {
+        var group = new EditorGroupSnapshot(EditorGroupManager.MainGroupId, [], null, true);
+        return new EditorGroupsSnapshot(
+            new EditorGroupNodeSnapshot(EditorGroupManager.MainGroupId),
+            new Dictionary<string, EditorGroupSnapshot>(StringComparer.Ordinal)
+            {
+                [EditorGroupManager.MainGroupId] = group,
+            },
+            EditorGroupManager.MainGroupId);
+    }
+
     public async ValueTask DisposeAsync()
     {
         Workbench.Notifications.Changed -= OnNotificationsChanged;
         Workbench.Configuration.Changed -= OnConfigurationChanged;
         try { await JSRuntime.InvokeVoidAsync("NovaWorkbench.dispose"); }
         catch (JSDisconnectedException) { }
+        if (_dragSurfaceAttached)
+        {
+            try { await JSRuntime.InvokeVoidAsync("NovaEditorGroups.detachDragSurface", _editorGroupsRoot); }
+            catch (JSDisconnectedException) { }
+            _dragSurfaceAttached = false;
+        }
         _shellBridge?.Dispose();
         _shellBridge = null;
         foreach (var registration in _registrations) registration.Dispose();
         _registrations.Clear();
+        if (_groupManager is not null)
+        {
+            _groupManager.Changed -= OnGroupsChanged;
+            await _groupManager.DisposeAsync();
+            _groupManager = null;
+        }
         if (_documents is not null)
         {
             _documents.Changed -= OnTabsChanged;

@@ -2,7 +2,7 @@
 
 ## Status
 
-In progress.
+Complete.
 
 ## Goal
 
@@ -139,12 +139,9 @@ are recorded in [workbench-shell.md](workbench-shell.md) and [ADR 0004](decision
 
 ## Qualification status
 
-On 2026-08-23, the local `win-x64` fixture passed the end-to-end bootstrap, a warning-free build, 258 .NET tests, 73
-Monaco browser gates, 53 Chromium/WebKit shell gates, RID-specific Release publish, and packaged native smoke. The
-native fixture measured 951/927 ms cold/warm startup and 82 MB idle working set; existing document, replication,
-save, 20,000-entry Explorer, watcher, and memory budgets remained green. This single-platform result does not complete
-the phase. Completion remains pending until the same gates and retained evidence pass on all six supported runtime
-identifiers from one commit.
+[Qualification run 32752027806](https://github.com/XDX-Org/NovaSharp/actions/runs/32752027806) passed bootstrap,
+build/test, browser accessibility and visual gates, RID-specific publish, packaged native smoke, performance,
+disposal, and retained-evidence gates on all six supported runtime identifiers from commit `306e8db`.
 
 ## Known deferrals
 

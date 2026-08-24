@@ -98,20 +98,42 @@ kbd { color: var(--text-muted); font: inherit; font-size: 11px; white-space: now
 .explorer-resizer:hover, .explorer-resizer:focus-visible { background: var(--accent); }
 
 .editor-workspace { display: grid; min-width: 0; min-height: 0; overflow-x: hidden; flex: 1; grid-template-rows: minmax(0, 1fr) auto; background: var(--surface-editor); }
-.editor-panel { position: relative; display: grid; min-width: 0; min-height: 0; overflow-x: hidden; grid-template-rows: var(--tab-height) minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); }
+.editor-panel { position: relative; display: grid; min-width: 0; min-height: 0; overflow-x: hidden; grid-template-rows: minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); }
+.editor-groups-root { min-width: 0; min-height: 0; grid-area: 1 / 1; }
+.editor-groups-root.hidden { visibility: hidden; pointer-events: none; }
+.editor-groups-root > .editor-group, .editor-groups-root > .editor-split { width: 100%; height: 100%; }
+.editor-group { position: relative; display: grid; min-width: 0; min-height: 0; overflow: hidden; grid-template-rows: var(--tab-height) minmax(0, 1fr); background: var(--surface-editor); }
+.editor-group.active { box-shadow: inset 0 0 0 1px var(--accent-soft); }
+.editor-group-host { min-width: 0; min-height: 0; overflow: hidden; }
+.editor-split { display: grid; min-width: 0; min-height: 0; overflow: hidden; }
+.editor-split.horizontal { grid-template-columns: minmax(0, var(--split-first)) 5px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+.editor-split.vertical { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, var(--split-first)) 5px minmax(0, 1fr); }
+.editor-splitter { z-index: 6; background: var(--border-subtle); touch-action: none; }
+.editor-split.horizontal > .editor-splitter { cursor: ew-resize; }
+.editor-split.vertical > .editor-splitter { cursor: ns-resize; }
+.editor-splitter:hover, .editor-splitter:focus-visible { background: var(--accent); }
+.group-drop-zone { position: absolute; z-index: 5; opacity: 0; pointer-events: none; }
+.group-drop-zone.left { top: var(--tab-height); bottom: 0; left: 0; width: 25%; }
+.group-drop-zone.right { top: var(--tab-height); right: 0; bottom: 0; width: 25%; }
+.group-drop-zone.up { top: var(--tab-height); right: 25%; left: 25%; height: 25%; z-index: 6; }
+.group-drop-zone.down { right: 25%; bottom: 0; left: 25%; height: 25%; z-index: 6; }
+.group-drop-zone.center { top: calc(var(--tab-height) + 25%); right: 25%; bottom: 25%; left: 25%; z-index: 4; }
+.editor-groups-root.dragging .group-drop-zone { opacity: .08; pointer-events: auto; background: var(--accent); outline: 1px solid var(--accent-soft); outline-offset: -1px; }
+.editor-groups-root.dragging .group-drop-zone:hover { opacity: .45; outline-color: var(--accent); }
 .tabs-bar { display: flex; min-width: 0; border-bottom: 1px solid var(--border-subtle); background: var(--surface-region); }
 .tabs-strip { display: flex; min-width: 0; flex: 1; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
 .tabs-strip::-webkit-scrollbar { display: none; }
 .document-tab { display: flex; min-width: 120px; max-width: 240px; align-items: center; gap: 6px; padding: 0 5px 0 10px; border-right: 1px solid var(--border-subtle); color: var(--text-secondary); background: var(--surface-raised); cursor: default; user-select: none; }
 .document-tab:hover { background: var(--surface-hover); }
 .document-tab.active { color: var(--text-primary); background: var(--surface-editor); box-shadow: inset 0 2px var(--accent); }
+.editor-groups-root.dragging .document-tab:hover { box-shadow: inset 2px 0 var(--accent); }
 .document-tab.preview .tab-label { font-style: italic; }
 .tab-state { display: grid; width: 12px; flex: 0 0 12px; place-items: center; color: var(--warning); }
 .tab-state .codicon { font-size: 11px; }
 .tab-label { overflow: hidden; flex: 1; text-overflow: ellipsis; white-space: nowrap; }
 .tab-close { display: grid; width: 24px; height: 24px; place-items: center; padding: 0; border: 0; border-radius: var(--radius-small); background: transparent; color: var(--text-muted); }
 .tab-close:hover { background: var(--surface-hover); color: var(--text-primary); }
-.editor-host { min-width: 0; min-height: 0; grid-area: 2 / 1; }
+.editor-host { min-width: 0; min-height: 0; grid-area: 1 / 1; }
 .editor-host.hidden { visibility: hidden; pointer-events: none; }
 .bottom-panel { height: min(190px, 40vh); overflow-x: hidden; border-top: 1px solid var(--border-subtle); background: var(--surface-region); }
 .bottom-panel header { display: flex; height: var(--tab-height); align-items: center; gap: var(--space-3); padding: 0 var(--space-3); border-bottom: 1px solid var(--border-subtle); }

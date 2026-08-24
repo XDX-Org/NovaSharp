@@ -9,7 +9,7 @@ namespace NovaSharp.Workspace;
 
 public sealed record WorkspaceStateDocument
 {
-    public const int CurrentSchemaVersion = 2;
+    public const int CurrentSchemaVersion = 3;
 
     public int SchemaVersion { get; init; } = CurrentSchemaVersion;
     public string? WorkspacePath { get; init; }
@@ -20,6 +20,7 @@ public sealed record WorkspaceStateDocument
     public int SidebarWidth { get; init; } = 280;
     public PersistedDocumentView[] OpenDocuments { get; init; } = [];
     public string? ActiveDocumentId { get; init; }
+    public PersistedEditorLayout? EditorLayout { get; init; }
 
     public static JsonSerializerOptions SerializerOptions { get; } = new(JsonSerializerDefaults.Web)
     {
@@ -35,6 +36,30 @@ public sealed record PersistedDocumentView(
     bool WorkspaceRelative,
     bool IsPreview,
     bool IsPinned,
+    EditorViewState? ViewState = null);
+
+public sealed record PersistedEditorLayout(
+    PersistedEditorLayoutNode Root,
+    PersistedEditorGroup[] Groups,
+    string ActiveGroupId);
+
+public sealed record PersistedEditorLayoutNode(
+    string Id,
+    string Kind,
+    string? GroupId = null,
+    string? Orientation = null,
+    double Ratio = 0.5,
+    PersistedEditorLayoutNode? First = null,
+    PersistedEditorLayoutNode? Second = null);
+
+public sealed record PersistedEditorGroup(
+    string Id,
+    PersistedEditorView[] Views,
+    string? ActiveViewId = null);
+
+public sealed record PersistedEditorView(
+    string Id,
+    string DocumentId,
     EditorViewState? ViewState = null);
 
 public sealed record WorkspaceStateLoadResult(WorkspaceStateDocument State, string? Problem = null);

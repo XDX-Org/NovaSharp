@@ -60,6 +60,16 @@ public static class WorkbenchCommands
     public const string ShowCommandPalette = "novasharp.workbench.showCommandPalette";
     public const string TogglePanel = "novasharp.workbench.togglePanel";
     public const string ChooseEditorFont = "novasharp.workbench.chooseEditorFont";
+    public const string SplitEditorLeft = "novasharp.groups.splitLeft";
+    public const string SplitEditorRight = "novasharp.groups.splitRight";
+    public const string SplitEditorUp = "novasharp.groups.splitUp";
+    public const string SplitEditorDown = "novasharp.groups.splitDown";
+    public const string FocusPreviousGroup = "novasharp.groups.focusPrevious";
+    public const string FocusNextGroup = "novasharp.groups.focusNext";
+    public const string MoveEditorToNextGroup = "novasharp.groups.moveToNext";
+    public const string CopyEditorToNextGroup = "novasharp.groups.copyToNext";
+    public const string CloseEditorGroup = "novasharp.groups.close";
+    public const string DistributeEditorGroups = "novasharp.groups.distributeEvenly";
 
     /// <summary>Returns the descriptor for <paramref name="id"/>, with its title and default bindings.</summary>
     /// <remarks>
@@ -96,6 +106,16 @@ public static class WorkbenchCommands
         ShowCommandPalette => new CommandDescriptor(ShowCommandPalette, "Show Command Palette", "View", ["CtrlCmd+Shift+P"], ShowInPalette: true),
         TogglePanel => new CommandDescriptor(TogglePanel, "Toggle Bottom Panel", "View", ["CtrlCmd+J"], ShowInPalette: true),
         ChooseEditorFont => new CommandDescriptor(ChooseEditorFont, "Change Editor Font…", "View", [], ShowInPalette: true),
+        SplitEditorLeft => new CommandDescriptor(SplitEditorLeft, "Split Editor Left", "View", [], ShowInPalette: true),
+        SplitEditorRight => new CommandDescriptor(SplitEditorRight, "Split Editor Right", "View", ["CtrlCmd+Alt+RightArrow"], ShowInPalette: true),
+        SplitEditorUp => new CommandDescriptor(SplitEditorUp, "Split Editor Up", "View", [], ShowInPalette: true),
+        SplitEditorDown => new CommandDescriptor(SplitEditorDown, "Split Editor Down", "View", ["CtrlCmd+Alt+DownArrow"], ShowInPalette: true),
+        FocusPreviousGroup => new CommandDescriptor(FocusPreviousGroup, "Focus Previous Editor Group", "View", [], ShowInPalette: true),
+        FocusNextGroup => new CommandDescriptor(FocusNextGroup, "Focus Next Editor Group", "View", [], ShowInPalette: true),
+        MoveEditorToNextGroup => new CommandDescriptor(MoveEditorToNextGroup, "Move Editor into Next Group", "View", [], ShowInPalette: true),
+        CopyEditorToNextGroup => new CommandDescriptor(CopyEditorToNextGroup, "Copy Editor into Next Group", "View", [], ShowInPalette: true),
+        CloseEditorGroup => new CommandDescriptor(CloseEditorGroup, "Close Editor Group", "View", [], ShowInPalette: true),
+        DistributeEditorGroups => new CommandDescriptor(DistributeEditorGroups, "Distribute Editor Groups Evenly", "View", [], ShowInPalette: true),
         _ => throw new ArgumentOutOfRangeException(nameof(id), id, "There is no descriptor for this command."),
     };
 
@@ -106,5 +126,8 @@ public static class WorkbenchCommands
         Close, CloseOthers, CloseRight, CloseSaved, CloseAll, MoveTabLeft, MoveTabRight, PreviousTab, NextTab, PinTab,
         OpenWorkspace, CloseWorkspace, RefreshWorkspace, ToggleExplorer, RevealActiveFile,
         ShowCommandPalette, TogglePanel, ChooseEditorFont,
+        SplitEditorLeft, SplitEditorRight, SplitEditorUp, SplitEditorDown,
+        FocusPreviousGroup, FocusNextGroup, MoveEditorToNextGroup, CopyEditorToNextGroup,
+        CloseEditorGroup, DistributeEditorGroups,
     ];
 }

@@ -92,6 +92,7 @@ public sealed class EditorContractTests
         var module = ReadContract("monaco-editor-host.js");
 
         Assert.Equal(2, module.Split("scrollbar: { horizontal: 'hidden' }", StringSplitOptions.None).Length - 1);
+        Assert.Contains("const viewEditor = createCodeEditor(viewContainer);", module, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -173,7 +174,7 @@ public sealed class EditorContractTests
         // A binding that does not resolve is a shortcut that silently does nothing. It is returned to .NET rather
         // than dropped, so it becomes a notification instead of a mystery.
         Assert.Contains("unresolved.push", module, StringComparison.Ordinal);
-        Assert.Contains("return unresolved;", module, StringComparison.Ordinal);
+        Assert.Contains("new Set(unresolved)", module, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -185,7 +186,7 @@ public sealed class EditorContractTests
         // open document, so the model is detached first and returned to the editor afterwards.
         Assert.Contains("diffEditor.setModel(null);", module, StringComparison.Ordinal);
         Assert.Contains("originalModel?.dispose();", module, StringComparison.Ordinal);
-        Assert.Contains("editor.setModel(currentModel);", module, StringComparison.Ordinal);
+        Assert.Contains("comparisonSource.editor.setModel(comparisonSource.document.model);", module, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -223,7 +224,7 @@ public sealed class EditorContractTests
     [Fact]
     public void DocumentTabs_ExposeAccessiblePointerInteractions()
     {
-        var markup = ReadContract("EditorPanel.razor");
+        var markup = ReadContract("EditorPanel.razor") + ReadContract("EditorGroupPane.razor");
 
         Assert.Contains("role=\"tablist\"", markup, StringComparison.Ordinal);
         Assert.Contains("role=\"tab\"", markup, StringComparison.Ordinal);

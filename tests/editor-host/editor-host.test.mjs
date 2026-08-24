@@ -251,6 +251,20 @@ try {
     check('exactly one model is open', info.modelCount === 1, String(info.modelCount));
     check('the page reported no off-origin resource loads', info.externalRequestCount === 0, String(info.externalRequestCount));
     check('no request left the application origin', offOriginRequests.length === 0, offOriginRequests.join('; '));
+    const primaryRemount = await page.evaluate(() => {
+        const original = document.getElementById('host');
+        const replacement = document.createElement('div');
+        replacement.style.cssText = 'position:absolute;inset:0;';
+        document.body.appendChild(replacement);
+        globalThis.editor.createView('main', replacement);
+        const moved = replacement.contains(globalThis.NovaMonaco.editor.getEditors()[0].getDomNode());
+        globalThis.editor.createView('main', original);
+        replacement.remove();
+        globalThis.NovaMonaco.editor.getEditors()[0].focus();
+        return moved && original.contains(globalThis.NovaMonaco.editor.getEditors()[0].getDomNode());
+    });
+    check('an existing group remount recreates its editor without replacing the model',
+        primaryRemount && await page.evaluate(() => globalThis.editor.runtimeInfo()).then(value => value.modelCount === 1));
 
     const fastMono = await page.evaluate(async () => {
         await document.fonts.load('14px "Fast Mono"');
@@ -627,6 +641,92 @@ try {
     check('switching tabs restores cursor, selection, and scroll state',
         JSON.stringify(widgetViewAfterSwitch) === JSON.stringify(widgetViewBeforeSwitch),
         JSON.stringify(widgetViewAfterSwitch));
+
+    // Split views attach separate editors to one URI-keyed model. View state stays local while edits and undo remain
+    // document-wide.
+    const splitResult = await page.evaluate(() => {
+        const host = document.createElement('div');
+        host.id = 'split-view';
+        host.style.cssText = 'position:absolute;right:0;top:0;width:45%;height:70px;z-index:2;';
+        document.body.appendChild(host);
+        globalThis.editor.createView('right', host);
+        globalThis.editor.switchViewDocument('right', 'file:///workspace/Widget.cs', null, false);
+        const replacement = document.createElement('div');
+        replacement.id = 'split-view-next';
+        replacement.style.cssText = host.style.cssText;
+        document.body.appendChild(replacement);
+        globalThis.editor.createView('right', replacement);
+        host.remove();
+        replacement.id = 'split-view';
+        const [main, right] = globalThis.NovaMonaco.editor.getEditors();
+        main.setPosition({ lineNumber: 1, column: 1 });
+        main.setScrollTop(0);
+        right.setPosition({ lineNumber: 5, column: 9 });
+        right.setScrollTop(44);
+        const mainState = globalThis.editor.viewStateForView('main', 'file:///workspace/Widget.cs');
+        const rightState = globalThis.editor.viewStateForView('right', 'file:///workspace/Widget.cs');
+        right.pushUndoStop();
+        right.executeEdits('split-test', [{
+            range: new globalThis.NovaMonaco.Range(1, 1, 1, 1),
+            text: '// split edit\n',
+        }]);
+        right.pushUndoStop();
+        return {
+            sameModel: main.getModel() === right.getModel(),
+            remounted: replacement.contains(right.getDomNode()),
+            mainState,
+            rightState,
+        };
+    });
+    await settle();
+    const splitRuntime = await page.evaluate(() => globalThis.editor.runtimeInfo());
+    check('duplicate views reuse the URI-keyed model',
+        splitResult.sameModel && splitResult.remounted && splitRuntime.modelCount === 2 && splitRuntime.viewCount === 2,
+        JSON.stringify(splitRuntime));
+    check('duplicate views retain independent cursor and scroll state',
+        splitResult.mainState.lineNumber === 1
+        && splitResult.rightState.lineNumber === 5
+        && splitResult.mainState.scrollTop !== splitResult.rightState.scrollTop,
+        JSON.stringify({ main: splitResult.mainState, right: splitResult.rightState }));
+    check('an edit in one view is immediately visible in the other',
+        await page.evaluate(() => globalThis.NovaMonaco.editor.getEditors()[0].getValue().startsWith('// split edit')));
+    await page.evaluate(() => globalThis.NovaMonaco.editor.getEditors()[0].trigger('split-test', 'undo', null));
+    await settle();
+    check('undo in one view is coherent across duplicate views',
+        await page.evaluate(() => globalThis.NovaMonaco.editor.getEditors()
+            .every(editor => !editor.getValue().startsWith('// split edit'))));
+    const secondaryOpen = await page.evaluate(async () => {
+        await globalThis.editor.openDocumentStreamInView(
+            'right',
+            'file:///workspace/Secondary.cs',
+            'csharp',
+            new Blob(['public sealed class Secondary;\n']),
+            '\n',
+            false);
+        const [main, right] = globalThis.NovaMonaco.editor.getEditors();
+        return {
+            mainUri: main.getModel().uri.toString(),
+            rightUri: right.getModel().uri.toString(),
+            rightText: right.getValue(),
+        };
+    });
+    check('opening a new file directly in a secondary group displays its model',
+        secondaryOpen.mainUri === 'file:///workspace/Widget.cs'
+            && secondaryOpen.rightUri === 'file:///workspace/Secondary.cs'
+            && secondaryOpen.rightText === 'public sealed class Secondary;\n',
+        JSON.stringify(secondaryOpen));
+    await page.evaluate(() => {
+        globalThis.editor.closeDocument('file:///workspace/Secondary.cs');
+        globalThis.editor.switchViewDocument('right', 'file:///workspace/Widget.cs', null, false);
+    });
+    await page.evaluate(() => {
+        globalThis.editor.removeView('right');
+        document.getElementById('split-view').remove();
+    });
+    const afterSplitClose = await page.evaluate(() => globalThis.editor.runtimeInfo());
+    check('closing a copied view retains its shared model',
+        afterSplitClose.modelCount === 2 && afterSplitClose.viewCount === 1,
+        JSON.stringify(afterSplitClose));
 
     await page.evaluate(() => {
         for (let index = 0; index < 200; index++) {
