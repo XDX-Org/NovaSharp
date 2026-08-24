@@ -1,0 +1,83 @@
+@using NovaSharp.Commands
+@using NovaSharp.Shell
+
+@if (Open)
+{
+    <div class="palette-scrim" @onclick="CloseAsync">
+        <section class="command-palette" role="dialog" aria-modal="true" aria-label="Command palette"
+                 @onclick:stopPropagation @onkeydown="OnKeyDownAsync">
+            <label class="command-palette-search">
+                <ShellIcon Name="SemanticIcon.CommandPalette" />
+                <span class="sr-only">Search commands</span>
+                <input @ref="_searchInput" value="@_query" @oninput="Search" autocomplete="off"
+                       placeholder="Type a command — or press Shift twice" />
+            </label>
+            <div class="command-palette-results" role="listbox" aria-label="Commands">
+                @foreach (var command in Results)
+                {
+                    <button type="button" role="option" disabled="@(!Workbench.Commands.IsEnabled(command.Id))"
+                            @onclick="() => InvokeAsync(command.Id)">
+                        <span class="command-category">@command.Category</span>
+                        <span>@command.Title</span>
+                        @if (command.Keybindings.Count > 0) { <kbd>@string.Join(", ", command.Keybindings.Select(Format))</kbd> }
+                    </button>
+                }
+                @if (Results.Count == 0) { <p class="command-empty">No matching commands</p> }
+            </div>
+        </section>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Open { get; set; }
+    [Parameter, EditorRequired] public IReadOnlyList<CommandDescriptor> Commands { get; set; } = [];
+    [Parameter] public EventCallback<string> OnInvoke { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private ElementReference _searchInput;
+    private string _query = string.Empty;
+    private bool _focused;
+
+    private IReadOnlyList<CommandDescriptor> Results => Commands
+        .Where(command => command.ShowInPalette && Matches(command))
+        .OrderBy(command => command.Category)
+        .ThenBy(command => command.Title)
+        .ToArray();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Open && !_focused)
+        {
+            _focused = true;
+            await _searchInput.FocusAsync();
+        }
+        else if (!Open) _focused = false;
+    }
+
+    private bool Matches(CommandDescriptor command) => string.IsNullOrWhiteSpace(_query)
+        || command.Title.Contains(_query, StringComparison.OrdinalIgnoreCase)
+        || command.Category.Contains(_query, StringComparison.OrdinalIgnoreCase);
+
+    private void Search(ChangeEventArgs args) => _query = args.Value?.ToString() ?? string.Empty;
+
+    private async Task OnKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (args.Key == "Escape") await CloseAsync();
+        else if (args.Key == "Enter" && Results.FirstOrDefault(command => Workbench.Commands.IsEnabled(command.Id)) is { } command)
+            await InvokeAsync(command.Id);
+    }
+
+    private async Task InvokeAsync(string commandId)
+    {
+        _query = string.Empty;
+        await OnInvoke.InvokeAsync(commandId);
+    }
+
+    private Task CloseAsync()
+    {
+        _query = string.Empty;
+        return OnClose.InvokeAsync();
+    }
+    private static string Format(string binding) => binding.Replace("CtrlCmd", "Ctrl/Cmd", StringComparison.Ordinal)
+        .Replace("Key", string.Empty, StringComparison.Ordinal);
+}

@@ -61,6 +61,9 @@ The core architecture and initial IDE functionality are being implemented. It is
 The current workbench can open a workspace, keep multiple files in URI-deduplicated tabs, reuse a single preview tab,
 reorder and close tabs by pointer or keyboard, and restore open files plus cursor, selection, and scroll state after an
 orderly restart. Phase 4 is complete and qualified on every supported platform.
+Phase 4.5 is in progress: the graphite workbench shell, global command palette, semantic icons, responsive regions,
+optional Fast Mono editor font, and cross-engine visual/accessibility fixtures are implemented locally and await
+six-platform qualification. Choose the font from View → Change Editor Font… or the command palette.
 
 Expect:
 
@@ -149,9 +152,10 @@ The bootstrap is idempotent. It automatically:
 1. Detects the local runtime identifier.
 2. Downloads and SHA-256 verifies the pinned Roslyn C# language server, matching Razor cohost, and Node.js runtime.
 3. Installs the lockfile-pinned HTML, CSS, JavaScript, and TypeScript language-server packages with the downloaded Node.js runtime.
-4. Restores the lockfile-pinned Monaco Editor and builds its ESM bundle, C# / HTML / CSS definitions, editor worker, fonts, and licenses.
+4. Restores the lockfile-pinned Monaco Editor, Codicons, and Inter; builds their local bundles, workers, Fast Mono,
+   fonts, brand asset, and licenses.
 5. Restores the pinned Roslyn/MSBuild NuGet packages and the remaining .NET dependencies.
-6. Verifies the Monaco asset manifest and builds `NovaSharp.slnx`.
+6. Verifies the Monaco and workbench asset manifests and builds `NovaSharp.slnx`.
 
 Downloaded and generated assets remain local and are ignored by Git. NovaSharp does not require a CDN or download language servers at
 runtime. Exact versions, sources, hashes, licenses, and update rules are in [language-server assets](docs/language-server-assets.md).

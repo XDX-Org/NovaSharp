@@ -21,6 +21,11 @@ const WORKER_PROBE_TIMEOUT_MS = 250;
 /** Maximum edit batches retained while the previous interop send is in flight. */
 const REPLICATION_CAPACITY = 256;
 
+const EDITOR_FONT_FAMILIES = Object.freeze({
+    'default': '"JetBrains Mono", "Cascadia Code", "Droid Sans Mono", monospace',
+    'fast-mono': '"Fast Mono", "JetBrains Mono", "Cascadia Code", "Droid Sans Mono", monospace',
+});
+
 // Where an edit batch came from. Mirrors NovaSharp.Editing.EditOrigins.
 //
 // Only the user's origin is ever sent in phase 2: the one change NovaSharp itself makes to a model is a reload, and
@@ -238,6 +243,7 @@ export function createEditor(container, bridge) {
         throw new TypeError('An editor container element is required.');
     }
 
+    let editorFontFamily = EDITOR_FONT_FAMILIES.default;
     const editor = monaco.editor.create(container, {
         // Layout is driven by the ResizeObserver below, so the editor is not polling on a timer.
         automaticLayout: false,
@@ -246,11 +252,12 @@ export function createEditor(container, bridge) {
         readOnly: false,
         ariaLabel: 'C# editor',
         accessibilitySupport: 'auto',
-        fontFamily: '"JetBrains Mono", "Cascadia Code", "Droid Sans Mono", monospace',
+        fontFamily: editorFontFamily,
         fontSize: 14,
         lineHeight: 22,
         minimap: { enabled: false },
         renderWhitespace: 'selection',
+        scrollbar: { horizontal: 'hidden' },
         scrollBeyondLastLine: false,
         tabSize: 4,
     });
@@ -558,6 +565,8 @@ export function createEditor(container, bridge) {
                 readOnly: false,
                 renderSideBySide: true,
                 ariaLabel: 'Comparison with the file on disk',
+                fontFamily: editorFontFamily,
+                scrollbar: { horizontal: 'hidden' },
             });
 
             editor.setModel(null);
@@ -839,6 +848,26 @@ export function createEditor(container, bridge) {
             if (document === currentDocument) {
                 editor.updateOptions({ readOnly: document.readOnly });
             }
+            return null;
+        },
+
+        /** Applies one allow-listed local font to the editor and any active comparison. */
+        async setEditorFont(fontId) {
+            ensureLive();
+            const family = EDITOR_FONT_FAMILIES[fontId];
+            if (!family) {
+                throw new RangeError(`Unknown editor font: ${fontId}`);
+            }
+
+            if (fontId === 'fast-mono') {
+                await document.fonts?.load('14px "Fast Mono"');
+                ensureLive();
+            }
+
+            editorFontFamily = family;
+            editor.updateOptions({ fontFamily: family });
+            diffEditor?.updateOptions({ fontFamily: family });
+            monaco.editor.remeasureFonts();
             return null;
         },
 

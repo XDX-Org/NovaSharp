@@ -2,7 +2,7 @@
 
 ## Status
 
-Planned.
+In progress.
 
 ## Goal
 
@@ -11,8 +11,8 @@ tool panels expand the interface.
 
 ## Scope
 
-- Establish the application frame and the default placement of global commands, the activity rail, primary sidebar,
-  editor area, bottom panel, and status bar.
+- Establish the application frame and the default placement of the global command bar, activity rail, primary sidebar,
+  editor area, bottom panel, and status bar. Project global commands into the bar, palette, and shortcut registry.
 - Keep Explorer in the collapsible, resizable primary sidebar introduced in phase 3 and provide a stable activity-rail
   entry for it.
 - Define toolbar, menu, context-menu, command-palette, button, toggle, and overflow behavior over the shared command
@@ -32,18 +32,18 @@ The default workbench structure is:
 
 ```text
 Native window chrome
-┌──────────────────────────────────────────────────────────────┐
+┌────────────────────────────────────────┬────────────────┬────┐
 │ Global command bar                                           │
-├────┬────────────────┬────────────────────────────────────────┤
-│ A  │ Primary        │ Editor area                            │
-│ c  │ sidebar        │                                        │
-│ t  │                │                                        │
-│ i  │ Explorer       ├────────────────────────────────────────┤
-│ v  │                │ Bottom panel host                      │
-│ i  │                │ Problems / Output / Terminal / Debug   │
-│ t  │                │                                        │
-│ y  │                │                                        │
-├────┴────────────────┴────────────────────────────────────────┤
+├────────────────────────────────────────┬────────────────┬────┤
+│ Editor area                            │ Primary        │ A  │
+│                                        │ sidebar        │ c  │
+│                                        │                │ t  │
+├────────────────────────────────────────┤ Explorer       │ i  │
+│ Bottom panel host                      │                │ v  │
+│ Problems / Output / Terminal / Debug   │                │ i  │
+│                                        │                │ t  │
+│                                        │                │ y  │
+├────────────────────────────────────────┴────────────────┴────┤
 │ Status bar                                                   │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -72,13 +72,15 @@ persistence remain deferred.
   regions hide, collapse, resize, or overflow.
 - Resize and visibility events are frame-coalesced. Shell rendering publishes small immutable snapshots and must not
   synchronously read files, serialize editor text, or enter Monaco's typing path.
+- Source editors and workbench panels do not expose horizontal scrollbars. Monaco retains its own long-line navigation;
+  panels clip, truncate, wrap, or provide an explicit overflow control while preserving required vertical scrolling.
 - Layout and interaction remain platform-neutral. Product code must not branch on host operating system, display scale,
   path convention, or shell availability.
 
 ## Deliverables
 
 - A documented workbench information architecture and region ownership model.
-- Reusable shell layout, command-bar, activity, sidebar, panel, status, button, menu, and overflow components.
+- Reusable shell layout, activity, sidebar, panel, status, button, menu, and overflow components.
 - A typed semantic icon registry backed by locally packaged assets and retained third-party notices.
 - Shared CSS design tokens and component-state rules with no duplicate production theme path.
 - Keyboard map and accessible-name rules for every shell control.
@@ -89,8 +91,14 @@ persistence remain deferred.
 
 - Explorer has one stable activity entry and primary-sidebar location; hiding and restoring it preserves width, tree
   state, selection, and focus without reconstructing the tool.
+- Explorer and the activity rail remain docked on the right at every viewport width. Showing or resizing Explorer
+  resizes the editor and bottom-panel workspace instead of covering either region.
+- Explorer has no product-defined minimum or maximum width. Its file operations appear in an item-specific context
+  menu: folders expose creation actions, while files expose only actions applicable to that file. Left or right clicking
+  outside an open context menu dismisses it.
 - Every visible shell action resolves to a registered command or a documented view-state operation, with consistent
   enablement across buttons, menus, keybindings, and the command palette.
+- Top-level menus are mutually exclusive and close on either left- or right-button pointer input outside the menu.
 - One pinned icon system covers all shipped shell controls. Missing icons fail validation, notices ship with the app,
   and no control relies on emoji, colour, or an icon as its only label.
 - The shell remains operable without clipped or unreachable controls at the minimum supported window size and at 200%
@@ -103,6 +111,40 @@ persistence remain deferred.
   Monaco typing budgets, and shows no retained growth after 100 open/hide/resize cycles on each named CI fixture.
 - Bootstrap, build, tests, RID publish, packaged native smoke, accessibility, visual, disposal, and retained-evidence
   gates pass on all six supported runtime identifiers from the same commit.
+
+## Delivered implementation
+
+- A graphite-grey shell now provides stable global-command, editor, bottom-panel, primary-sidebar, activity, and status
+  regions. The restored command bar exposes File, Workspace, and View menus plus open and save controls without
+  an active-file label, palette control, or visible shortcut hint. Explorer and the activity rail are docked on the right. Explorer remains mounted while hidden, restores
+  its focus, and uses a frame-coalesced pointer and keyboard resize separator.
+- Tab context actions, activity navigation, shortcuts, and the command palette project the shared command registry.
+  Double Shift and `Ctrl/Cmd+Shift+P` continue to open the palette. The tab strip has no ellipsis overflow control.
+- Inter Variable 5.3.0 and Codicons 0.0.46-24 are exact-lockfile, locally built assets with manifests and shipped
+  licenses. A typed semantic registry validates every icon mapping. The temporary generated Nova mark is retained as
+  a replaceable project asset.
+- Fast Mono 5.002 is an optional, hash-pinned Monaco font with embedded and packaged OFL attribution. `Change Editor
+  Font…` is available in the palette, persists the allow-listed choice through settings schema version 3,
+  and updates normal and comparison editors through Monaco's public API; the prior monospace stack remains default.
+- Shared design tokens cover colour, typography, spacing, dimensions, borders, elevation, focus, interaction states,
+  reduced motion, increased contrast, and forced colours. Narrow layouts use deterministic command overflow and a
+  naturally flexed docked Explorer without creating an operating-system-specific layout.
+- Monaco normal/diff views and every current workbench panel hide horizontal scrollbars; vertical tree, palette, and
+  editor scrolling remains available.
+- Chromium and WebKit fixtures retain standard, narrow, high-DPI, high-contrast, and 200%-zoom baselines and exercise
+  Double Shift, global shortcuts, focus restoration, one-commit resize, long-task, and 100-cycle retention gates.
+
+The information architecture, command surfaces, visual rules, responsive states, and keyboard/accessibility contract
+are recorded in [workbench-shell.md](workbench-shell.md) and [ADR 0004](decisions/0004-workbench-shell.md).
+
+## Qualification status
+
+On 2026-08-23, the local `win-x64` fixture passed the end-to-end bootstrap, a warning-free build, 258 .NET tests, 73
+Monaco browser gates, 53 Chromium/WebKit shell gates, RID-specific Release publish, and packaged native smoke. The
+native fixture measured 951/927 ms cold/warm startup and 82 MB idle working set; existing document, replication,
+save, 20,000-entry Explorer, watcher, and memory budgets remained green. This single-platform result does not complete
+the phase. Completion remains pending until the same gates and retained evidence pass on all six supported runtime
+identifiers from one commit.
 
 ## Known deferrals
 

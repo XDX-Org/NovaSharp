@@ -323,7 +323,7 @@ jobs:
           # The browser build is pinned by the Playwright version in tests/editor-host/package-lock.json, the same way
           # every other dependency is pinned. --with-deps installs the shared libraries Chromium needs on Linux and is
           # a no-op elsewhere.
-          node tests/editor-host/node_modules/playwright/cli.js install --with-deps chromium
+          node tests/editor-host/node_modules/playwright/cli.js install --with-deps chromium webkit
 
           for attempt in 1 2 3; do
             if NOVASHARP_BROWSER_METRICS="${{ github.workspace }}/artifacts/verification/${{ matrix.rid }}/browser-attempt-${attempt}.json" \

@@ -66,7 +66,7 @@ public sealed class WorkspaceExplorerService : IAsyncDisposable
         Update(current => current with
         {
             SidebarVisible = loaded.State.SidebarVisible,
-            SidebarWidth = Math.Clamp(loaded.State.SidebarWidth, 160, 520),
+            SidebarWidth = Math.Max(0, loaded.State.SidebarWidth),
         });
 
         if (loaded.State.WorkspacePath is null
@@ -212,6 +212,15 @@ public sealed class WorkspaceExplorerService : IAsyncDisposable
         await PersistAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task CollapseAllAsync(CancellationToken cancellationToken = default)
+    {
+        CancelEnumerations();
+        Update(current => current.Root is null
+            ? current
+            : current with { Root = CollapseTree(current.Root) });
+        await PersistAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task RevealAsync(string path, CancellationToken cancellationToken = default)
     {
         var snapshot = Snapshot;
@@ -242,7 +251,7 @@ public sealed class WorkspaceExplorerService : IAsyncDisposable
 
     public async Task SetSidebarAsync(bool visible, int width, CancellationToken cancellationToken = default)
     {
-        Update(current => current with { SidebarVisible = visible, SidebarWidth = Math.Clamp(width, 160, 520) });
+        Update(current => current with { SidebarVisible = visible, SidebarWidth = Math.Max(0, width) });
         await PersistAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -509,6 +518,13 @@ public sealed class WorkspaceExplorerService : IAsyncDisposable
         if (node.Children is null) return;
         foreach (var child in node.Children) CollectExpanded(child, paths);
     }
+
+    private static WorkspaceNode CollapseTree(WorkspaceNode node) => node with
+    {
+        IsExpanded = false,
+        IsLoading = false,
+        Children = node.Children?.Select(CollapseTree).ToArray(),
+    };
 
     private void CollectExpanded(WorkspaceNode node, ICollection<string> paths, string root)
     {

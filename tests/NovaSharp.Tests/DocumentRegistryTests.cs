@@ -2,6 +2,7 @@ using System.Text;
 using Microsoft.AspNetCore.Components;
 using NovaSharp.Async;
 using NovaSharp.Commands;
+using NovaSharp.Configuration;
 using NovaSharp.Diagnostics;
 using NovaSharp.Editing;
 using NovaSharp.Platform;
@@ -316,6 +317,9 @@ internal sealed class RegistryEditorHost : IEditorHost
         Get(uri).ReadOnly = readOnly;
         return ValueTask.CompletedTask;
     }
+
+    public ValueTask SetEditorFontAsync(EditorFontPreference font, CancellationToken cancellationToken) =>
+        ValueTask.CompletedTask;
 
     public void Type(string text)
     {

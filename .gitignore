@@ -30,6 +30,7 @@ artifacts/
 node_modules/
 /src/NovaSharp/LanguageServers/Assets/
 /src/NovaSharp/wwwroot/monaco/
+/src/NovaSharp/wwwroot/workbench-assets/
 
 # ASP.NET Scaffolding
 ScaffoldingReadMe.txt

@@ -41,11 +41,17 @@
           Link="THIRD-PARTY-NOTICES-MONACO.md"
           CopyToOutputDirectory="PreserveNewest"
           CopyToPublishDirectory="PreserveNewest" />
+    <None Include="../../THIRD-PARTY-NOTICES-WORKBENCH.md"
+          Link="THIRD-PARTY-NOTICES-WORKBENCH.md"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <Target Name="ValidateLocalAssets" BeforeTargets="Build">
     <Error Condition="!Exists('wwwroot/monaco/asset-manifest.json')"
            Text="Monaco assets are missing. Run the bootstrap entry point for your shell, as described in README.md." />
+    <Error Condition="!Exists('wwwroot/workbench-assets/asset-manifest.json')"
+           Text="Workbench assets are missing. Run the bootstrap entry point for your shell, as described in README.md." />
     <Error Condition="'$(RuntimeIdentifier)' != '' and !Exists('LanguageServers/Assets/$(RuntimeIdentifier)/.source-manifest.sha256')"
            Text="Language-server assets for $(RuntimeIdentifier) are missing. Run the bootstrap entry point for your shell, as described in README.md." />
   </Target>

@@ -4,9 +4,11 @@
   "description": "Browser-level Monaco editor host gates for phases 1, 2, and 4.",
   "type": "module",
   "scripts": {
-    "test": "node editor-host.test.mjs"
+    "test": "node editor-host.test.mjs && node workbench-shell.test.mjs"
   },
   "devDependencies": {
-    "playwright": "1.62.1"
+    "pixelmatch": "7.2.0",
+    "playwright": "1.62.1",
+    "pngjs": "7.0.0"
   }
 }

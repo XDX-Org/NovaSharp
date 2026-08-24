@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Components;
 using NovaSharp.Commands;
+using NovaSharp.Configuration;
 
 namespace NovaSharp.Editing;
 
@@ -97,6 +98,9 @@ public interface IEditorHost : IAsyncDisposable
 
     /// <summary>Updates a particular open document's read-only state.</summary>
     ValueTask SetReadOnlyAsync(Uri uri, bool readOnly, CancellationToken cancellationToken);
+
+    /// <summary>Updates every editor view to the selected locally packaged font.</summary>
+    ValueTask SetEditorFontAsync(EditorFontPreference font, CancellationToken cancellationToken);
 
     /// <summary>
     /// Replaces the editor's actions with the ones <paramref name="descriptors"/> describe.

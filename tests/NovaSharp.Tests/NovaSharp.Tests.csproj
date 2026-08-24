@@ -27,10 +27,16 @@
              Link="Contracts/app.css" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../../src/NovaSharp/wwwroot/workspace-explorer.js"
              Link="Contracts/workspace-explorer.js" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../src/NovaSharp/wwwroot/workbench-shell.js"
+             Link="Contracts/workbench-shell.js" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../../src/NovaSharp/Components/EditorPanel.razor"
              Link="Contracts/EditorPanel.razor" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../../src/NovaSharp/Components/WorkspaceExplorer.razor"
              Link="Contracts/WorkspaceExplorer.razor" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../src/NovaSharp/Components/ContextCommandMenu.razor"
+             Link="Contracts/ContextCommandMenu.razor" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../src/NovaSharp/Components/CommandMenu.razor"
+             Link="Contracts/CommandMenu.razor" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../../src/NovaSharp/Components/WorkspaceTreeNode.razor"
              Link="Contracts/WorkspaceTreeNode.razor" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

@@ -1,16 +1,19 @@
+@using Microsoft.JSInterop
 @using NovaSharp.Commands
 @using NovaSharp.Platform
+@using NovaSharp.Shell
 @using NovaSharp.Workspace
-@implements IDisposable
+@implements IAsyncDisposable
+@inject IJSRuntime JSRuntime
 
-@if (_snapshot.SidebarVisible)
-{
-    <aside class="explorer" style="width: @(_snapshot.SidebarWidth)px" aria-label="Explorer">
+<aside class="explorer" style="width: @(_snapshot.SidebarWidth)px" aria-label="Explorer"
+       hidden="@(!_snapshot.SidebarVisible)">
         <header class="explorer-header">
             <strong>Explorer</strong>
-            <button type="button" title="Open folder" aria-label="Open folder" @onclick="OpenFolderAsync">＋</button>
-            <button type="button" title="Refresh" aria-label="Refresh Explorer" disabled="@(!_snapshot.IsOpen)" @onclick="RefreshAsync">↻</button>
-            <button type="button" title="Close Explorer" aria-label="Close Explorer" @onclick="ToggleAsync">×</button>
+            <button type="button" title="Open folder" aria-label="Open folder" @onclick="OpenFolderAsync"><ShellIcon Name="SemanticIcon.FolderOpen" /></button>
+            <button type="button" title="Refresh" aria-label="Refresh Explorer" disabled="@(!_snapshot.IsOpen)" @onclick="RefreshAsync"><ShellIcon Name="SemanticIcon.Refresh" /></button>
+            <button type="button" title="Collapse all folders" aria-label="Collapse all folders" disabled="@(!_snapshot.IsOpen)" @onclick="CollapseAllAsync"><ShellIcon Name="SemanticIcon.CollapseAll" /></button>
+            <button type="button" title="Close Explorer" aria-label="Close Explorer" @onclick="ToggleAsync"><ShellIcon Name="SemanticIcon.Close" /></button>
         </header>
         @if (_snapshot.Root is null)
         {
@@ -22,20 +25,33 @@
             <div role="tree" aria-label="Workspace files" class="workspace-tree">
                 <WorkspaceTreeNode Node="_snapshot.Root" SelectedId="_snapshot.SelectedId"
                     OnSelect="SelectAsync" OnPreview="PreviewAsync" OnActivate="ActivateAsync" OnExpand="ExpandAsync" OnCollapse="CollapseAsync"
-                    OnRename="BeginRename" OnDelete="DeleteAsync" />
-            </div>
-            <div class="explorer-actions" aria-label="Explorer actions">
-                <button type="button" @onclick="() => BeginCreate(false)" disabled="@(SelectedDirectory is null)">New file</button>
-                <button type="button" @onclick="() => BeginCreate(true)" disabled="@(SelectedDirectory is null)">New folder</button>
-                <button type="button" @onclick="BeginMove" disabled="@(SelectedNode is null || SelectedNode == _snapshot.Root)">Move</button>
-                <button type="button" @onclick="() => BeginRename(SelectedNode)" disabled="@(SelectedNode is null || SelectedNode == _snapshot.Root)">Rename</button>
-                <button type="button" @onclick="() => DeleteAsync(SelectedNode)" disabled="@(SelectedNode is null || SelectedNode == _snapshot.Root)">Delete</button>
+                    OnRename="BeginRename" OnDelete="DeleteAsync" OnContextMenu="OpenContextMenuAsync" />
             </div>
         }
-        <label class="explorer-resize">Explorer width
-            <input type="range" min="160" max="520" value="@_snapshot.SidebarWidth" @onchange="ResizeAsync" />
-        </label>
-    </aside>
+        <div class="explorer-resizer" role="separator" aria-label="Resize Explorer" aria-orientation="vertical"
+             aria-valuenow="@_snapshot.SidebarWidth" tabindex="0"
+             @ref="_resizer" @onkeydown="ResizeKeyDownAsync"></div>
+</aside>
+
+@if (_contextNode is { } contextNode)
+{
+    <div class="context-menu-scrim" @onclick="CloseContextMenu"
+         @oncontextmenu="CloseContextMenu" @oncontextmenu:preventDefault></div>
+    <div class="context-command-menu" role="menu" aria-label="@($"Actions for {contextNode.Name}")" tabindex="-1"
+         @ref="_contextMenu" style="--context-x:@(_contextX)px; --context-y:@(_contextY)px"
+         @onclick:stopPropagation @onkeydown="ContextMenuKeyDownAsync">
+        @if (contextNode.Kind == WorkspaceNodeKind.Directory)
+        {
+            <button type="button" role="menuitem" @onclick="() => BeginCreate(contextNode, false)"><ShellIcon Name="SemanticIcon.AddFile" /><span>New file</span></button>
+            <button type="button" role="menuitem" @onclick="() => BeginCreate(contextNode, true)"><ShellIcon Name="SemanticIcon.AddFolder" /><span>New folder</span></button>
+        }
+        @if (contextNode != _snapshot.Root)
+        {
+            <button type="button" role="menuitem" @onclick="() => BeginMove(contextNode)"><ShellIcon Name="SemanticIcon.Move" /><span>Move</span></button>
+            <button type="button" role="menuitem" @onclick="() => BeginRename(contextNode)"><ShellIcon Name="SemanticIcon.Rename" /><span>Rename</span></button>
+            <button type="button" role="menuitem" @onclick="() => DeleteAsync(contextNode)"><ShellIcon Name="SemanticIcon.Trash" /><span>Delete</span></button>
+        }
+    </div>
 }
 
 @if (_dialogMode is not null)
@@ -59,7 +75,15 @@
     private string? _dialogMode;
     private string _dialogValue = string.Empty;
     private WorkspaceNode? _dialogNode;
+    private WorkspaceNode? _contextNode;
+    private double _contextX;
+    private double _contextY;
+    private ElementReference _contextMenu;
+    private bool _focusContextMenu;
     private bool _started;
+    private bool _restoreFocus;
+    private ElementReference _resizer;
+    private DotNetObjectReference<WorkspaceExplorer>? _selfReference;
 
     protected override void OnInitialized()
     {
@@ -70,8 +94,20 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_focusContextMenu)
+        {
+            _focusContextMenu = false;
+            await _contextMenu.FocusAsync();
+        }
+        if (_restoreFocus)
+        {
+            _restoreFocus = false;
+            await JSRuntime.InvokeVoidAsync("NovaWorkspace.restoreFocus");
+        }
         if (!firstRender || _started) return;
         _started = true;
+        _selfReference = DotNetObjectReference.Create(this);
+        await JSRuntime.InvokeVoidAsync("NovaWorkspace.attachResizer", _resizer, _selfReference);
         Workbench.Explorer.SetIgnoredPaths(Workbench.Configuration.Current.Settings.WorkspaceIgnoredPaths);
         await Workbench.Explorer.RestoreAsync();
         if (Workbench.Explorer.Snapshot.RootPath is { } root)
@@ -114,6 +150,7 @@
     private Task RefreshAsync(CancellationToken token) => _snapshot.RootPath is null
         ? Task.CompletedTask
         : Workbench.Explorer.ExpandAsync(_snapshot.RootPath, cancellationToken: token);
+    private Task CollapseAllAsync() => Workbench.Explorer.CollapseAllAsync();
 
     private Task ToggleAsync() => Workbench.Explorer.SetSidebarAsync(!_snapshot.SidebarVisible, _snapshot.SidebarWidth);
 
@@ -137,27 +174,29 @@
         await Workbench.Explorer.RevealAsync(node.Path);
     }
 
-    private void BeginCreate(bool directory)
+    private void BeginCreate(WorkspaceNode parent, bool directory)
     {
+        CloseContextMenu();
         _dialogMode = directory ? "create-folder" : "create-file";
         _dialogValue = string.Empty;
-        _dialogNode = SelectedDirectory;
+        _dialogNode = parent;
     }
 
     private void BeginRename(WorkspaceNode? node)
     {
+        CloseContextMenu();
         if (node is null || node == _snapshot.Root) return;
         _dialogMode = "rename";
         _dialogValue = node.Name;
         _dialogNode = node;
     }
 
-    private void BeginMove()
+    private void BeginMove(WorkspaceNode node)
     {
-        if (SelectedNode is null) return;
+        CloseContextMenu();
         _dialogMode = "move";
         _dialogValue = string.Empty;
-        _dialogNode = SelectedNode;
+        _dialogNode = node;
     }
 
     private async Task ApplyDialogAsync()
@@ -186,6 +225,7 @@
 
     private async Task DeleteAsync(WorkspaceNode? node)
     {
+        CloseContextMenu();
         if (node is null || node == _snapshot.Root) return;
         var answer = await Program.App.MainWindow.ShowMessageAsync(
             "NovaSharp", $"Delete {node.Name}? This cannot be undone.",
@@ -193,10 +233,35 @@
         if (answer == Photino.NET.PhotinoDialogResult.Yes) await Workbench.Explorer.DeleteAsync(node.Path);
     }
 
-    private async Task ResizeAsync(ChangeEventArgs args)
+    [JSInvokable]
+    public Task CommitSidebarWidthAsync(int width) => Workbench.Explorer.SetSidebarAsync(true, width);
+
+    private async Task ResizeKeyDownAsync(KeyboardEventArgs args)
     {
-        if (int.TryParse(args.Value?.ToString(), out var width))
-            await Workbench.Explorer.SetSidebarAsync(true, width);
+        var width = args.Key switch
+        {
+            "ArrowLeft" when _snapshot.SidebarWidth <= int.MaxValue - 10 => _snapshot.SidebarWidth + 10,
+            "ArrowLeft" => int.MaxValue,
+            "ArrowRight" => Math.Max(0, _snapshot.SidebarWidth - 10),
+            _ => _snapshot.SidebarWidth,
+        };
+        if (width != _snapshot.SidebarWidth) await Workbench.Explorer.SetSidebarAsync(true, width);
+    }
+
+    private Task OpenContextMenuAsync((WorkspaceNode Node, MouseEventArgs Args) request)
+    {
+        _contextNode = request.Node;
+        _contextX = request.Args.ClientX;
+        _contextY = request.Args.ClientY;
+        _focusContextMenu = true;
+        return Task.CompletedTask;
+    }
+
+    private void CloseContextMenu() => _contextNode = null;
+    private Task ContextMenuKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (args.Key == "Escape") CloseContextMenu();
+        return Task.CompletedTask;
     }
 
     private async Task DialogKeyDownAsync(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs args)
@@ -212,11 +277,6 @@
         _dialogValue = string.Empty;
     }
 
-    private WorkspaceNode? SelectedNode => _snapshot.Root is null ? null : Find(_snapshot.Root, _snapshot.SelectedId);
-    private WorkspaceNode? SelectedDirectory => SelectedNode is { Kind: WorkspaceNodeKind.Directory } directory
-        ? directory
-        : SelectedNode is null ? _snapshot.Root : FindParent(_snapshot.Root!, SelectedNode.Id);
-
     private string DialogTitle => _dialogMode switch
     {
         "create-file" => "Create file",
@@ -226,32 +286,12 @@
     };
     private string DialogLabel => _dialogMode == "move" ? "Destination folder, relative to the workspace" : "Name";
 
-    private static WorkspaceNode? Find(WorkspaceNode node, string? id)
+    private void OnChanged(WorkspaceSnapshot snapshot) => _ = InvokeAsync(async () =>
     {
-        if (node.Id == id) return node;
-        if (node.Children is null) return null;
-        foreach (var child in node.Children)
-        {
-            var found = Find(child, id);
-            if (found is not null) return found;
-        }
-        return null;
-    }
-
-    private static WorkspaceNode? FindParent(WorkspaceNode node, string id)
-    {
-        if (node.Children?.Any(child => child.Id == id) == true) return node;
-        if (node.Children is null) return null;
-        foreach (var child in node.Children)
-        {
-            var found = FindParent(child, id);
-            if (found is not null) return found;
-        }
-        return null;
-    }
-
-    private void OnChanged(WorkspaceSnapshot snapshot) => _ = InvokeAsync(() =>
-    {
+        if (_snapshot.SidebarVisible && !snapshot.SidebarVisible)
+            await JSRuntime.InvokeVoidAsync("NovaWorkspace.rememberFocus");
+        else if (!_snapshot.SidebarVisible && snapshot.SidebarVisible)
+            _restoreFocus = true;
         _snapshot = snapshot;
         StateHasChanged();
     });
@@ -261,11 +301,15 @@
         if (Workbench.Documents is { } documents) await documents.RelocateAsync(relocation);
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         Workbench.Explorer.Changed -= OnChanged;
         Workbench.Explorer.Relocated -= OnRelocatedAsync;
         foreach (var registration in _registrations) registration.Dispose();
         _registrations.Clear();
+        try { await JSRuntime.InvokeVoidAsync("NovaWorkspace.detachResizer"); }
+        catch (JSDisconnectedException) { }
+        _selfReference?.Dispose();
+        _selfReference = null;
     }
 }

@@ -31,6 +31,7 @@ const HARNESS_PAGE = `<!DOCTYPE html>
 <head>
     <meta charset="utf-8">
     <link rel="stylesheet" href="/monaco/monaco.css">
+    <link rel="stylesheet" href="/workbench-assets/fonts.css">
     <style>html, body, #host { width: 100%; height: 100%; margin: 0; }</style>
 </head>
 <body>
@@ -251,6 +252,27 @@ try {
     check('the page reported no off-origin resource loads', info.externalRequestCount === 0, String(info.externalRequestCount));
     check('no request left the application origin', offOriginRequests.length === 0, offOriginRequests.join('; '));
 
+    const fastMono = await page.evaluate(async () => {
+        await document.fonts.load('14px "Fast Mono"');
+        await globalThis.editor.setEditorFont('fast-mono');
+        return {
+            loaded: document.fonts.check('14px "Fast Mono"'),
+            family: globalThis.NovaMonaco.editor.getEditors()[0]
+                .getOption(globalThis.NovaMonaco.editor.EditorOption.fontFamily),
+        };
+    });
+    check('Fast Mono loads from the packaged font asset', fastMono.loaded);
+    check('the editor applies the selected Fast Mono family', fastMono.family.includes('Fast Mono'), fastMono.family);
+    check('an unknown editor font is rejected', await page.evaluate(async () => {
+        try {
+            await globalThis.editor.setEditorFont('unpackaged-font');
+            return false;
+        } catch {
+            return true;
+        }
+    }));
+    await page.evaluate(() => globalThis.editor.setEditorFont('default'));
+
     // C# lexical colouring comes from the packaged language definition, not from a NovaSharp overlay.
     const keywordColours = await page.evaluate(() => Array.from(document.querySelectorAll('.view-line span[class*="mtk"]'))
         .map(node => node.className)
@@ -389,6 +411,10 @@ try {
     }));
     check('a 2,000-line document scrolls vertically',
         await page.evaluate(() => globalThis.NovaMonaco.editor.getEditors()[0].getScrollTop()) > 0);
+    check('the editor exposes no horizontal scrollbar', await page.evaluate(() => {
+        const scrollbar = document.querySelector('.monaco-editor .scrollbar.horizontal');
+        return !scrollbar || getComputedStyle(scrollbar).display === 'none' || scrollbar.getBoundingClientRect().height === 0;
+    }));
 
     await page.evaluate(async () => {
         const editor = globalThis.NovaMonaco.editor.getEditors()[0];
@@ -553,6 +579,15 @@ try {
     check('the comparison uses the live model rather than a copy',
         await page.evaluate(() => globalThis.NovaMonaco.editor.getModels()
             .some(model => model.uri.scheme === 'file' && !model.isDisposed())));
+    const comparisonFonts = await page.evaluate(async () => {
+        await globalThis.editor.setEditorFont('fast-mono');
+        return globalThis.NovaMonaco.editor.getEditors().map(editor =>
+            editor.getOption(globalThis.NovaMonaco.editor.EditorOption.fontFamily));
+    });
+    check('the selected font reaches every comparison editor',
+        comparisonFonts.length >= 3 && comparisonFonts.every(family => family.includes('Fast Mono')),
+        JSON.stringify(comparisonFonts));
+    await page.evaluate(() => globalThis.editor.setEditorFont('default'));
 
     // Editing continues while comparing, and still replicates.
     await page.evaluate(() => {

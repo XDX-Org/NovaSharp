@@ -39,6 +39,14 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw 'Monaco asset verification failed.'
     }
+    & $node tools/build-workbench-assets.mjs
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Workbench asset build failed.'
+    }
+    & $node tools/build-workbench-assets.mjs --check
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Workbench asset verification failed.'
+    }
     & dotnet restore NovaSharp.slnx
     if ($LASTEXITCODE -ne 0) {
         throw 'dotnet restore failed.'

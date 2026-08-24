@@ -1,0 +1,26 @@
+@using NovaSharp.Commands
+@using NovaSharp.Shell
+
+@if (Workbench.Commands.Find(CommandId) is { } descriptor)
+{
+    <button type="button" class="command-button @CssClass" aria-label="@descriptor.Title"
+            title="@Title(descriptor)" disabled="@(!Workbench.Commands.IsEnabled(CommandId))"
+            @onclick="InvokeAsync">
+        <ShellIcon Name="Icon" />
+        @if (ShowLabel) { <span>@descriptor.Title</span> }
+    </button>
+}
+
+@code {
+    [Parameter, EditorRequired] public string CommandId { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public SemanticIcon Icon { get; set; }
+    [Parameter] public bool ShowLabel { get; set; }
+    [Parameter] public string? CssClass { get; set; }
+    [Parameter] public EventCallback<string> OnInvoke { get; set; }
+
+    private Task InvokeAsync() => OnInvoke.InvokeAsync(CommandId);
+
+    private static string Title(CommandDescriptor descriptor) => descriptor.Keybindings.Count == 0
+        ? descriptor.Title
+        : $"{descriptor.Title} ({string.Join(", ", descriptor.Keybindings)})";
+}

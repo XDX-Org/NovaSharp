@@ -16,19 +16,21 @@ namespace NovaSharp.Configuration;
 /// Whether a clean document follows its file when something else changes it. A dirty document always asks, whatever
 /// this is set to.
 /// </param>
+/// <param name="EditorFont">The allow-listed, locally packaged font Monaco uses for source text.</param>
 public sealed record WorkbenchSettings(
     TextEncodingProfile DefaultEncoding,
     TextEncodingProfile FallbackEncoding,
     LineEndingStyle DefaultLineEnding,
     bool ReloadUnmodifiedFiles,
-    IReadOnlyList<string> WorkspaceIgnoredPaths)
+    IReadOnlyList<string> WorkspaceIgnoredPaths,
+    EditorFontPreference EditorFont)
 {
     /// <summary>The schema version written to, and expected in, a settings file.</summary>
     /// <remarks>
     /// Present from the first release rather than added when it is first needed, because a file written without a
     /// version is a file no later migration can identify.
     /// </remarks>
-    public const int CurrentSchemaVersion = 2;
+    public const int CurrentSchemaVersion = 3;
 
     /// <summary>What NovaSharp uses when nothing has been configured.</summary>
     public static WorkbenchSettings Defaults { get; } = new(
@@ -36,5 +38,6 @@ public sealed record WorkbenchSettings(
         TextEncodings.Latin1,
         LineEndingStyle.Lf,
         ReloadUnmodifiedFiles: true,
-        WorkspaceIgnoredPaths: []);
+        WorkspaceIgnoredPaths: [],
+        EditorFontPreference.Default);
 }

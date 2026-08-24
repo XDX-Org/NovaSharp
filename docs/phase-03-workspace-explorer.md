@@ -12,7 +12,7 @@ Open a folder and navigate its contents through a resizable Explorer panel.
 ## Scope
 
 - Open/close one workspace folder and show its canonical path.
-- Resizable, collapsible left sidebar with an accessible hierarchical tree.
+- Resizable, collapsible right sidebar with an accessible hierarchical tree.
 - Lazy directory expansion, refresh, reveal active file, and persisted expansion state.
 - Create, rename, delete, and move files/folders with confirmation and error recovery.
 - Open files by mouse or keyboard; distinguish folders, supported files, unknown files, and symlinks.
@@ -51,8 +51,10 @@ Solution/project semantics and source-control decorations are deferred. The tree
   overflow rescans expanded branches and raises a recoverable warning.
 - A single-writer, 32-operation mutation queue for create, rename, move, and confirmed delete. A rename or move updates
   an open document's URI, path, disk state, and watcher without replacing its Monaco model, text, dirty sequence, or view.
-- A live collapsible Explorer tool window with a keyboard-adjustable 160–520 px width, accessible tree semantics,
-  keyboard activation/expand/collapse/rename/delete, and incremental rendering in batches of 250 rows.
+- A live collapsible Explorer tool window with an unrestricted persisted width, accessible tree semantics,
+  keyboard activation/expand/collapse/rename/delete, item-specific pointer and keyboard context menus, and incremental
+  rendering in batches of 250 rows. Folder context menus include creation actions; file context menus do not. A
+  labelled header action collapses the workspace root and every expanded descendant while retaining loaded children.
 - Versioned `workspace-state.json` persistence in the platform configuration directory. Workspace identity is stored as
   a canonical root; expansion, selection, and active-document paths are separator-neutral paths relative to that root.
   Writes are atomic. Invalid JSON is retained, copied to `.invalid`, reported, and treated as empty state.

@@ -1,6 +1,7 @@
 using System.Text;
 using Microsoft.AspNetCore.Components;
 using NovaSharp.Commands;
+using NovaSharp.Configuration;
 using NovaSharp.Editing;
 
 namespace NovaSharp.Tests;
@@ -103,6 +104,14 @@ internal sealed class FakeEditorHost : IEditorHost
 
     public ValueTask SetReadOnlyAsync(Uri uri, bool readOnly, CancellationToken cancellationToken) =>
         SetReadOnlyAsync(readOnly, cancellationToken);
+
+    public EditorFontPreference EditorFont { get; private set; } = EditorFontPreference.Default;
+
+    public ValueTask SetEditorFontAsync(EditorFontPreference font, CancellationToken cancellationToken)
+    {
+        EditorFont = font;
+        return ValueTask.CompletedTask;
+    }
 
     /// <summary>The commands the editor was last told to bind.</summary>
     public IReadOnlyList<CommandDescriptor> RegisteredCommands { get; private set; } = [];

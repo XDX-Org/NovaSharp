@@ -14,7 +14,7 @@ Source control UI, remote development, collaboration, notebooks, AI completion, 
 | 2. Editor and file lifecycle | Complete | [Qualification run 32575928633](https://github.com/XDX-Org/NovaSharp/actions/runs/32575928633) passed the document lifecycle, managed replication/save, browser performance, bounded queues, cancellation, disposal, RID publish, and native-host gates on all six matrix rows from commit `fd34239` |
 | 3. Workspace explorer | Complete | [Qualification run 32581336852](https://github.com/XDX-Org/NovaSharp/actions/runs/32581336852) passed the Explorer lifecycle, 20,000-entry expansion, watcher recovery, browser performance, RID publish, native-host smoke, and retained-evidence gates on all six matrix rows from commit `6dbe097` |
 | 4. Documents and movable tabs | Complete | [Qualification run 32585228606](https://github.com/XDX-Org/NovaSharp/actions/runs/32585228606) passed the document registry, tab lifecycle, browser performance, bounded scheduling, RID publish, packaged native smoke, disposal, and retained-evidence gates on all six matrix rows from commit `3ce0da3` |
-| 4.5. Workbench shell and visual system | Planned | Application regions, command surfaces, icons, design tokens, responsive behavior, accessibility, and visual-regression gates are specified in the governing phase document |
+| 4.5. Workbench shell and visual system | In progress | Local shell, command, asset, accessibility, and Chromium/WebKit visual gates are implemented; six-RID qualification evidence is pending |
 | 5–17 | Planned | Completion criteria not yet met |
 
 Status values are `planned`, `in progress`, `blocked`, and `complete`. Update this table only from test or release evidence; documentation, packaged dependencies, or partial UI alone does not complete a phase. A phase is never `complete` on evidence from a single operating system.
@@ -42,7 +42,8 @@ These are not separate feature phases. Introduce each boundary by the indicated 
 Record decisions that constrain multiple phases as short ADRs under `docs/decisions/`. The editor decision is fixed by
 [ADR 0001](decisions/0001-monaco-editor.md), the document lifecycle — replication durability, text encoding, and
 settings storage — by [ADR 0002](decisions/0002-document-lifecycle.md), and the desktop host by
-[ADR 0003](decisions/0003-desktop-host.md). Decide C# language-service hosting before phase 6, terminal engine before
+[ADR 0003](decisions/0003-desktop-host.md). The stable workbench regions, command surfaces, semantic assets, and
+responsive behavior are fixed by [ADR 0004](decisions/0004-workbench-shell.md). Decide C# language-service hosting before phase 6, terminal engine before
 phase 11, and debug adapter before phase 12. A dependency that presupposes one of those answers must not be added to a
 project file before its ADR exists.
 

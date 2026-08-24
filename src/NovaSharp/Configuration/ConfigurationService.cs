@@ -134,6 +134,45 @@ public sealed class ConfigurationService
         return await LoadAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>Updates only the user-scoped editor font, retaining every other settings key.</summary>
+    public async Task<SettingsResolution> SetUserEditorFontAsync(
+        EditorFontPreference font,
+        CancellationToken cancellationToken = default)
+    {
+        _ = EditorFonts.Id(font);
+        await _queue.EnqueueAsync(async token =>
+        {
+            var problems = new List<SettingsProblem>();
+            var current = await ReadAsync(UserFilePath, SettingsScope.User, problems, token).ConfigureAwait(false);
+            if (problems.Count > 0)
+            {
+                throw new InvalidOperationException(
+                    "The user settings file must be repaired before the editor font can be saved.");
+            }
+            if (current?.SchemaVersion > WorkbenchSettings.CurrentSchemaVersion)
+            {
+                throw new InvalidOperationException(
+                    "The user settings file was written by a newer NovaSharp and cannot be changed by this version.");
+            }
+
+            var updated = new SettingsDocument
+            {
+                SchemaVersion = WorkbenchSettings.CurrentSchemaVersion,
+                DefaultEncoding = current?.DefaultEncoding,
+                FallbackEncoding = current?.FallbackEncoding,
+                DefaultLineEnding = current?.DefaultLineEnding,
+                ReloadUnmodifiedFiles = current?.ReloadUnmodifiedFiles,
+                WorkspaceIgnoredPaths = current?.WorkspaceIgnoredPaths,
+                EditorFont = EditorFonts.Id(font),
+                AdditionalProperties = current?.AdditionalProperties,
+            };
+            await WriteCoreAsync(UserFilePath, updated, token).ConfigureAwait(false);
+            return true;
+        }, cancellationToken).ConfigureAwait(false);
+
+        return await LoadAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     private async Task<SettingsDocument?> ReadAsync(
         string path,
         SettingsScope scope,
@@ -191,30 +230,37 @@ public sealed class ConfigurationService
     }
 
     private Task WriteAsync(string path, SettingsDocument document, CancellationToken cancellationToken) =>
-        _queue.EnqueueAsync(async token =>
+        _queue.EnqueueAsync(token => WriteCoreAsync(path, document, token), cancellationToken);
+
+    private async Task<bool> WriteCoreAsync(
+        string path,
+        SettingsDocument document,
+        CancellationToken cancellationToken)
+    {
+        var directory = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(directory))
         {
-            var directory = Path.GetDirectoryName(path);
-            if (!string.IsNullOrEmpty(directory))
+            Directory.CreateDirectory(directory);
+        }
+
+        var stamped = document.SchemaVersion is null
+            ? new SettingsDocument
             {
-                Directory.CreateDirectory(directory);
+                SchemaVersion = WorkbenchSettings.CurrentSchemaVersion,
+                DefaultEncoding = document.DefaultEncoding,
+                FallbackEncoding = document.FallbackEncoding,
+                DefaultLineEnding = document.DefaultLineEnding,
+                ReloadUnmodifiedFiles = document.ReloadUnmodifiedFiles,
+                WorkspaceIgnoredPaths = document.WorkspaceIgnoredPaths,
+                EditorFont = document.EditorFont,
+                AdditionalProperties = document.AdditionalProperties,
             }
+            : document;
 
-            var stamped = document.SchemaVersion is null
-                ? new SettingsDocument
-                {
-                    SchemaVersion = WorkbenchSettings.CurrentSchemaVersion,
-                    DefaultEncoding = document.DefaultEncoding,
-                    FallbackEncoding = document.FallbackEncoding,
-                    DefaultLineEnding = document.DefaultLineEnding,
-                    ReloadUnmodifiedFiles = document.ReloadUnmodifiedFiles,
-                    WorkspaceIgnoredPaths = document.WorkspaceIgnoredPaths,
-                }
-                : document;
-
-            var json = JsonSerializer.Serialize(stamped, SettingsDocument.SerializerOptions);
-            await _store.WriteAllBytesAsync(path, Encoding.UTF8.GetBytes(json + "\n"), token).ConfigureAwait(false);
-            return true;
-        }, cancellationToken);
+        var json = JsonSerializer.Serialize(stamped, SettingsDocument.SerializerOptions);
+        await _store.WriteAllBytesAsync(path, Encoding.UTF8.GetBytes(json + "\n"), cancellationToken).ConfigureAwait(false);
+        return true;
+    }
 
     private void Publish(SettingsResolution resolution)
     {

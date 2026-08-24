@@ -25,6 +25,10 @@ Use Monaco's public APIs rather than recreating editor UI:
 - decorations/collections for breakpoints, execution state, and other editor adornments;
 - Monaco content/peek/overlay widgets for editor-local UI when a public provider API does not already own it.
 
+Normal and diff editors hide Monaco's horizontal scrollbar through the public construction options. Long-line caret,
+selection, reveal, and programmatic horizontal navigation remain Monaco-owned; NovaSharp does not add a replacement
+scrollbar or synchronized overlay.
+
 Blazor remains responsible for workbench UI such as Explorer, tabs, Problems, output, and dialogs. Roslyn remains the semantic authority for C#; Monaco's C# package supplies lexical language configuration, not project-aware C# IntelliSense.
 
 ## Consequences

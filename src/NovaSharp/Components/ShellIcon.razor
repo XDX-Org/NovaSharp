@@ -1,0 +1,8 @@
+@using NovaSharp.Shell
+
+<span class="@SemanticIcons.CssClass(Name) @CssClass" aria-hidden="true"></span>
+
+@code {
+    [Parameter, EditorRequired] public SemanticIcon Name { get; set; }
+    [Parameter] public string? CssClass { get; set; }
+}

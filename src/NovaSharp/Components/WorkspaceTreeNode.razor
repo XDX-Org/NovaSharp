@@ -1,6 +1,7 @@
 @using Microsoft.AspNetCore.Components.Web
 @using Microsoft.JSInterop
 @using NovaSharp.Workspace
+@using NovaSharp.Shell
 @inject IJSRuntime JSRuntime
 
 <div role="treeitem"
@@ -11,9 +12,12 @@
     <button type="button" class="tree-row" style="padding-left: @(8 + Level * 16)px"
             tabindex="0"
             @onclick="ClickAsync" @ondblclick="ActivateAsync"
-            @onkeydown="OnKeyDownAsync" @oncontextmenu="SelectAsync" @oncontextmenu:preventDefault>
-        <span class="tree-twist" aria-hidden="true">@(Node.CanExpand ? Node.IsLoading ? "…" : Node.IsExpanded ? "▾" : "▸" : "")</span>
-        <span class="tree-icon" aria-hidden="true">@Icon(Node.Kind)</span>
+            @onkeydown="OnKeyDownAsync" @oncontextmenu="OpenContextMenuAsync"
+            @oncontextmenu:preventDefault @oncontextmenu:stopPropagation>
+        <span class="tree-twist" aria-hidden="true">
+            @if (Node.CanExpand) { <ShellIcon Name="@(Node.IsLoading ? SemanticIcon.More : Node.IsExpanded ? SemanticIcon.ChevronDown : SemanticIcon.ChevronRight)" /> }
+        </span>
+        <ShellIcon Name="@Icon(Node.Kind)" CssClass="tree-icon" />
         <span class="tree-name">@Node.Name</span>
     </button>
     @if (Node.Error is not null)
@@ -27,7 +31,7 @@
             {
                 <WorkspaceTreeNode Node="child" Level="@(Level + 1)" SelectedId="SelectedId"
                     OnSelect="OnSelect" OnPreview="OnPreview" OnActivate="OnActivate" OnExpand="OnExpand" OnCollapse="OnCollapse"
-                    OnRename="OnRename" OnDelete="OnDelete" />
+                    OnRename="OnRename" OnDelete="OnDelete" OnContextMenu="OnContextMenu" />
             }
             @if (Node.Children.Count > _visibleChildren)
             {
@@ -50,14 +54,16 @@
     [Parameter] public EventCallback<WorkspaceNode> OnCollapse { get; set; }
     [Parameter] public EventCallback<WorkspaceNode> OnRename { get; set; }
     [Parameter] public EventCallback<WorkspaceNode> OnDelete { get; set; }
+    [Parameter] public EventCallback<(WorkspaceNode Node, MouseEventArgs Args)> OnContextMenu { get; set; }
 
     private int _visibleChildren = 250;
 
     private void ShowMore() => _visibleChildren += 250;
 
-    private async Task SelectAsync()
+    private async Task OpenContextMenuAsync(MouseEventArgs args)
     {
         await OnSelect.InvokeAsync(Node);
+        await OnContextMenu.InvokeAsync((Node, args));
     }
 
     private async Task ActivateAsync()
@@ -95,13 +101,15 @@
         else if (args.Key == "End") await JSRuntime.InvokeVoidAsync("NovaWorkspace.focus", Node.Id, "last");
         else if (args.Key == "F2") await OnRename.InvokeAsync(Node);
         else if (args.Key == "Delete") await OnDelete.InvokeAsync(Node);
+        else if (args.Key == "ContextMenu" || (args.Key == "F10" && args.ShiftKey))
+            await OpenContextMenuAsync(new MouseEventArgs());
     }
 
-    private static string Icon(WorkspaceNodeKind kind) => kind switch
+    private static SemanticIcon Icon(WorkspaceNodeKind kind) => kind switch
     {
-        WorkspaceNodeKind.Directory => "▰",
-        WorkspaceNodeKind.SupportedFile => "◆",
-        WorkspaceNodeKind.SymbolicLink => "↗",
-        _ => "◇",
+        WorkspaceNodeKind.Directory => SemanticIcon.Folder,
+        WorkspaceNodeKind.SupportedFile => SemanticIcon.FileCode,
+        WorkspaceNodeKind.SymbolicLink => SemanticIcon.Symlink,
+        _ => SemanticIcon.File,
     };
 }

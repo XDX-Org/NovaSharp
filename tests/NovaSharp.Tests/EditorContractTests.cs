@@ -41,6 +41,9 @@ public sealed class EditorContractTests
         var html = ReadContract("index.html");
 
         Assert.Contains("monaco/monaco.css", html, StringComparison.Ordinal);
+        Assert.Contains("workbench-assets/fonts.css", html, StringComparison.Ordinal);
+        Assert.Contains("workbench-assets/codicon.css", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("https://", html, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -81,6 +84,14 @@ public sealed class EditorContractTests
 
         Assert.Contains("new ResizeObserver", module, StringComparison.Ordinal);
         Assert.Contains("automaticLayout: false", module, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EditorHost_HidesHorizontalScrollbarsInNormalAndDiffEditors()
+    {
+        var module = ReadContract("monaco-editor-host.js");
+
+        Assert.Equal(2, module.Split("scrollbar: { horizontal: 'hidden' }", StringSplitOptions.None).Length - 1);
     }
 
     [Fact]
@@ -210,7 +221,7 @@ public sealed class EditorContractTests
     }
 
     [Fact]
-    public void DocumentTabs_ExposeAccessiblePointerAndOverflowInteractions()
+    public void DocumentTabs_ExposeAccessiblePointerInteractions()
     {
         var markup = ReadContract("EditorPanel.razor");
 
@@ -221,7 +232,8 @@ public sealed class EditorContractTests
         Assert.Contains("draggable=\"true\"", markup, StringComparison.Ordinal);
         Assert.Contains("@ondrop", markup, StringComparison.Ordinal);
         Assert.Contains("@onauxclick", markup, StringComparison.Ordinal);
-        Assert.Contains("aria-label=\"Open editor list\"", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("tabs-overflow", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("Open editor list", markup, StringComparison.Ordinal);
     }
 
     [Fact]

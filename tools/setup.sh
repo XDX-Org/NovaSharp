@@ -48,6 +48,8 @@ cd "$repo"
 "$node" "$npm_cli" ci --ignore-scripts --no-audit --no-fund
 "$node" tools/build-monaco.mjs
 "$node" tools/build-monaco.mjs --check
+"$node" tools/build-workbench-assets.mjs
+"$node" tools/build-workbench-assets.mjs --check
 dotnet restore NovaSharp.slnx
 dotnet build NovaSharp.slnx --no-restore
 dotnet test NovaSharp.slnx --no-build

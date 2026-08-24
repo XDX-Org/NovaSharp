@@ -162,6 +162,21 @@ public static class SettingsResolver
             current = current with { WorkspaceIgnoredPaths = valid };
         }
 
+        if (document.EditorFont is { } editorFont)
+        {
+            if (EditorFonts.TryParse(editorFont, out var font))
+            {
+                current = current with { EditorFont = font };
+            }
+            else
+            {
+                problems.Add(new SettingsProblem(
+                    scope,
+                    path,
+                    $"'{editorFont}' is not a packaged editor font. editorFont was ignored."));
+            }
+        }
+
         return current;
     }
 

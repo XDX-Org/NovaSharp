@@ -119,6 +119,18 @@ public sealed class SettingsResolverTests
         Assert.Equal(["generated", "artifacts/*.tmp"], resolution.Settings.WorkspaceIgnoredPaths);
         Assert.Contains(resolution.Problems, problem => problem.Message.Contains("../outside"));
     }
+
+    [Fact]
+    public void Resolve_AcceptsOnlyPackagedEditorFonts()
+    {
+        var selected = Resolve(new SettingsDocument { EditorFont = EditorFonts.FastMonoId });
+        var invalid = Resolve(new SettingsDocument { EditorFont = "system-font" });
+
+        Assert.Equal(EditorFontPreference.FastMono, selected.Settings.EditorFont);
+        Assert.True(selected.IsClean);
+        Assert.Equal(EditorFontPreference.Default, invalid.Settings.EditorFont);
+        Assert.Contains(invalid.Problems, problem => problem.Message.Contains("editorFont"));
+    }
 }
 
 public sealed class ConfigurationServiceTests : IAsyncDisposable
@@ -240,6 +252,54 @@ public sealed class ConfigurationServiceTests : IAsyncDisposable
         Assert.Equal(expected, _service.WorkspaceFilePath);
         Assert.True(File.Exists(expected));
         Assert.False(_service.Current.Settings.ReloadUnmodifiedFiles);
+    }
+
+    [Fact]
+    public async Task SetUserEditorFontAsync_PreservesOtherAndUnknownSettings()
+    {
+        await WriteAsync(_service.UserFilePath,
+            """{ "schemaVersion": 2, "defaultEncoding": "utf-8-bom", "futureSetting": { "enabled": true } }""");
+
+        var resolution = await _service.SetUserEditorFontAsync(
+            EditorFontPreference.FastMono,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(EditorFontPreference.FastMono, resolution.Settings.EditorFont);
+        Assert.Equal("utf-8-bom", resolution.Settings.DefaultEncoding.Id);
+        var written = await File.ReadAllTextAsync(_service.UserFilePath, TestContext.Current.CancellationToken);
+        Assert.Contains("\"editorFont\": \"fast-mono\"", written, StringComparison.Ordinal);
+        Assert.Contains("\"futureSetting\"", written, StringComparison.Ordinal);
+        Assert.Contains($"\"schemaVersion\": {WorkbenchSettings.CurrentSchemaVersion}", written, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SetUserEditorFontAsync_DoesNotReplaceMalformedSettings()
+    {
+        const string invalid = "{ this is not json";
+        await WriteAsync(_service.UserFilePath, invalid);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _service.SetUserEditorFontAsync(
+            EditorFontPreference.FastMono,
+            TestContext.Current.CancellationToken));
+
+        Assert.Equal(invalid, await File.ReadAllTextAsync(
+            _service.UserFilePath,
+            TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task SetUserEditorFontAsync_DoesNotDowngradeNewerSettings()
+    {
+        var newer = $"{{ \"schemaVersion\": {WorkbenchSettings.CurrentSchemaVersion + 1}, \"editorFont\": \"default\" }}";
+        await WriteAsync(_service.UserFilePath, newer);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _service.SetUserEditorFontAsync(
+            EditorFontPreference.FastMono,
+            TestContext.Current.CancellationToken));
+
+        Assert.Equal(newer, await File.ReadAllTextAsync(
+            _service.UserFilePath,
+            TestContext.Current.CancellationToken));
     }
 
     [Fact]

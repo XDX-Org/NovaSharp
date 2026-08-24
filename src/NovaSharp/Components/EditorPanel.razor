@@ -1,33 +1,44 @@
 @using System.Collections.Frozen
 @using Microsoft.JSInterop
 @using NovaSharp.Commands
+@using NovaSharp.Configuration
 @using NovaSharp.Diagnostics
 @using NovaSharp.Editing
 @using NovaSharp.Platform
+@using NovaSharp.Shell
 @using NovaSharp.Text
 @using NovaSharp.Verification
 @using Photino.NET
 @implements IAsyncDisposable
 @inject IJSRuntime JSRuntime
 
-<main class="workbench">
-    <header class="toolbar">
-        @foreach (var id in ToolbarCommands)
-        {
-            var descriptor = Workbench.Commands.Find(id);
-            if (descriptor is not null)
+<main class="workbench" @onpointerdown="CloseCommandMenu">
+    <header class="command-bar" role="region" aria-label="Global command bar">
+        <div class="brand" aria-label="NovaSharp">
+            <img src="workbench-assets/nova-mark.png" alt="" />
+            <span>NovaSharp</span>
+        </div>
+        <nav class="global-menus" aria-label="Application menus">
+            @foreach (var category in MenuCategories)
             {
-                <button type="button" @onclick="() => InvokeAsync(id)"
-                        disabled="@(!Workbench.Commands.IsEnabled(id))"
-                        title="@Shortcut(descriptor)">@descriptor.Title</button>
+                <CommandMenu Label="@category" AccessibleName="@($"{category} menu")"
+                             Commands="@MenuCommands(category)" OnInvoke="InvokeAsync"
+                             Open="@(_openCommandMenu == category)" OnOpen="() => OpenCommandMenu(category)"
+                             OnClose="CloseCommandMenu" />
             }
-        }
-        <span class="file-name" title="@_status.Path">@_status.DisplayName@(_status.IsDirty ? " •" : null)</span>
+        </nav>
+        <CommandMenu Icon="SemanticIcon.Menu" AccessibleName="Application menu"
+                     Commands="@PaletteCommands" OnInvoke="InvokeAsync" CssClass="global-overflow-menu"
+                     Open="@(_openCommandMenu == OverflowMenuId)" OnOpen="() => OpenCommandMenu(OverflowMenuId)"
+                     OnClose="CloseCommandMenu" />
+        <div class="command-bar-actions" aria-label="File actions">
+            <CommandButton CommandId="WorkbenchCommands.Open" Icon="SemanticIcon.OpenFile" OnInvoke="InvokeAsync" />
+            <CommandButton CommandId="WorkbenchCommands.Save" Icon="SemanticIcon.Save" OnInvoke="InvokeAsync" />
+        </div>
     </header>
-
     <div class="workbench-body">
-        <WorkspaceExplorer OpenFile="OpenWorkspaceFileAsync" PreviewFile="PreviewWorkspaceFileAsync" />
-        <section class="editor-panel">
+        <div class="editor-workspace">
+          <section class="editor-panel">
             <div class="tabs-bar">
                 <div class="tabs-strip" role="tablist" aria-label="Open editors">
                     @foreach (var tab in _tabs.Tabs)
@@ -37,24 +48,23 @@
                              title="@tab.Path" tabindex="@(tab.IsActive ? 0 : -1)" draggable="true"
                              @onclick="() => ActivateTabAsync(tab.Id)" @ondblclick="() => PromoteTabAsync(tab.Id)"
                              @onauxclick="args => MiddleClickAsync(tab.Id, args)"
+                             @oncontextmenu="args => OpenTabContextAsync(tab.Id, args)"
+                             @oncontextmenu:preventDefault @oncontextmenu:stopPropagation
                              @ondragstart="() => _draggedTabId = tab.Id"
                              @ondragover:preventDefault @ondrop="() => DropTabAsync(tab.Id)">
-                            <span class="tab-state" aria-hidden="true">@(tab.IsMissing ? "!" : tab.IsReadOnly ? "◇" : tab.IsDirty ? "●" : tab.IsPinned ? "" : "○")</span>
+                            <span class="tab-state" aria-hidden="true">
+                                @if (tab.IsMissing) { <ShellIcon Name="SemanticIcon.Missing" /> }
+                                else if (tab.IsReadOnly) { <ShellIcon Name="SemanticIcon.ReadOnly" /> }
+                                else if (tab.IsDirty) { <ShellIcon Name="SemanticIcon.Dirty" /> }
+                            </span>
                             <span class="tab-label">@tab.Label</span>
                             <button type="button" class="tab-close" aria-label="Close @tab.Label"
-                                    @onclick="() => CloseOneAsync(tab.Id)" @onclick:stopPropagation>×</button>
+                                    @onclick="() => CloseOneAsync(tab.Id)" @onclick:stopPropagation>
+                                <ShellIcon Name="SemanticIcon.Close" />
+                            </button>
                         </div>
                     }
                 </div>
-                @if (_tabs.Tabs.Count > 0)
-                {
-                    <select class="tabs-overflow" aria-label="Open editor list" value="@_tabs.ActiveId" @onchange="SelectOverflowAsync">
-                        @foreach (var tab in _tabs.Tabs)
-                        {
-                            <option value="@tab.Id">@(tab.IsDirty ? "● " : null)@tab.Label</option>
-                        }
-                    </select>
-                }
             </div>
 
             @if (_notifications.Count > 0)
@@ -63,6 +73,7 @@
                     @foreach (var notification in _notifications)
                     {
                         <div class="notice @Style(notification.Severity)" role="@Role(notification.Severity)">
+                            <ShellIcon Name="@NoticeIcon(notification.Severity)" />
                             <span>@notification.Message</span>
                             @foreach (var action in notification.Actions)
                             {
@@ -70,7 +81,9 @@
                                         disabled="@(action.DocumentId is null && !Workbench.Commands.IsEnabled(action.CommandId))">@action.Title</button>
                             }
                             <button type="button" class="dismiss" aria-label="Dismiss"
-                                    @onclick="() => Workbench.Notifications.Dismiss(notification.Id)">×</button>
+                                    @onclick="() => Workbench.Notifications.Dismiss(notification.Id)">
+                                <ShellIcon Name="SemanticIcon.Close" />
+                            </button>
                         </div>
                     }
                 </div>
@@ -81,10 +94,23 @@
             {
                 <div class="editor-host" @ref="_diffContainer"></div>
             }
-        </section>
+          </section>
+          @if (_panelVisible)
+          {
+              <section class="bottom-panel" aria-label="Bottom panel">
+                  <header>
+                      <strong>Panel</strong>
+                      <span>Problems, output, terminal, and debug views arrive in their governing phases.</span>
+                      <CommandButton CommandId="WorkbenchCommands.TogglePanel" Icon="SemanticIcon.Close" OnInvoke="InvokeAsync" />
+                  </header>
+              </section>
+          }
+        </div>
+        <WorkspaceExplorer OpenFile="OpenWorkspaceFileAsync" PreviewFile="PreviewWorkspaceFileAsync" />
+        <ActivityRail OnInvoke="InvokeAsync" />
     </div>
 
-    <footer class="status-bar">
+    <footer class="status-bar" role="region" aria-label="Status">
         @if (_status.IsComparing)
         {
             <button type="button" class="status-item" @onclick="() => InvokeAsync(WorkbenchCommands.EndCompare)">Stop comparing</button>
@@ -138,15 +164,35 @@
             </div>
         </div>
     }
+
+    @if (_editorFontPickerOpen)
+    {
+        <div class="picker" role="dialog" aria-label="Editor font">
+            <h2>Editor font</h2>
+            <select @bind="_pickedEditorFont">
+                <option value="@EditorFontPreference.Default">@EditorFonts.DisplayName(EditorFontPreference.Default)</option>
+                <option value="@EditorFontPreference.FastMono">@EditorFonts.DisplayName(EditorFontPreference.FastMono)</option>
+            </select>
+            <p class="picker-hint">Applies to source editors and comparisons, and is saved in your user settings.</p>
+            <div class="picker-actions">
+                <button type="button" @onclick="SaveEditorFontAsync">Apply</button>
+                <button type="button" @onclick="() => _editorFontPickerOpen = false">Cancel</button>
+            </div>
+        </div>
+    }
+
+    <CommandPalette Open="_commandPaletteOpen" Commands="PaletteCommands"
+                    OnInvoke="InvokePaletteCommandAsync" OnClose="CloseCommandPalette" />
+    @if (_tabContextOpen)
+    {
+        <ContextCommandMenu AccessibleName="Editor tab actions" Commands="TabContextCommands"
+                            X="_tabContextX" Y="_tabContextY" OnInvoke="InvokeAsync" OnClose="CloseTabContext" />
+    }
 </main>
 
 @code {
-    private static readonly string[] ToolbarCommands =
-    [
-        WorkbenchCommands.ToggleExplorer, WorkbenchCommands.Open, WorkbenchCommands.Save,
-        WorkbenchCommands.SaveAs, WorkbenchCommands.Reload, WorkbenchCommands.Compare,
-    ];
-
+    private const string OverflowMenuId = "application";
+    private static readonly string[] MenuCategories = ["File", "Workspace", "View"];
     private readonly List<IDisposable> _registrations = [];
     private ElementReference _editorContainer;
     private ElementReference _diffContainer;
@@ -160,13 +206,29 @@
     private string? _draggedTabId;
     private bool _encodingPickerOpen;
     private bool _lineEndingPickerOpen;
+    private bool _editorFontPickerOpen;
+    private bool _commandPaletteOpen;
+    private bool _panelVisible;
+    private bool _tabContextOpen;
+    private string? _openCommandMenu;
+    private double _tabContextX;
+    private double _tabContextY;
     private string _pickedEncodingId = TextEncodings.Utf8.Id;
     private LineEndingStyle _pickedLineEnding = LineEndingStyle.Lf;
+    private EditorFontPreference _pickedEditorFont = EditorFontPreference.Default;
     private FrozenDictionary<string, bool> _representable = FrozenDictionary<string, bool>.Empty;
+    private DotNetObjectReference<EditorPanel>? _shellBridge;
 
     private DocumentSession? Active => _documents?.ActiveDocument;
     private static IEnumerable<TextEncodingProfile> Favorites =>
         TextEncodings.Favorites.Select(TextEncodings.Find).OfType<TextEncodingProfile>();
+    private IReadOnlyList<CommandDescriptor> PaletteCommands => Workbench.Commands.Commands;
+    private IReadOnlyList<CommandDescriptor> MenuCommands(string category) => PaletteCommands
+        .Where(command => command.ShowInPalette && command.Category == category)
+        .ToArray();
+    private IReadOnlyList<CommandDescriptor> TabContextCommands =>
+        new[] { WorkbenchCommands.Close, WorkbenchCommands.CloseOthers, WorkbenchCommands.CloseRight, WorkbenchCommands.CloseSaved, WorkbenchCommands.PinTab }
+            .Select(Workbench.Commands.Find).OfType<CommandDescriptor>().ToArray();
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -187,6 +249,9 @@
                     new EditorBridge(session.Replicate, session.RequestResync, InvokeAsync), CancellationToken.None);
                 _host = host;
                 _smokeSession = session;
+                _shellBridge = DotNetObjectReference.Create(this);
+                await JSRuntime.InvokeVoidAsync(
+                    "NovaWorkbench.initialize", _shellBridge, Array.Empty<CommandDescriptor>(), WorkbenchCommands.ShowCommandPalette);
                 await NativeSmokeTest.RunAsync(session, host);
                 return;
             }
@@ -198,7 +263,12 @@
             _documents = documents;
             Workbench.Documents = documents;
             documents.Changed += OnTabsChanged;
+            Workbench.Configuration.Changed += OnConfigurationChanged;
             RegisterCommands();
+
+            _shellBridge = DotNetObjectReference.Create(this);
+            await JSRuntime.InvokeVoidAsync(
+                "NovaWorkbench.initialize", _shellBridge, Workbench.Commands.Commands, WorkbenchCommands.ShowCommandPalette);
 
             var unresolved = await host.RegisterCommandsAsync(Workbench.Commands.Commands, CancellationToken.None);
             if (unresolved.Count > 0)
@@ -206,6 +276,7 @@
                     $"These shortcuts could not be bound: {string.Join(", ", unresolved)}");
 
             await Workbench.LoadConfigurationAsync();
+            await host.SetEditorFontAsync(Workbench.Configuration.Current.Settings.EditorFont, CancellationToken.None);
             await documents.RestoreAsync();
             _tabs = documents.Snapshot;
             _status = documents.ActiveDocument?.Status ?? new();
@@ -243,6 +314,40 @@
         Register(WorkbenchCommands.PreviousTab, token => CycleAsync(-1, token), () => _tabs.Tabs.Count > 1);
         Register(WorkbenchCommands.NextTab, token => CycleAsync(1, token), () => _tabs.Tabs.Count > 1);
         Register(WorkbenchCommands.PinTab, token => _tabs.ActiveId is { } id ? _documents!.PromoteAsync(id, token) : Task.CompletedTask, () => _tabs.ActiveTab?.IsPreview == true);
+        Register(WorkbenchCommands.ShowCommandPalette, _ => { ShowCommandPalette(); return Task.CompletedTask; });
+        Register(WorkbenchCommands.TogglePanel, _ => { _panelVisible = !_panelVisible; StateHasChanged(); return Task.CompletedTask; });
+        Register(WorkbenchCommands.ChooseEditorFont, _ => { ToggleEditorFontPicker(); return Task.CompletedTask; });
+    }
+
+    [JSInvokable]
+    public Task InvokeShellCommandAsync(string commandId) => InvokeAsync(commandId);
+
+    [JSInvokable]
+    public void DismissCommandMenusAsync()
+    {
+        if (_openCommandMenu is null) return;
+        CloseCommandMenu();
+        StateHasChanged();
+    }
+
+    private void ShowCommandPalette()
+    {
+        CloseCommandMenu();
+        _commandPaletteOpen = true;
+        _encodingPickerOpen = false;
+        _lineEndingPickerOpen = false;
+        _editorFontPickerOpen = false;
+        StateHasChanged();
+    }
+
+    private void CloseCommandPalette() => _commandPaletteOpen = false;
+    private void OpenCommandMenu(string menu) => _openCommandMenu = menu;
+    private void CloseCommandMenu() => _openCommandMenu = null;
+
+    private async Task InvokePaletteCommandAsync(string commandId)
+    {
+        _commandPaletteOpen = false;
+        await InvokeAsync(commandId);
     }
 
     private async Task InvokeAsync(string commandId)
@@ -272,6 +377,14 @@
     private void OnNotificationsChanged(IReadOnlyList<Notification> notifications) => _ = InvokeAsync(() =>
     {
         _notifications = notifications;
+        StateHasChanged();
+    });
+
+    private void OnConfigurationChanged(SettingsResolution resolution) => _ = InvokeAsync(async () =>
+    {
+        _pickedEditorFont = resolution.Settings.EditorFont;
+        if (_host is not null)
+            await _host.SetEditorFontAsync(resolution.Settings.EditorFont, CancellationToken.None);
         StateHasChanged();
     });
 
@@ -319,6 +432,16 @@
         if (args.Button == 1) await CloseOneAsync(id);
     }
 
+    private async Task OpenTabContextAsync(string id, MouseEventArgs args)
+    {
+        await ActivateTabAsync(id);
+        _tabContextX = args.ClientX;
+        _tabContextY = args.ClientY;
+        _tabContextOpen = true;
+    }
+
+    private void CloseTabContext() => _tabContextOpen = false;
+
     private async Task DropTabAsync(string targetId)
     {
         if (_documents is null || _draggedTabId is not { } dragged) return;
@@ -326,9 +449,6 @@
         var target = _tabs.Tabs.ToList().FindIndex(tab => tab.Id == targetId);
         await _documents.MoveAsync(dragged, target);
     }
-
-    private Task SelectOverflowAsync(ChangeEventArgs args) =>
-        args.Value?.ToString() is { Length: > 0 } id ? ActivateTabAsync(id) : Task.CompletedTask;
 
     private Task CloseOneAsync(string id) => CloseCandidatesAsync(_documents?.GetCloseCandidates(DocumentCloseKind.One, id) ?? []);
     private Task CloseKindAsync(DocumentCloseKind kind, CancellationToken token) =>
@@ -428,6 +548,7 @@
         _pickedLineEnding = _status.LineEnding;
         _lineEndingPickerOpen = !_lineEndingPickerOpen;
         _encodingPickerOpen = false;
+        _editorFontPickerOpen = false;
     }
 
     private async Task SaveWithLineEndingAsync()
@@ -439,6 +560,7 @@
     private async Task ToggleEncodingPickerAsync()
     {
         _lineEndingPickerOpen = false;
+        _editorFontPickerOpen = false;
         _encodingPickerOpen = !_encodingPickerOpen;
         if (!_encodingPickerOpen || Active is not { } session) return;
         _pickedEncodingId = _status.Encoding?.Id ?? TextEncodings.Utf8.Id;
@@ -461,17 +583,42 @@
             await session.SaveWithEncodingAsync(encoding);
     }
 
+    private void ToggleEditorFontPicker()
+    {
+        _pickedEditorFont = Workbench.Configuration.Current.Settings.EditorFont;
+        _editorFontPickerOpen = !_editorFontPickerOpen;
+        _encodingPickerOpen = false;
+        _lineEndingPickerOpen = false;
+    }
+
+    private async Task SaveEditorFontAsync()
+    {
+        _editorFontPickerOpen = false;
+        var resolution = await Workbench.Configuration.SetUserEditorFontAsync(_pickedEditorFont);
+        if (_host is not null)
+            await _host.SetEditorFontAsync(resolution.Settings.EditorFont, CancellationToken.None);
+    }
+
     private string EncodingLabel(TextEncodingProfile profile) =>
-        _representable.TryGetValue(profile.Id, out var ok) && !ok ? $"⚠ {profile.DisplayName}" : profile.DisplayName;
+        _representable.TryGetValue(profile.Id, out var ok) && !ok ? $"Cannot represent — {profile.DisplayName}" : profile.DisplayName;
     private static string LineEndingLabel(LineEndingStyle style) => style switch { LineEndingStyle.CrLf => "CRLF", LineEndingStyle.Cr => "CR", _ => "LF" };
     private static string? Style(NotificationSeverity severity) => severity switch { NotificationSeverity.Error => "error", NotificationSeverity.Warning => "conflict", _ => null };
     private static string Role(NotificationSeverity severity) => severity == NotificationSeverity.Information ? "status" : "alert";
-    private static string? Shortcut(CommandDescriptor descriptor) => descriptor.Keybindings.Count == 0 ? null :
-        descriptor.Keybindings[0].Replace("CtrlCmd", "Ctrl/Cmd", StringComparison.Ordinal).Replace("Key", string.Empty, StringComparison.Ordinal);
+    private static SemanticIcon NoticeIcon(NotificationSeverity severity) => severity switch
+    {
+        NotificationSeverity.Error => SemanticIcon.Error,
+        NotificationSeverity.Warning => SemanticIcon.Warning,
+        _ => SemanticIcon.Information,
+    };
 
     public async ValueTask DisposeAsync()
     {
         Workbench.Notifications.Changed -= OnNotificationsChanged;
+        Workbench.Configuration.Changed -= OnConfigurationChanged;
+        try { await JSRuntime.InvokeVoidAsync("NovaWorkbench.dispose"); }
+        catch (JSDisconnectedException) { }
+        _shellBridge?.Dispose();
+        _shellBridge = null;
         foreach (var registration in _registrations) registration.Dispose();
         _registrations.Clear();
         if (_documents is not null)

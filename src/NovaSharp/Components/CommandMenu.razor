@@ -1,0 +1,51 @@
+@using NovaSharp.Commands
+@using NovaSharp.Shell
+
+<div class="command-menu @CssClass" @onpointerdown:stopPropagation>
+    <button type="button" class="command-menu-trigger" aria-haspopup="menu" aria-expanded="@Open"
+            aria-label="@AccessibleName" @onclick="ToggleAsync"
+            @oncontextmenu="CloseAsync" @oncontextmenu:preventDefault>
+        @if (Icon is { } icon) { <ShellIcon Name="icon" /> }
+        @if (Label is not null) { <span>@Label</span> }
+    </button>
+    @if (Open)
+    {
+        <div class="command-menu-popup" role="menu" aria-label="@AccessibleName" @onkeydown="OnKeyDown">
+            @foreach (var command in Commands)
+            {
+                <button type="button" role="menuitem" disabled="@(!Workbench.Commands.IsEnabled(command.Id))"
+                        @onclick="() => InvokeAsync(command.Id)">
+                    <span>@command.Title</span>
+                    @if (command.Keybindings.Count > 0) { <kbd>@string.Join(", ", command.Keybindings.Select(Format))</kbd> }
+                </button>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string? Label { get; set; }
+    [Parameter] public SemanticIcon? Icon { get; set; }
+    [Parameter, EditorRequired] public string AccessibleName { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public IReadOnlyList<CommandDescriptor> Commands { get; set; } = [];
+    [Parameter] public EventCallback<string> OnInvoke { get; set; }
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public EventCallback OnOpen { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public string? CssClass { get; set; }
+
+    private Task ToggleAsync() => Open ? CloseAsync() : OnOpen.InvokeAsync();
+    private Task CloseAsync() => OnClose.InvokeAsync();
+    private async Task OnKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Escape") await CloseAsync();
+    }
+
+    private async Task InvokeAsync(string commandId)
+    {
+        await CloseAsync();
+        await OnInvoke.InvokeAsync(commandId);
+    }
+    private static string Format(string binding) => binding.Replace("CtrlCmd", "Ctrl/Cmd", StringComparison.Ordinal)
+        .Replace("Key", string.Empty, StringComparison.Ordinal);
+}

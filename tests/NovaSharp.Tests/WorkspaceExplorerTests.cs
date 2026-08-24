@@ -56,6 +56,19 @@ public sealed class WorkspaceExplorerTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task SetSidebarAsync_DoesNotImposeAProductWidthRange()
+    {
+        await _explorer.SetSidebarAsync(true, 1, TestContext.Current.CancellationToken);
+        Assert.Equal(1, _explorer.Snapshot.SidebarWidth);
+
+        await _explorer.SetSidebarAsync(true, 2_000, TestContext.Current.CancellationToken);
+        Assert.Equal(2_000, _explorer.Snapshot.SidebarWidth);
+
+        await _explorer.SetSidebarAsync(true, -1, TestContext.Current.CancellationToken);
+        Assert.Equal(0, _explorer.Snapshot.SidebarWidth);
+    }
+
+    [Fact]
     public async Task ExpandAsync_IsLazyAndCollapseRetainsItsLoadedState()
     {
         var directory = Directory.CreateDirectory(Path.Combine(_root, "src")).FullName;
@@ -68,6 +81,24 @@ public sealed class WorkspaceExplorerTests : IAsyncDisposable
         await _explorer.CollapseAsync(directory, TestContext.Current.CancellationToken);
         Assert.False(Find(directory)!.IsExpanded);
         Assert.Contains(Find(directory)!.Children!, child => child.Name == "Nested.cs");
+    }
+
+    [Fact]
+    public async Task CollapseAllAsync_ClosesEveryFolderAndRetainsLoadedChildren()
+    {
+        var directory = Directory.CreateDirectory(Path.Combine(_root, "src")).FullName;
+        var nested = Directory.CreateDirectory(Path.Combine(directory, "nested")).FullName;
+        await File.WriteAllTextAsync(Path.Combine(nested, "Widget.cs"), "class Widget;", TestContext.Current.CancellationToken);
+        await _explorer.OpenAsync(_root, TestContext.Current.CancellationToken);
+        await _explorer.ExpandAsync(directory, cancellationToken: TestContext.Current.CancellationToken);
+        await _explorer.ExpandAsync(nested, cancellationToken: TestContext.Current.CancellationToken);
+
+        await _explorer.CollapseAllAsync(TestContext.Current.CancellationToken);
+
+        Assert.False(_explorer.Snapshot.Root!.IsExpanded);
+        Assert.False(Find(directory)!.IsExpanded);
+        Assert.False(Find(nested)!.IsExpanded);
+        Assert.NotNull(Find(nested)!.Children);
     }
 
     [Fact]

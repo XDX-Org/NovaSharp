@@ -80,6 +80,10 @@ through the same temporary-sibling-then-replace path that document saves use, so
 truncated settings file. A file that fails to parse is reported, backed up beside itself, and treated as empty rather
 than silently rewritten.
 
+Schema version 3 adds the allow-listed `editorFont` preference. The phase-4.5 font picker updates that user key without
+discarding other known or extension settings; malformed settings remain untouched and must be repaired before the
+preference can be saved. Workspace scope retains the ordinary key-by-key override rule.
+
 JSON is chosen over a binary or registry-shaped store because the workspace scope is a source-controlled file that
 humans diff and merge, and because a format the platform seam does not have to abstract is one fewer place for an
 operating-system branch to appear.

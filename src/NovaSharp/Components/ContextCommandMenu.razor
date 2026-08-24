@@ -1,0 +1,43 @@
+@using NovaSharp.Commands
+
+<div class="context-menu-scrim" @onclick="CloseAsync"
+     @oncontextmenu="CloseAsync" @oncontextmenu:preventDefault></div>
+<div class="context-command-menu" role="menu" aria-label="@AccessibleName" tabindex="-1" @ref="_menu"
+     style="--context-x:@(X)px; --context-y:@(Y)px" @onclick:stopPropagation @onkeydown="OnKeyDownAsync">
+    @foreach (var command in Commands)
+    {
+        <button type="button" role="menuitem" disabled="@(!Workbench.Commands.IsEnabled(command.Id))"
+                @onclick="() => InvokeAsync(command.Id)">
+            <span>@command.Title</span>
+            @if (command.Keybindings.Count > 0) { <kbd>@Format(command.Keybindings[0])</kbd> }
+        </button>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string AccessibleName { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public IReadOnlyList<CommandDescriptor> Commands { get; set; } = [];
+    [Parameter] public double X { get; set; }
+    [Parameter] public double Y { get; set; }
+    [Parameter] public EventCallback<string> OnInvoke { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private ElementReference _menu;
+    private bool _focused;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focused) { _focused = true; await _menu.FocusAsync(); }
+    }
+
+    private async Task InvokeAsync(string commandId)
+    {
+        await OnClose.InvokeAsync();
+        await OnInvoke.InvokeAsync(commandId);
+    }
+
+    private Task CloseAsync() => OnClose.InvokeAsync();
+    private Task OnKeyDownAsync(KeyboardEventArgs args) => args.Key == "Escape" ? CloseAsync() : Task.CompletedTask;
+    private static string Format(string binding) => binding.Replace("CtrlCmd", "Ctrl/Cmd", StringComparison.Ordinal)
+        .Replace("Key", string.Empty, StringComparison.Ordinal);
+}

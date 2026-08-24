@@ -57,6 +57,10 @@ public static class WorkbenchCommands
     public const string ToggleExplorer = "novasharp.workspace.toggleExplorer";
     public const string RevealActiveFile = "novasharp.workspace.revealActiveFile";
 
+    public const string ShowCommandPalette = "novasharp.workbench.showCommandPalette";
+    public const string TogglePanel = "novasharp.workbench.togglePanel";
+    public const string ChooseEditorFont = "novasharp.workbench.chooseEditorFont";
+
     /// <summary>Returns the descriptor for <paramref name="id"/>, with its title and default bindings.</summary>
     /// <remarks>
     /// Reload, compare, and the two choosers carry no default binding on purpose: phase 2 has no keybinding
@@ -89,6 +93,9 @@ public static class WorkbenchCommands
         RefreshWorkspace => new CommandDescriptor(RefreshWorkspace, "Refresh Explorer", "Workspace", [], ShowInPalette: true),
         ToggleExplorer => new CommandDescriptor(ToggleExplorer, "Toggle Explorer", "View", ["CtrlCmd+B"], ShowInPalette: true),
         RevealActiveFile => new CommandDescriptor(RevealActiveFile, "Reveal Active File in Explorer", "Workspace", [], ShowInPalette: true),
+        ShowCommandPalette => new CommandDescriptor(ShowCommandPalette, "Show Command Palette", "View", ["CtrlCmd+Shift+P"], ShowInPalette: true),
+        TogglePanel => new CommandDescriptor(TogglePanel, "Toggle Bottom Panel", "View", ["CtrlCmd+J"], ShowInPalette: true),
+        ChooseEditorFont => new CommandDescriptor(ChooseEditorFont, "Change Editor Font…", "View", [], ShowInPalette: true),
         _ => throw new ArgumentOutOfRangeException(nameof(id), id, "There is no descriptor for this command."),
     };
 
@@ -98,5 +105,6 @@ public static class WorkbenchCommands
         Open, Save, SaveAs, Reload, Compare, EndCompare, KeepEditorText, ChooseEncoding, ChooseLineEnding,
         Close, CloseOthers, CloseRight, CloseSaved, CloseAll, MoveTabLeft, MoveTabRight, PreviousTab, NextTab, PinTab,
         OpenWorkspace, CloseWorkspace, RefreshWorkspace, ToggleExplorer, RevealActiveFile,
+        ShowCommandPalette, TogglePanel, ChooseEditorFont,
     ];
 }

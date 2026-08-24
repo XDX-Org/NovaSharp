@@ -2,6 +2,7 @@ using System.Text;
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
 using NovaSharp.Commands;
+using NovaSharp.Configuration;
 
 namespace NovaSharp.Editing;
 
@@ -179,6 +180,10 @@ public sealed class MonacoEditorHost : IEditorHost
         ArgumentNullException.ThrowIfNull(uri);
         await InvokeAsync<object?>("setReadOnly", cancellationToken, uri.AbsoluteUri, readOnly).ConfigureAwait(false);
     }
+
+    /// <inheritdoc />
+    public async ValueTask SetEditorFontAsync(EditorFontPreference font, CancellationToken cancellationToken) =>
+        await InvokeAsync<object?>("setEditorFont", cancellationToken, EditorFonts.Id(font)).ConfigureAwait(false);
 
     /// <inheritdoc />
     public ValueTask<IReadOnlyList<string>> RegisterCommandsAsync(

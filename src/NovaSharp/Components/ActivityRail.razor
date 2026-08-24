@@ -1,0 +1,28 @@
+@using NovaSharp.Commands
+@using NovaSharp.Shell
+@implements IDisposable
+
+<nav class="activity-rail" aria-label="Activity">
+    <button type="button" class="activity-item @(_explorerVisible ? "active" : null)"
+            aria-label="Explorer" aria-pressed="@_explorerVisible"
+            disabled="@(!Workbench.Commands.IsEnabled(WorkbenchCommands.ToggleExplorer))"
+            @onclick="() => OnInvoke.InvokeAsync(WorkbenchCommands.ToggleExplorer)">
+        <ShellIcon Name="SemanticIcon.Explorer" />
+        <span class="activity-label">Explorer</span>
+    </button>
+</nav>
+
+@code {
+    [Parameter] public EventCallback<string> OnInvoke { get; set; }
+    private bool _explorerVisible = Workbench.Explorer.Snapshot.SidebarVisible;
+
+    protected override void OnInitialized() => Workbench.Explorer.Changed += OnExplorerChanged;
+
+    private void OnExplorerChanged(NovaSharp.Workspace.WorkspaceSnapshot snapshot) => _ = InvokeAsync(() =>
+    {
+        _explorerVisible = snapshot.SidebarVisible;
+        StateHasChanged();
+    });
+
+    public void Dispose() => Workbench.Explorer.Changed -= OnExplorerChanged;
+}
