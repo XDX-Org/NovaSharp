@@ -1,10 +1,20 @@
 const splitters = new WeakMap();
 const dragSurfaces = new WeakMap();
+const workspaceFileType = 'application/x-novasharp-workspace-file';
+
+function hasWorkspaceFile(dataTransfer) {
+    return Array.from(dataTransfer?.types ?? []).includes(workspaceFileType)
+        || Boolean(globalThis.NovaWorkspace?.draggedFile());
+}
 
 function detachDragSurface(element) {
     const state = dragSurfaces.get(element);
     if (!state) return;
+    element.removeEventListener('mousedown', state.onMouseDown);
     element.removeEventListener('dragstart', state.onDragStart);
+    element.removeEventListener('dragenter', state.onDragEnter);
+    element.removeEventListener('dragover', state.onDragOver);
+    element.removeEventListener('dragleave', state.onDragLeave);
     element.removeEventListener('dragend', state.onDragEnd);
     element.removeEventListener('drop', state.onDragEnd);
     dragSurfaces.delete(element);
@@ -13,19 +23,53 @@ function detachDragSurface(element) {
 function attachDragSurface(element) {
     detachDragSurface(element);
     if (!(element instanceof HTMLElement)) return;
+    let tabDragging = false;
+    const onMouseDown = event => {
+        if (event.button !== 1) return;
+        const tab = event.target.closest?.('.document-tab');
+        if (tab && element.contains(tab)) event.preventDefault();
+    };
     const onDragStart = event => {
         const tab = event.target.closest?.('.document-tab[draggable="true"]');
         if (!tab || !element.contains(tab)) return;
+        tabDragging = true;
         element.classList.add('dragging');
         if (!event.dataTransfer) return;
         event.dataTransfer.effectAllowed = 'copyMove';
         event.dataTransfer.setData('text/plain', tab.dataset.viewId ?? 'editor-view');
     };
-    const onDragEnd = () => element.classList.remove('dragging');
+    const onDragEnter = event => {
+        if (hasWorkspaceFile(event.dataTransfer)) element.classList.add('dragging');
+    };
+    const onDragOver = event => {
+        const workspaceFile = hasWorkspaceFile(event.dataTransfer);
+        if (!tabDragging && !workspaceFile) return;
+        if (workspaceFile) element.classList.add('dragging');
+        const target = event.target.closest?.('.group-drop-zone, .tabs-strip, .document-tab[draggable="true"]');
+        if (!target || !element.contains(target)) return;
+        event.preventDefault();
+        if (event.dataTransfer) {
+            event.dataTransfer.dropEffect = workspaceFile || event.ctrlKey || event.altKey ? 'copy' : 'move';
+        }
+    };
+    const onDragLeave = event => {
+        const related = event.relatedTarget;
+        if (!tabDragging && (!(related instanceof Node) || !element.contains(related))) {
+            element.classList.remove('dragging');
+        }
+    };
+    const onDragEnd = () => {
+        tabDragging = false;
+        element.classList.remove('dragging');
+    };
+    element.addEventListener('mousedown', onMouseDown);
     element.addEventListener('dragstart', onDragStart);
+    element.addEventListener('dragenter', onDragEnter);
+    element.addEventListener('dragover', onDragOver);
+    element.addEventListener('dragleave', onDragLeave);
     element.addEventListener('dragend', onDragEnd);
     element.addEventListener('drop', onDragEnd);
-    dragSurfaces.set(element, { onDragStart, onDragEnd });
+    dragSurfaces.set(element, { onMouseDown, onDragStart, onDragEnter, onDragOver, onDragLeave, onDragEnd });
 }
 
 function detachSplitter(element) {

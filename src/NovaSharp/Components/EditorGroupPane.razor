@@ -39,7 +39,7 @@ else if (Node is EditorGroupNodeSnapshot leaf && Snapshot.Groups.TryGetValue(lea
                          title="@tab.Path" tabindex="@(tab.IsActive ? 0 : -1)" draggable="true" data-view-id="@tab.ViewId"
                          @onclick="() => OnActivate.InvokeAsync(new(group.Id, tab.ViewId))"
                          @ondblclick="() => OnPromote.InvokeAsync(new(group.Id, tab.ViewId))"
-                         @onauxclick="args => MiddleClickAsync(group.Id, tab.ViewId, args)"
+                         @onmouseup="args => MiddleClickAsync(group.Id, tab.ViewId, args)"
                          @oncontextmenu="args => ContextAsync(group.Id, tab.ViewId, args)"
                          @oncontextmenu:preventDefault @oncontextmenu:stopPropagation
                          @ondragstart="() => OnDragStart.InvokeAsync(new(group.Id, tab.ViewId))"

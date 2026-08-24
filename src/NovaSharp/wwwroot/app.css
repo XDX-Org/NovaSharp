@@ -87,6 +87,9 @@ kbd { color: var(--text-muted); font: inherit; font-size: 11px; white-space: now
 .tree-item { min-width: max-content; }
 .tree-row { display: flex; width: 100%; min-width: 100%; min-height: 25px; align-items: center; gap: var(--space-1); padding-right: var(--space-2); border: 0; border-radius: 0; background: transparent; text-align: left; }
 .tree-row:hover { background: var(--surface-hover); }
+.tree-row[draggable="true"] { cursor: grab; }
+.workspace-dragging .tree-row[draggable="true"] { cursor: grabbing; }
+.workspace-dragging .tree-row[data-workspace-drop-target="true"]:hover { background: var(--surface-selected); outline: 1px solid var(--accent); outline-offset: -1px; }
 .tree-item.selected > .tree-row { background: var(--surface-selected); color: var(--text-primary); }
 .tree-twist { display: grid; width: 14px; flex: 0 0 14px; place-items: center; color: var(--text-muted); }
 .tree-icon { width: 16px; color: var(--accent-strong); }

@@ -102,6 +102,63 @@ public sealed class EditorGroupManagerTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task ExplorerDropOpensTheFileAtTheRequestedGroupAndTabPosition()
+    {
+        await OpenAsync("first.cs");
+        await OpenAsync("second.cs");
+        var groups = await CreateGroupsAsync();
+        var targetGroup = groups.Snapshot.ActiveGroupId;
+        var droppedPath = Path.Combine(_root, "dropped.cs");
+        await File.WriteAllTextAsync(droppedPath, "public sealed class Dropped;\n",
+            TestContext.Current.CancellationToken);
+
+        await groups.OpenPinnedInGroupAsync(droppedPath, targetGroup, 0,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(targetGroup, groups.Snapshot.ActiveGroupId);
+        Assert.Equal("dropped.cs", groups.Snapshot.ActiveGroup.Tabs[0].Label);
+        Assert.Equal("dropped.cs", groups.Snapshot.ActiveTab!.Label);
+    }
+
+    [Fact]
+    public async Task ExplorerEdgeDropOpensTheFileInANewSplit()
+    {
+        await OpenAsync("existing.cs");
+        var groups = await CreateGroupsAsync();
+        var targetGroup = groups.Snapshot.ActiveGroupId;
+        var droppedPath = Path.Combine(_root, "edge.cs");
+        await File.WriteAllTextAsync(droppedPath, "public sealed class Edge;\n",
+            TestContext.Current.CancellationToken);
+
+        await groups.OpenPinnedAtEdgeAsync(droppedPath, targetGroup, EditorSplitDirection.Left,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, groups.Snapshot.Groups.Count);
+        Assert.NotEqual(targetGroup, groups.Snapshot.ActiveGroupId);
+        Assert.Equal("edge.cs", groups.Snapshot.ActiveTab!.Label);
+        Assert.Single(groups.Snapshot.Groups[targetGroup].Tabs);
+        var split = Assert.IsType<EditorSplitNodeSnapshot>(groups.Snapshot.Layout);
+        Assert.Equal(groups.Snapshot.ActiveGroupId, Assert.IsType<EditorGroupNodeSnapshot>(split.First).GroupId);
+    }
+
+    [Fact]
+    public async Task ExplorerEdgeDropOfAnOpenFileCreatesASharedModelView()
+    {
+        await OpenAsync("shared-edge.cs");
+        var groups = await CreateGroupsAsync();
+        var targetGroup = groups.Snapshot.ActiveGroupId;
+        var path = Path.Combine(_root, "shared-edge.cs");
+
+        await groups.OpenPinnedAtEdgeAsync(path, targetGroup, EditorSplitDirection.Right,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, groups.ViewCount(_documents.Snapshot.ActiveId!));
+        Assert.Single(_documents.Snapshot.Tabs);
+        Assert.Single(groups.Snapshot.Groups[targetGroup].Tabs);
+        Assert.Equal(1, _host.ModelCount);
+    }
+
+    [Fact]
     public async Task PersistedLayoutRestoresAndInvalidLayoutFallsBackToOneGroup()
     {
         await OpenAsync("restored.cs");

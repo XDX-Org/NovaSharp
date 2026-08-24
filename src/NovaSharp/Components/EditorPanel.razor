@@ -8,6 +8,7 @@
 @using NovaSharp.Shell
 @using NovaSharp.Text
 @using NovaSharp.Verification
+@using NovaSharp.Workspace
 @using Photino.NET
 @implements IAsyncDisposable
 @inject IJSRuntime JSRuntime
@@ -39,7 +40,7 @@
     <div class="workbench-body">
         <div class="editor-workspace">
           <section class="editor-panel">
-            <div class="editor-groups-root @(_status.IsComparing ? "hidden" : null) @(_draggedViewId is null ? null : "dragging")"
+            <div class="editor-groups-root @(_status.IsComparing ? "hidden" : null) @(_draggedViewId is null && _draggedWorkspacePath is null ? null : "dragging")"
                  @ref="_editorGroupsRoot">
                 <EditorGroupPane Node="_groups.Layout" Snapshot="_groups"
                                  OnGroupReady="GroupReadyAsync" OnActivate="ActivateTabAsync"
@@ -88,7 +89,8 @@
               </section>
           }
         </div>
-        <WorkspaceExplorer OpenFile="OpenWorkspaceFileAsync" PreviewFile="PreviewWorkspaceFileAsync" />
+        <WorkspaceExplorer OpenFile="OpenWorkspaceFileAsync" PreviewFile="PreviewWorkspaceFileAsync"
+                           OnDragStart="BeginWorkspaceDrag" OnDragEnd="EndWorkspaceDrag" />
         <ActivityRail OnInvoke="InvokeAsync" />
     </div>
 
@@ -188,6 +190,7 @@
     private bool _diffAttached;
     private bool _dragSurfaceAttached;
     private string? _draggedViewId;
+    private string? _draggedWorkspacePath;
     private bool _encodingPickerOpen;
     private bool _lineEndingPickerOpen;
     private bool _editorFontPickerOpen;
@@ -486,19 +489,44 @@
 
     private void EndTabDrag() => _draggedViewId = null;
 
+    private void BeginWorkspaceDrag(WorkspaceNode node)
+    {
+        _draggedWorkspacePath = node.Kind is WorkspaceNodeKind.SupportedFile or WorkspaceNodeKind.UnknownFile
+            ? node.Path
+            : null;
+    }
+
+    private void EndWorkspaceDrag() => _draggedWorkspacePath = null;
+
     private async Task DropTabAsync(EditorGroupDropEvent drop)
     {
-        if (_groupManager is null || _draggedViewId is not { } viewId) return;
+        if (_groupManager is null) return;
+        var viewId = _draggedViewId;
+        var workspacePath = _draggedWorkspacePath;
         _draggedViewId = null;
-        if (drop.Copy) await _groupManager.CopyViewAsync(viewId, drop.TargetGroupId, drop.TargetIndex);
-        else await _groupManager.MoveViewAsync(viewId, drop.TargetGroupId, drop.TargetIndex);
+        _draggedWorkspacePath = null;
+        if (viewId is not null)
+        {
+            if (drop.Copy) await _groupManager.CopyViewAsync(viewId, drop.TargetGroupId, drop.TargetIndex);
+            else await _groupManager.MoveViewAsync(viewId, drop.TargetGroupId, drop.TargetIndex);
+        }
+        else if (workspacePath is not null)
+        {
+            await _groupManager.OpenPinnedInGroupAsync(workspacePath, drop.TargetGroupId, drop.TargetIndex);
+        }
     }
 
     private async Task DropTabAtEdgeAsync(EditorGroupEdgeDropEvent drop)
     {
-        if (_groupManager is null || _draggedViewId is not { } viewId) return;
+        if (_groupManager is null) return;
+        var viewId = _draggedViewId;
+        var workspacePath = _draggedWorkspacePath;
         _draggedViewId = null;
-        await _groupManager.SplitViewAsync(viewId, drop.TargetGroupId, drop.Direction, drop.Copy);
+        _draggedWorkspacePath = null;
+        if (viewId is not null)
+            await _groupManager.SplitViewAsync(viewId, drop.TargetGroupId, drop.Direction, drop.Copy);
+        else if (workspacePath is not null)
+            await _groupManager.OpenPinnedAtEdgeAsync(workspacePath, drop.TargetGroupId, drop.Direction);
     }
 
     private Task ResizeGroupsAsync(EditorSplitResizeEvent resize) =>

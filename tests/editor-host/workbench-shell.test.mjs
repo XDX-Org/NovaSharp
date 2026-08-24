@@ -59,12 +59,12 @@ const FIXTURE = `<!doctype html>
       <header class="explorer-header"><strong>Explorer</strong><button aria-label="Open folder"><i class="codicon codicon-folder-opened"></i></button><button aria-label="Refresh"><i class="codicon codicon-refresh"></i></button><button aria-label="Collapse all folders" data-reachable><i class="codicon codicon-collapse-all"></i></button><button aria-label="Close Explorer" data-reachable><i class="codicon codicon-close"></i></button></header>
       <div class="workspace-path">D:/Repos/NovaSharp</div>
       <div class="workspace-tree" role="tree">
-        <div class="tree-item" data-kind="directory" data-root="true"><button class="tree-row" style="padding-left:8px"><span class="tree-twist"><i class="codicon codicon-chevron-down"></i></span><i class="codicon codicon-folder tree-icon"></i><span class="tree-name">NovaSharp</span></button></div>
-        <div class="tree-item" data-kind="directory"><button class="tree-row" style="padding-left:24px"><span class="tree-twist"><i class="codicon codicon-chevron-down"></i></span><i class="codicon codicon-folder tree-icon"></i><span class="tree-name">Async</span></button></div>
-        <div class="tree-item selected" data-kind="file"><button class="tree-row" style="padding-left:40px"><span class="tree-twist"></span><i class="codicon codicon-file-code tree-icon"></i><span class="tree-name">SupersedingOperation.cs</span></button></div>
-        <div class="tree-item" data-kind="file"><button class="tree-row" style="padding-left:40px"><span class="tree-twist"></span><i class="codicon codicon-file-code tree-icon"></i><span class="tree-name">BoundedWorkQueue.cs</span></button></div>
-        <div class="tree-item" data-kind="directory"><button class="tree-row" style="padding-left:24px"><span class="tree-twist"><i class="codicon codicon-chevron-right"></i></span><i class="codicon codicon-folder tree-icon"></i><span class="tree-name">Components</span></button></div>
-        <div class="tree-item" data-kind="file"><button class="tree-row" style="padding-left:24px"><span class="tree-twist"></span><i class="codicon codicon-file-code tree-icon"></i><span class="tree-name">Workbench.cs</span></button></div>
+        <div class="tree-item" data-kind="directory" data-root="true"><button class="tree-row" style="padding-left:8px" data-workspace-path="/workspace" data-workspace-kind="directory" data-workspace-drop-target="true"><span class="tree-twist"><i class="codicon codicon-chevron-down"></i></span><i class="codicon codicon-folder tree-icon"></i><span class="tree-name">NovaSharp</span></button></div>
+        <div class="tree-item" data-kind="directory"><button class="tree-row" style="padding-left:24px" draggable="true" data-workspace-path="/workspace/Async" data-workspace-kind="directory" data-workspace-drop-target="true"><span class="tree-twist"><i class="codicon codicon-chevron-down"></i></span><i class="codicon codicon-folder tree-icon"></i><span class="tree-name">Async</span></button></div>
+        <div class="tree-item selected" data-kind="file"><button class="tree-row" style="padding-left:40px" draggable="true" data-workspace-path="/workspace/Async/SupersedingOperation.cs" data-workspace-kind="file"><span class="tree-twist"></span><i class="codicon codicon-file-code tree-icon"></i><span class="tree-name">SupersedingOperation.cs</span></button></div>
+        <div class="tree-item" data-kind="file"><button class="tree-row" style="padding-left:40px" draggable="true" data-workspace-path="/workspace/Async/BoundedWorkQueue.cs" data-workspace-kind="file"><span class="tree-twist"></span><i class="codicon codicon-file-code tree-icon"></i><span class="tree-name">BoundedWorkQueue.cs</span></button></div>
+        <div class="tree-item" data-kind="directory"><button class="tree-row" style="padding-left:24px" draggable="true" data-workspace-path="/workspace/Components" data-workspace-kind="directory" data-workspace-drop-target="true"><span class="tree-twist"><i class="codicon codicon-chevron-right"></i></span><i class="codicon codicon-folder tree-icon"></i><span class="tree-name">Components</span></button></div>
+        <div class="tree-item" data-kind="file"><button class="tree-row" style="padding-left:24px" draggable="true" data-workspace-path="/workspace/Workbench.cs" data-workspace-kind="file"><span class="tree-twist"></span><i class="codicon codicon-file-code tree-icon"></i><span class="tree-name">Workbench.cs</span></button></div>
       </div>
       <div class="explorer-resizer" role="separator" aria-label="Resize Explorer" aria-valuenow="280" tabindex="0"></div>
     </aside>
@@ -81,15 +81,33 @@ const FIXTURE = `<!doctype html>
   globalThis.resizeCommits = [];
   globalThis.editorGroupCommits = [];
   globalThis.editorGroupDrops = [];
+  globalThis.editorGroupDragFeedback = [];
+  globalThis.editorGroupWorkspaceDrops = [];
+  globalThis.editorMiddleCloses = [];
+  globalThis.editorMiddleDownPrevented = [];
+  globalThis.workspaceDrops = [];
+  globalThis.workspaceDragPayloads = [];
   globalThis.mountEditorGroupsFixture = () => {
     document.getElementById('editor-groups-fixture')?.remove();
     const root = document.createElement('div');
     root.id = 'editor-groups-fixture';
     root.className = 'editor-groups-root';
     root.style.cssText = 'position:fixed;left:10px;top:70px;width:min(520px,calc(100vw - 20px));height:min(280px,calc(100vh - 90px));z-index:30;';
-    root.innerHTML = '<div class="editor-split horizontal" style="--split-first:50%"><section class="editor-group active"><div class="tabs-bar"><div class="tabs-strip" role="tablist"><div class="document-tab active" role="tab" draggable="true">First.cs</div></div></div><div class="editor-group-host"></div><div class="group-drop-zone left"></div><div class="group-drop-zone right"></div><div class="group-drop-zone up"></div><div class="group-drop-zone down"></div><div class="group-drop-zone center"></div></section><div class="editor-splitter" role="separator" tabindex="0" aria-label="Resize editor groups" aria-orientation="vertical" aria-valuemin="10" aria-valuemax="90" aria-valuenow="50"></div><section class="editor-group"><div class="tabs-bar"><div class="tabs-strip" role="tablist"><div class="document-tab" role="tab" draggable="true">Second.cs</div></div></div><div class="editor-group-host"></div><div class="group-drop-zone left"></div><div class="group-drop-zone right"></div><div class="group-drop-zone up"></div><div class="group-drop-zone down"></div><div class="group-drop-zone center"></div></section></div>';
+    root.innerHTML = '<div class="editor-split horizontal" style="--split-first:50%"><section class="editor-group active"><div class="tabs-bar"><div class="tabs-strip" role="tablist"><div class="document-tab active" role="tab" draggable="true" data-view-id="first-view">First.cs</div></div></div><div class="editor-group-host"></div><div class="group-drop-zone left"></div><div class="group-drop-zone right"></div><div class="group-drop-zone up"></div><div class="group-drop-zone down"></div><div class="group-drop-zone center"></div></section><div class="editor-splitter" role="separator" tabindex="0" aria-label="Resize editor groups" aria-orientation="vertical" aria-valuemin="10" aria-valuemax="90" aria-valuenow="50"></div><section class="editor-group"><div class="tabs-bar"><div class="tabs-strip" role="tablist"><div class="document-tab" role="tab" draggable="true" data-view-id="second-view">Second.cs</div></div></div><div class="editor-group-host"></div><div class="group-drop-zone left"></div><div class="group-drop-zone right"></div><div class="group-drop-zone up"></div><div class="group-drop-zone down"></div><div class="group-drop-zone center"></div></section></div>';
     document.body.append(root);
     NovaEditorGroups.attachDragSurface(root);
+    root.addEventListener('mousedown', event => {
+      if (event.button === 1) editorMiddleDownPrevented.push(event.defaultPrevented);
+    });
+    for (const tab of root.querySelectorAll('.document-tab')) {
+      tab.addEventListener('mouseup', event => {
+        if (event.button === 1) editorMiddleCloses.push(tab.dataset.viewId);
+      });
+    }
+    root.addEventListener('dragover', event => editorGroupDragFeedback.push({
+      prevented: event.defaultPrevented,
+      effect: event.dataTransfer?.dropEffect,
+    }));
     const splitter = root.querySelector('.editor-splitter');
     NovaEditorGroups.attachSplitter(splitter, {
       async invokeMethodAsync(_name, splitId, ratio) { editorGroupCommits.push({ splitId, ratio }); }
@@ -102,10 +120,13 @@ const FIXTURE = `<!doctype html>
       root.firstElementChild.style.setProperty('--split-first', ratio + '%');
     });
     for (const zone of root.querySelectorAll('.group-drop-zone')) {
-      zone.addEventListener('dragover', event => event.preventDefault());
-      zone.addEventListener('drop', event => { event.preventDefault(); editorGroupDrops.push(zone.classList[1]); });
+      zone.addEventListener('drop', event => {
+        event.preventDefault();
+        editorGroupDrops.push(zone.classList[1]);
+        const path = event.dataTransfer?.getData('application/x-novasharp-workspace-file') || NovaWorkspace.draggedFile();
+        if (path) editorGroupWorkspaceDrops.push({ path, target: zone.classList[1] });
+      });
     }
-    root.querySelector('.tabs-strip').addEventListener('dragover', event => event.preventDefault());
     root.querySelector('.tabs-strip').addEventListener('drop', event => { event.preventDefault(); editorGroupDrops.push('center'); });
     return root;
   };
@@ -130,6 +151,21 @@ const FIXTURE = `<!doctype html>
     { id: 'panel', keybindings: ['CtrlCmd+KeyJ'] },
     { id: 'explorer', keybindings: ['CtrlCmd+KeyB'] },
   ], 'palette');
+  const explorer = document.querySelector('.explorer');
+  NovaWorkspace.attachDragSurface(explorer);
+  explorer.addEventListener('dragstart', event => workspaceDragPayloads.push({
+    kind: event.target.dataset.workspaceKind,
+    types: Array.from(event.dataTransfer?.types ?? []),
+  }));
+  for (const target of explorer.querySelectorAll('.tree-row[data-workspace-drop-target="true"]')) {
+    target.addEventListener('drop', event => {
+      event.preventDefault();
+      workspaceDrops.push({
+        source: event.dataTransfer?.getData('application/x-novasharp-workspace-item') || NovaWorkspace.draggedItem(),
+        target: target.dataset.workspacePath,
+      });
+    });
+  }
   NovaWorkspace.attachResizer(document.querySelector('.explorer-resizer'), {
     async invokeMethodAsync(_name, width) { resizeCommits.push(width); }
   });
@@ -459,6 +495,59 @@ try {
             const groupDrops = await page.evaluate(() => globalThis.editorGroupDrops);
             check(`${engine} editor edge and center drop targets are operable`,
                 groupDrops.includes('left') && groupDrops.includes('center'), JSON.stringify(groupDrops));
+            const dragFeedback = await page.evaluate(() => globalThis.editorGroupDragFeedback);
+            check(`${engine} editor drag targets advertise an allowed move operation`,
+                dragFeedback.some(feedback => feedback.prevented && feedback.effect === 'move'),
+                JSON.stringify(dragFeedback));
+            const workspaceFile = '.tree-row[data-workspace-path="/workspace/Async/SupersedingOperation.cs"]';
+            const workspaceSource = await page.locator(workspaceFile).boundingBox();
+            const editorHost = await page.locator('#editor-groups-fixture .editor-group-host').first().boundingBox();
+            const editorEdge = await page.locator('#editor-groups-fixture .group-drop-zone.left').first().boundingBox();
+            await page.mouse.move(workspaceSource.x + workspaceSource.width / 2, workspaceSource.y + workspaceSource.height / 2);
+            await page.mouse.down();
+            await page.mouse.move(editorHost.x + editorHost.width / 2, editorHost.y + editorHost.height / 2, { steps: 8 });
+            await page.mouse.move(editorEdge.x + editorEdge.width / 2, editorEdge.y + editorEdge.height / 2, { steps: 4 });
+            await page.mouse.up();
+            const workspaceEditorDrop = await page.evaluate(() => ({
+                drops: globalThis.editorGroupWorkspaceDrops,
+                feedback: globalThis.editorGroupDragFeedback,
+            }));
+            check(`${engine} Explorer files can be dropped on an editor edge`,
+                workspaceEditorDrop.drops.some(drop => drop.path === '/workspace/Async/SupersedingOperation.cs'
+                    && drop.target === 'left')
+                    && workspaceEditorDrop.feedback.some(feedback => feedback.prevented && feedback.effect === 'copy'),
+                JSON.stringify(workspaceEditorDrop));
+            await page.dragAndDrop(workspaceFile, '.tree-row[data-workspace-path="/workspace/Components"]');
+            const workspaceDrops = await page.evaluate(() => globalThis.workspaceDrops);
+            check(`${engine} Explorer files can be moved by dropping them on a folder`,
+                workspaceDrops.some(drop => drop.source === '/workspace/Async/SupersedingOperation.cs'
+                    && drop.target === '/workspace/Components'), JSON.stringify(workspaceDrops));
+            const workspaceFolder = '.tree-row[data-workspace-path="/workspace/Components"]';
+            const folderSource = await page.locator(workspaceFolder).boundingBox();
+            await page.mouse.move(folderSource.x + folderSource.width / 2, folderSource.y + folderSource.height / 2);
+            await page.mouse.down();
+            await page.mouse.move(editorHost.x + editorHost.width / 2, editorHost.y + editorHost.height / 2, { steps: 8 });
+            await page.mouse.up();
+            const folderEditorDrop = await page.evaluate(() => ({
+                payloads: globalThis.workspaceDragPayloads,
+                editorText: document.querySelector('#editor-groups-fixture .editor-group-host').textContent,
+                editorDrops: globalThis.editorGroupWorkspaceDrops,
+            }));
+            check(`${engine} Explorer folders cannot drop text into an editor`,
+                folderEditorDrop.payloads.some(payload => payload.kind === 'directory'
+                    && !payload.types.includes('text/plain'))
+                    && folderEditorDrop.editorText === ''
+                    && folderEditorDrop.editorDrops.length === 1,
+                JSON.stringify(folderEditorDrop));
+            await page.locator('#editor-groups-fixture .document-tab[data-view-id="second-view"]')
+                .click({ button: 'middle' });
+            const middleClick = await page.evaluate(() => ({
+                closes: globalThis.editorMiddleCloses,
+                prevented: globalThis.editorMiddleDownPrevented,
+            }));
+            check(`${engine} middle-click closes an editor tab without browser auto-scroll`,
+                middleClick.closes.includes('second-view') && middleClick.prevented.includes(true),
+                JSON.stringify(middleClick));
             await page.evaluate(() => {
                 const fixture = document.getElementById('editor-groups-fixture');
                 NovaEditorGroups.detachSplitter(fixture.querySelector('.editor-splitter'));

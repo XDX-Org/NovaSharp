@@ -160,32 +160,124 @@ public sealed class EditorGroupManager : IAsyncDisposable
     }
 
     public async Task OpenPinnedAsync(string path, CancellationToken cancellationToken = default) =>
-        await OpenAsync(path, preview: false, cancellationToken).ConfigureAwait(false);
+        await OpenAsync(path, preview: false, targetGroupId: null, int.MaxValue, cancellationToken).ConfigureAwait(false);
 
     public async Task OpenPreviewAsync(string path, CancellationToken cancellationToken = default) =>
-        await OpenAsync(path, preview: true, cancellationToken).ConfigureAwait(false);
+        await OpenAsync(path, preview: true, targetGroupId: null, int.MaxValue, cancellationToken).ConfigureAwait(false);
 
-    private async Task OpenAsync(string path, bool preview, CancellationToken cancellationToken)
+    public Task OpenPinnedInGroupAsync(
+        string path,
+        string targetGroupId,
+        int targetIndex,
+        CancellationToken cancellationToken = default) =>
+        OpenAsync(path, preview: false, targetGroupId, targetIndex, cancellationToken);
+
+    private async Task OpenAsync(
+        string path,
+        bool preview,
+        string? targetGroupId,
+        int targetIndex,
+        CancellationToken cancellationToken)
     {
         await _mutations.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            string groupId;
-            lock (_gate) groupId = _activeGroupId;
-            await _host.SetActiveViewAsync(groupId, cancellationToken).ConfigureAwait(false);
+            GroupState current;
+            GroupState? target;
+            lock (_gate)
+            {
+                current = _groups[_activeGroupId];
+                target = targetGroupId is null ? current : _groups.GetValueOrDefault(targetGroupId);
+            }
+            if (target is null) return;
+            await CaptureActiveViewAsync(current, cancellationToken).ConfigureAwait(false);
+            if (target != current) await CaptureActiveViewAsync(target, cancellationToken).ConfigureAwait(false);
+            lock (_gate) _activeGroupId = target.Id;
+            await _host.SetActiveViewAsync(target.Id, cancellationToken).ConfigureAwait(false);
             if (preview) await _documents.OpenPreviewAsync(path, cancellationToken).ConfigureAwait(false);
             else await _documents.OpenPinnedAsync(path, cancellationToken).ConfigureAwait(false);
             var documentId = _documents.Snapshot.ActiveId;
             if (documentId is null) return;
             lock (_gate)
             {
-                var group = _groups[groupId];
-                var view = group.Views.FirstOrDefault(candidate => candidate.DocumentId == documentId)
-                    ?? AddView(group, documentId);
-                group.ActiveViewId = view.Id;
-                _activeGroupId = groupId;
+                var view = target.Views.FirstOrDefault(candidate => candidate.DocumentId == documentId)
+                    ?? AddView(target, documentId, targetIndex);
+                if (targetGroupId is not null) RepositionView(target, view, targetIndex);
+                target.ActiveViewId = view.Id;
+                _activeGroupId = target.Id;
             }
             await ActivateCurrentAsync(focus: true, cancellationToken).ConfigureAwait(false);
+            Publish();
+            QueuePersist();
+        }
+        finally { _mutations.Release(); }
+    }
+
+    public async Task OpenPinnedAtEdgeAsync(
+        string path,
+        string targetGroupId,
+        EditorSplitDirection direction,
+        CancellationToken cancellationToken = default)
+    {
+        await _mutations.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            GroupState current;
+            GroupState? target;
+            HashSet<string> viewedDocuments;
+            lock (_gate)
+            {
+                current = _groups[_activeGroupId];
+                target = _groups.GetValueOrDefault(targetGroupId);
+                viewedDocuments = _groups.Values.SelectMany(group => group.Views)
+                    .Select(view => view.DocumentId).ToHashSet(StringComparer.Ordinal);
+                if (target is null) return;
+                if (_groups.Count >= MaximumGroups || DepthOf(_layout, target.Id) >= MaximumLayoutDepth
+                    || TotalViews() >= MaximumViews)
+                {
+                    _notifications.Raise("novasharp.groups.limit", NotificationSeverity.Warning,
+                        $"Editor groups are limited to {MaximumGroups} groups, {MaximumLayoutDepth} nested splits, and {MaximumViews} views.");
+                    return;
+                }
+            }
+
+            await CaptureActiveViewAsync(current, cancellationToken).ConfigureAwait(false);
+            if (target != current) await CaptureActiveViewAsync(target, cancellationToken).ConfigureAwait(false);
+            lock (_gate) _activeGroupId = target.Id;
+            await _host.SetActiveViewAsync(target.Id, cancellationToken).ConfigureAwait(false);
+            await _documents.OpenPinnedAsync(path, cancellationToken).ConfigureAwait(false);
+            var documentId = _documents.Snapshot.ActiveId;
+            if (documentId is null) return;
+
+            lock (_gate)
+            {
+                target = _groups[targetGroupId];
+                var seed = _groups.Values.SelectMany(group => group.Views)
+                    .FirstOrDefault(view => view.DocumentId == documentId);
+                ViewState added;
+                if (!viewedDocuments.Contains(documentId) && seed is not null && target.Views.Remove(seed))
+                {
+                    if (target.ActiveViewId == seed.Id) target.ActiveViewId = target.Views.FirstOrDefault()?.Id;
+                    added = seed;
+                }
+                else
+                {
+                    added = new ViewState { Id = NextId("view"), DocumentId = documentId, State = seed?.State };
+                }
+
+                var groupId = NextId("group");
+                var group = new GroupState { Id = groupId, ActiveViewId = added.Id };
+                group.Views.Add(added);
+                _groups.Add(groupId, group);
+                var newFirst = direction is EditorSplitDirection.Left or EditorSplitDirection.Up;
+                var orientation = direction is EditorSplitDirection.Left or EditorSplitDirection.Right
+                    ? EditorSplitOrientation.Horizontal : EditorSplitOrientation.Vertical;
+                var existing = new EditorGroupNodeSnapshot(target.Id);
+                var newGroup = new EditorGroupNodeSnapshot(groupId);
+                _layout = ReplaceGroup(_layout, target.Id, new EditorSplitNodeSnapshot(
+                    NextId("split"), orientation, 0.5, newFirst ? newGroup : existing, newFirst ? existing : newGroup));
+                _activeGroupId = groupId;
+            }
             Publish();
             QueuePersist();
         }
@@ -703,12 +795,21 @@ public sealed class EditorGroupManager : IAsyncDisposable
         return new EditorGroupsSnapshot(_layout, groups, _activeGroupId, _version);
     }
 
-    private ViewState AddView(GroupState group, string documentId)
+    private ViewState AddView(GroupState group, string documentId, int targetIndex = int.MaxValue)
     {
         var view = new ViewState { Id = NextId("view"), DocumentId = documentId };
-        group.Views.Add(view);
+        group.Views.Insert(Math.Clamp(targetIndex, 0, group.Views.Count), view);
         group.ActiveViewId ??= view.Id;
         return view;
+    }
+
+    private static void RepositionView(GroupState group, ViewState view, int targetIndex)
+    {
+        var sourceIndex = group.Views.IndexOf(view);
+        if (sourceIndex < 0) return;
+        group.Views.RemoveAt(sourceIndex);
+        if (sourceIndex < targetIndex) targetIndex--;
+        group.Views.Insert(Math.Clamp(targetIndex, 0, group.Views.Count), view);
     }
 
     private ViewState? ActiveView(GroupState group) =>

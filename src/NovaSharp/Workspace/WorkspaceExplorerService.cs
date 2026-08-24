@@ -289,6 +289,8 @@ public sealed class WorkspaceExplorerService : IAsyncDisposable
         MutateAsync(async token =>
         {
             var node = RequireNode(path);
+            var currentParent = Path.GetDirectoryName(node.Path);
+            if (currentParent is not null && _paths.IsSamePath(currentParent, targetDirectory)) return;
             var target = await ResolveTargetAsync(targetDirectory, node.Name, token).ConfigureAwait(false);
             if (node.Kind == WorkspaceNodeKind.Directory && _paths.IsDescendantOrSelf(node.Path, targetDirectory))
             {

@@ -10,10 +10,15 @@
      class="tree-item @(Node.Id == SelectedId ? "selected" : null)"
      data-node-id="@Node.Id">
     <button type="button" class="tree-row" style="padding-left: @(8 + Level * 16)px"
-            tabindex="0"
+            tabindex="0" draggable="@(Level > 0 ? "true" : null)"
+            data-workspace-path="@Node.Path"
+            data-workspace-kind="@(Node.Kind is WorkspaceNodeKind.SupportedFile or WorkspaceNodeKind.UnknownFile ? "file" : Node.Kind == WorkspaceNodeKind.Directory ? "directory" : "other")"
+            data-workspace-drop-target="@(Node.Kind == WorkspaceNodeKind.Directory ? "true" : null)"
             @onclick="ClickAsync" @ondblclick="ActivateAsync"
             @onkeydown="OnKeyDownAsync" @oncontextmenu="OpenContextMenuAsync"
-            @oncontextmenu:preventDefault @oncontextmenu:stopPropagation>
+            @oncontextmenu:preventDefault @oncontextmenu:stopPropagation
+            @ondragstart="BeginDragAsync" @ondragend="EndDragAsync"
+            @ondrop="DropAsync" @ondrop:stopPropagation>
         <span class="tree-twist" aria-hidden="true">
             @if (Node.CanExpand) { <ShellIcon Name="@(Node.IsLoading ? SemanticIcon.More : Node.IsExpanded ? SemanticIcon.ChevronDown : SemanticIcon.ChevronRight)" /> }
         </span>
@@ -31,7 +36,8 @@
             {
                 <WorkspaceTreeNode Node="child" Level="@(Level + 1)" SelectedId="SelectedId"
                     OnSelect="OnSelect" OnPreview="OnPreview" OnActivate="OnActivate" OnExpand="OnExpand" OnCollapse="OnCollapse"
-                    OnRename="OnRename" OnDelete="OnDelete" OnContextMenu="OnContextMenu" />
+                    OnRename="OnRename" OnDelete="OnDelete" OnContextMenu="OnContextMenu"
+                    OnDragStart="OnDragStart" OnDragEnd="OnDragEnd" OnDrop="OnDrop" />
             }
             @if (Node.Children.Count > _visibleChildren)
             {
@@ -55,10 +61,18 @@
     [Parameter] public EventCallback<WorkspaceNode> OnRename { get; set; }
     [Parameter] public EventCallback<WorkspaceNode> OnDelete { get; set; }
     [Parameter] public EventCallback<(WorkspaceNode Node, MouseEventArgs Args)> OnContextMenu { get; set; }
+    [Parameter] public EventCallback<WorkspaceNode> OnDragStart { get; set; }
+    [Parameter] public EventCallback OnDragEnd { get; set; }
+    [Parameter] public EventCallback<WorkspaceNode> OnDrop { get; set; }
 
     private int _visibleChildren = 250;
 
     private void ShowMore() => _visibleChildren += 250;
+    private Task BeginDragAsync() => Level > 0 ? OnDragStart.InvokeAsync(Node) : Task.CompletedTask;
+    private Task EndDragAsync() => OnDragEnd.InvokeAsync();
+    private Task DropAsync() => Node.Kind == WorkspaceNodeKind.Directory
+        ? OnDrop.InvokeAsync(Node)
+        : Task.CompletedTask;
 
     private async Task OpenContextMenuAsync(MouseEventArgs args)
     {

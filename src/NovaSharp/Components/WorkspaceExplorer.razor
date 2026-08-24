@@ -6,7 +6,7 @@
 @implements IAsyncDisposable
 @inject IJSRuntime JSRuntime
 
-<aside class="explorer" style="width: @(_snapshot.SidebarWidth)px" aria-label="Explorer"
+<aside class="explorer @(_draggedNode is null ? null : "workspace-dragging")" style="width: @(_snapshot.SidebarWidth)px" aria-label="Explorer" @ref="_explorer"
        hidden="@(!_snapshot.SidebarVisible)">
         <header class="explorer-header">
             <strong>Explorer</strong>
@@ -25,7 +25,8 @@
             <div role="tree" aria-label="Workspace files" class="workspace-tree">
                 <WorkspaceTreeNode Node="_snapshot.Root" SelectedId="_snapshot.SelectedId"
                     OnSelect="SelectAsync" OnPreview="PreviewAsync" OnActivate="ActivateAsync" OnExpand="ExpandAsync" OnCollapse="CollapseAsync"
-                    OnRename="BeginRename" OnDelete="DeleteAsync" OnContextMenu="OpenContextMenuAsync" />
+                    OnRename="BeginRename" OnDelete="DeleteAsync" OnContextMenu="OpenContextMenuAsync"
+                    OnDragStart="BeginDragAsync" OnDragEnd="EndDragAsync" OnDrop="DropAsync" />
             </div>
         }
         <div class="explorer-resizer" role="separator" aria-label="Resize Explorer" aria-orientation="vertical"
@@ -69,6 +70,8 @@
 @code {
     [Parameter] public EventCallback<string> OpenFile { get; set; }
     [Parameter] public EventCallback<string> PreviewFile { get; set; }
+    [Parameter] public EventCallback<WorkspaceNode> OnDragStart { get; set; }
+    [Parameter] public EventCallback OnDragEnd { get; set; }
 
     private readonly List<IDisposable> _registrations = [];
     private WorkspaceSnapshot _snapshot = Workbench.Explorer.Snapshot;
@@ -82,8 +85,10 @@
     private bool _focusContextMenu;
     private bool _started;
     private bool _restoreFocus;
+    private ElementReference _explorer;
     private ElementReference _resizer;
     private DotNetObjectReference<WorkspaceExplorer>? _selfReference;
+    private WorkspaceNode? _draggedNode;
 
     protected override void OnInitialized()
     {
@@ -107,6 +112,7 @@
         if (!firstRender || _started) return;
         _started = true;
         _selfReference = DotNetObjectReference.Create(this);
+        await JSRuntime.InvokeVoidAsync("NovaWorkspace.attachDragSurface", _explorer);
         await JSRuntime.InvokeVoidAsync("NovaWorkspace.attachResizer", _resizer, _selfReference);
         Workbench.Explorer.SetIgnoredPaths(Workbench.Configuration.Current.Settings.WorkspaceIgnoredPaths);
         await Workbench.Explorer.RestoreAsync();
@@ -161,6 +167,26 @@
     private Task SelectAsync(WorkspaceNode node) => Workbench.Explorer.SelectAsync(node.Path);
     private Task ExpandAsync(WorkspaceNode node) => Workbench.Explorer.ExpandAsync(node.Path);
     private Task CollapseAsync(WorkspaceNode node) => Workbench.Explorer.CollapseAsync(node.Path);
+
+    private async Task BeginDragAsync(WorkspaceNode node)
+    {
+        _draggedNode = node;
+        await OnDragStart.InvokeAsync(node);
+    }
+
+    private async Task EndDragAsync()
+    {
+        _draggedNode = null;
+        await OnDragEnd.InvokeAsync();
+    }
+
+    private async Task DropAsync(WorkspaceNode target)
+    {
+        var source = _draggedNode;
+        if (source is null || target.Kind != WorkspaceNodeKind.Directory || source.Id == target.Id) return;
+        await Workbench.Explorer.MoveAsync(source.Path, target.Path);
+        await EndDragAsync();
+    }
 
     private async Task ActivateAsync(WorkspaceNode node)
     {
@@ -307,7 +333,11 @@
         Workbench.Explorer.Relocated -= OnRelocatedAsync;
         foreach (var registration in _registrations) registration.Dispose();
         _registrations.Clear();
-        try { await JSRuntime.InvokeVoidAsync("NovaWorkspace.detachResizer"); }
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("NovaWorkspace.detachDragSurface", _explorer);
+            await JSRuntime.InvokeVoidAsync("NovaWorkspace.detachResizer");
+        }
         catch (JSDisconnectedException) { }
         _selfReference?.Dispose();
         _selfReference = null;

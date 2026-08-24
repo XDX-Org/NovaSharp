@@ -222,6 +222,26 @@ public sealed class EditorContractTests
     }
 
     [Fact]
+    public void WorkspaceTree_ExposesFileMoveAndEditorDropPayloads()
+    {
+        var explorer = ReadContract("WorkspaceExplorer.razor");
+        var node = ReadContract("WorkspaceTreeNode.razor");
+        var navigation = ReadContract("workspace-explorer.js");
+        var editor = ReadContract("EditorPanel.razor");
+
+        Assert.Contains("draggable=", node, StringComparison.Ordinal);
+        Assert.Contains("data-workspace-path", node, StringComparison.Ordinal);
+        Assert.Contains("data-workspace-drop-target", node, StringComparison.Ordinal);
+        Assert.Contains("OnDrop", node, StringComparison.Ordinal);
+        Assert.Contains("Workbench.Explorer.MoveAsync", explorer, StringComparison.Ordinal);
+        Assert.Contains("application/x-novasharp-workspace-item", navigation, StringComparison.Ordinal);
+        Assert.Contains("application/x-novasharp-workspace-file", navigation, StringComparison.Ordinal);
+        Assert.DoesNotContain("setData('text/plain'", navigation, StringComparison.Ordinal);
+        Assert.Contains("OpenPinnedInGroupAsync", editor, StringComparison.Ordinal);
+        Assert.Contains("OpenPinnedAtEdgeAsync", editor, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void DocumentTabs_ExposeAccessiblePointerInteractions()
     {
         var markup = ReadContract("EditorPanel.razor") + ReadContract("EditorGroupPane.razor");
@@ -232,7 +252,7 @@ public sealed class EditorContractTests
         Assert.Contains("AccessibleLabel", markup, StringComparison.Ordinal);
         Assert.Contains("draggable=\"true\"", markup, StringComparison.Ordinal);
         Assert.Contains("@ondrop", markup, StringComparison.Ordinal);
-        Assert.Contains("@onauxclick", markup, StringComparison.Ordinal);
+        Assert.Contains("@onmouseup", markup, StringComparison.Ordinal);
         Assert.DoesNotContain("tabs-overflow", markup, StringComparison.Ordinal);
         Assert.DoesNotContain("Open editor list", markup, StringComparison.Ordinal);
     }
