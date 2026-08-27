@@ -44,6 +44,14 @@ public sealed class EditorContractTests
     }
 
     [Fact]
+    public void EditorPanel_SynchronizesTheRestoredProjectContextIntoMonaco()
+    {
+        var panel = ReadContract("EditorPanel.razor").ReplaceLineEndings("\n");
+
+        Assert.Contains("RefreshProjectContexts();\n            await UpdateLanguageContextAsync();", panel, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void AppStylesheet_StylesNoEditorSurfaceOtherThanMonaco()
     {
         var css = ReadContract("app.css");
@@ -109,6 +117,14 @@ public sealed class EditorContractTests
 
         Assert.Equal(2, module.Split("scrollbar: { horizontal: 'hidden' }", StringSplitOptions.None).Length - 1);
         Assert.Contains("const viewEditor = createCodeEditor(viewContainer);", module, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EditorHost_UsesRoslynRatherThanWordBasedCSharpSuggestions()
+    {
+        var module = ReadContract("monaco-editor-host.js");
+
+        Assert.Contains("wordBasedSuggestions: 'off'", module, StringComparison.Ordinal);
     }
 
     [Fact]

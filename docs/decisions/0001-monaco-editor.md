@@ -10,6 +10,8 @@ Use an exact, lockfile-pinned `monaco-editor` release as NovaSharp's only source
 
 One Monaco `ITextModel` exists per canonical document URI and may be attached to multiple editor instances. Monaco is authoritative for live text, selections, composition, viewport rendering, token colors, editor-local widgets, and undo/redo while the model is open. NovaSharp owns file identity, encoding, line endings, dirty/save state, external-conflict policy, workspace transactions, project context, and persisted validated view state.
 
+Monaco may normalize a URI's serialized spelling when it creates the model, including Windows drive-letter file URIs. The host's canonical URI remains the protocol identity carried by edit replication, resynchronization, and language-provider requests; Monaco's normalized string is used only as the JavaScript model-map key. This rule is platform-neutral and preserves case-sensitive macOS/Linux paths as well as Windows drive identities.
+
 Because a Monaco model's URI is immutable, renaming or saving a document under a new canonical URI drains the old
 replica pump, creates the replacement URI model from Monaco's live text, restores validated view state, and returns
 one full snapshot for the new replica as it releases the old lease. A concurrent edit is therefore included in the

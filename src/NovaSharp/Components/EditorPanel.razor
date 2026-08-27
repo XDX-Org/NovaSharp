@@ -316,6 +316,7 @@
             _groups = groups.Snapshot;
             _status = documents.ActiveDocument?.Status ?? new();
             RefreshProjectContexts();
+            await UpdateLanguageContextAsync();
         }
         catch (Exception exception) when (exception is JSException or JSDisconnectedException)
         {

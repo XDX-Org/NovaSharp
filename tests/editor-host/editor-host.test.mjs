@@ -46,6 +46,7 @@ const HARNESS_PAGE = `<!DOCTYPE html>
             alternativeSequence: 0,
             batches: [],
             resyncs: 0,
+            resyncUris: [],
             concurrentCalls: 0,
             maxConcurrentCalls: 0,
             replicationLatencies: [],
@@ -113,6 +114,7 @@ const HARNESS_PAGE = `<!DOCTYPE html>
 
                     if (name === 'RequestResync') {
                         shadow.resyncs += 1;
+                        shadow.resyncUris.push(args[0]);
                         return null;
                     }
 
@@ -379,6 +381,63 @@ try {
     }));
     check('Monaco renders the completion returned by the provider',
         await page.locator('.suggest-widget').textContent().then(text => text?.includes('PhaseSevenCompletion') === true));
+    const canonicalUriCases = [
+        { platform: 'Linux', uri: 'file:///home/developer/NovaSharp/LinuxAlias.cs' },
+        { platform: 'macOS', uri: 'file:///Users/Developer/NovaSharp/MacAlias.cs' },
+        { platform: 'Windows', uri: 'file:///D:/workspace/WindowsAlias.cs' },
+    ];
+    for (const uriCase of canonicalUriCases) {
+        const probe = await page.evaluate(async ({ uri }) => {
+            const source = 'internal sealed class Alias { void M() { string. } }\n';
+            globalThis.editor.openDocument(uri, 'csharp', source, '\n', false);
+            globalThis.editor.setLanguageContext(uri, 'project-a', 1, true, true);
+            globalThis.adoptSnapshot();
+            const activeEditor = globalThis.NovaMonaco.editor.getEditors()[0];
+            const model = activeEditor.getModel();
+            const completionCount = globalThis.shadow.languageCalls
+                .filter(call => call.name === 'GetCompletionsAsync').length;
+            activeEditor.setPosition(model.getPositionAt(source.indexOf('string.') + 'string.'.length));
+            activeEditor.focus();
+            await activeEditor.getAction('editor.action.triggerSuggest').run();
+            return {
+                completionCount,
+                batchCount: globalThis.shadow.batches.length,
+                modelUri: model.uri.toString(),
+                resyncCount: globalThis.shadow.resyncUris.length,
+            };
+        }, uriCase);
+        await page.waitForFunction(count => globalThis.shadow.languageCalls
+            .filter(call => call.name === 'GetCompletionsAsync').length > count, probe.completionCount);
+        check(`${uriCase.platform} language requests preserve the host canonical URI`, await page.evaluate(expectedUri => {
+            const request = globalThis.shadow.languageCalls
+                .filter(call => call.name === 'GetCompletionsAsync')
+                .at(-1)?.request;
+            return request?.documentUri === expectedUri;
+        }, uriCase.uri), JSON.stringify({ ...uriCase, ...probe }));
+        await page.evaluate(() => {
+            const activeEditor = globalThis.NovaMonaco.editor.getEditors()[0];
+            activeEditor.executeEdits('canonical-uri-test', [{ range: activeEditor.getSelection(), text: 'x' }]);
+        });
+        await page.waitForFunction(count => globalThis.shadow.batches.length > count, probe.batchCount);
+        check(`${uriCase.platform} edit replication preserves the host canonical URI`,
+            await page.evaluate(expectedUri => globalThis.shadow.batches.at(-1)?.documentUri === expectedUri, uriCase.uri));
+        await page.evaluate(() => globalThis.NovaMonaco.editor.getEditors()[0].getModel()
+            .setEOL(globalThis.NovaMonaco.editor.EndOfLineSequence.CRLF));
+        await page.waitForFunction(count => globalThis.shadow.resyncUris.length > count, probe.resyncCount);
+        check(`${uriCase.platform} resynchronization preserves the host canonical URI`,
+            await page.evaluate(expectedUri => globalThis.shadow.resyncUris.at(-1) === expectedUri, uriCase.uri));
+        await page.evaluate(uri => {
+            globalThis.editor.snapshot(uri);
+            globalThis.editor.switchDocument('file:///workspace/Widget.cs');
+            globalThis.editor.closeDocument(uri);
+            globalThis.adoptSnapshot();
+        }, uriCase.uri);
+        if (uriCase.platform === 'Windows') {
+            check('the Windows canonical-URI gate exercises Monaco URI normalization',
+                probe.modelUri !== uriCase.uri,
+                JSON.stringify({ ...uriCase, ...probe }));
+        }
+    }
     check('language-provider interop latency is bounded and observable', await page.evaluate(async () => {
         const runtime = await globalThis.editor.runtimeInfo();
         return runtime.languageRequestCount >= 1

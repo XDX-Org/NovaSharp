@@ -1,5 +1,6 @@
 @using NovaSharp.Shell
 @using NovaSharp.Solutions
+@using Microsoft.AspNetCore.Components.Web
 
 @if (Snapshot.State != SolutionLoadState.Closed && _root is not null)
 {
@@ -24,7 +25,8 @@
         }
         <div role="tree" aria-label="Solution files">
             <SolutionTreeNode Node="_root" Expanded="_expanded" SelectedId="_selectedId"
-                              OnSelect="Select" OnToggle="Toggle" OnOpen="OpenFile" />
+                              OnSelect="Select" OnToggle="Toggle" OnOpen="OpenFile"
+                              OnContextMenu="OnContextMenu" />
         </div>
     </section>
 }
@@ -33,6 +35,7 @@
     [Parameter, EditorRequired] public SolutionWorkspaceSnapshot Snapshot { get; set; } = null!;
     [Parameter] public EventCallback<string> OpenFile { get; set; }
     [Parameter] public EventCallback CancelLoad { get; set; }
+    [Parameter] public EventCallback<(SolutionExplorerNode Node, MouseEventArgs Args)> OnContextMenu { get; set; }
 
     private readonly HashSet<string> _expanded = new(StringComparer.Ordinal);
     private IReadOnlyList<ProjectContextSnapshot>? _projects;

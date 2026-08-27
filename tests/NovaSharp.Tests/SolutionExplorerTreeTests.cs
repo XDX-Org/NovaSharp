@@ -28,6 +28,8 @@ public sealed class SolutionExplorerTreeTests
         Assert.Equal("net10.0", projectNode.Detail);
         Assert.Equal(["Dependencies", "Features", "Models", "Program.cs"],
             projectNode.Children.Select(static node => node.Name));
+        Assert.Equal(Path.Combine(projectDirectory, "Features"), projectNode.Children[1].Path);
+        Assert.Equal(Path.Combine(projectDirectory, "Models"), projectNode.Children[2].Path);
         Assert.Equal("Shared", Assert.Single(projectNode.Children[0].Children).Name);
         Assert.Equal("Session.cs", Assert.Single(Assert.Single(projectNode.Children[1].Children).Children).Name);
     }
@@ -48,6 +50,7 @@ public sealed class SolutionExplorerTreeTests
 
         var linkedFolder = Assert.Single(projectNode.Children);
         Assert.Equal("Linked files", linkedFolder.Name);
+        Assert.Null(linkedFolder.Path);
         Assert.Equal(linked, Assert.Single(linkedFolder.Children).Path);
     }
 

@@ -11,7 +11,7 @@ namespace NovaSharp.Editing;
 /// on, and publishing a new one is a single assignment rather than a series of field updates another thread can catch
 /// half-finished.
 /// </remarks>
-/// <param name="Uri">The canonical document URI, which is also the Monaco model URI.</param>
+/// <param name="Uri">The host's canonical document URI used as the editor protocol identity.</param>
 /// <param name="Path">The file-system path the document is read from and written to.</param>
 /// <param name="DisplayName">The short name shown in the workbench.</param>
 /// <param name="Encoding">The encoding the document was decoded with and will be re-encoded with.</param>

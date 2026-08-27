@@ -47,12 +47,13 @@ public static class SolutionExplorerTree
     private static SolutionExplorerNode CreateProject(ProjectContextSnapshot project, IWorkspacePaths paths)
     {
         var identity = $"project:{paths.ToDocumentUri(project.Path).AbsoluteUri}:{project.TargetFramework}";
-        var root = new FolderBuilder(identity);
         var projectDirectory = Path.GetDirectoryName(project.Path)!;
+        var root = new FolderBuilder(identity, projectDirectory);
 
         foreach (var document in project.Documents)
         {
-            var segments = paths.IsDescendantOrSelf(projectDirectory, document.Path)
+            var inProject = paths.IsDescendantOrSelf(projectDirectory, document.Path);
+            var segments = inProject
                 ? paths.ToWorkspaceRelativePath(projectDirectory, document.Path).Split('/', StringSplitOptions.RemoveEmptyEntries)
                 : ["Linked files", document.Name];
             if (segments.Length == 0 || segments.Any(static segment => segment is "bin" or "obj")) continue;
@@ -60,7 +61,8 @@ public static class SolutionExplorerTree
             var folder = root;
             for (var index = 0; index < segments.Length - 1; index++)
             {
-                folder = folder.GetOrAdd(segments[index]);
+                var path = inProject ? Path.Combine(projectDirectory, Path.Combine(segments[..(index + 1)])) : null;
+                folder = folder.GetOrAdd(segments[index], path);
             }
 
             folder.Documents.Add(new SolutionExplorerNode(
@@ -91,18 +93,19 @@ public static class SolutionExplorerTree
             project.TargetFramework, children);
     }
 
-    private sealed class FolderBuilder(string identity)
+    private sealed class FolderBuilder(string identity, string? path)
     {
         private readonly Dictionary<string, FolderBuilder> _folders = new(StringComparer.Ordinal);
 
         public string Identity { get; } = identity;
+        public string? Path { get; } = path;
         public List<SolutionExplorerNode> Documents { get; } = [];
 
-        public FolderBuilder GetOrAdd(string name)
+        public FolderBuilder GetOrAdd(string name, string? path)
         {
             if (!_folders.TryGetValue(name, out var folder))
             {
-                _folders[name] = folder = new FolderBuilder($"{Identity}:folder:{name}");
+                _folders[name] = folder = new FolderBuilder($"{Identity}:folder:{name}", path);
             }
             return folder;
         }
@@ -111,7 +114,7 @@ public static class SolutionExplorerTree
         {
             foreach (var (name, folder) in _folders.OrderBy(static pair => pair.Key, StringComparer.OrdinalIgnoreCase))
             {
-                yield return new SolutionExplorerNode(folder.Identity, name, SolutionExplorerNodeKind.Folder,
+                yield return new SolutionExplorerNode(folder.Identity, name, SolutionExplorerNodeKind.Folder, folder.Path,
                     Children: folder.BuildChildren().ToArray());
             }
 

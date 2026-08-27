@@ -33,7 +33,8 @@
             <div class="workspace-tree">
                 @if (_view == ExplorerView.Solution && _solution.State != SolutionLoadState.Closed)
                 {
-                    <SolutionTree @ref="_solutionTree" Snapshot="_solution" OpenFile="OpenFile" CancelLoad="CancelSolutionLoadAsync" />
+                    <SolutionTree @ref="_solutionTree" Snapshot="_solution" OpenFile="OpenFile" CancelLoad="CancelSolutionLoadAsync"
+                                  OnContextMenu="OpenSolutionContextMenuAsync" />
                 }
                 else
                 {
@@ -342,11 +343,34 @@
 
     private Task OpenContextMenuAsync((WorkspaceNode Node, MouseEventArgs Args) request)
     {
-        _contextNode = request.Node;
-        _contextX = request.Args.ClientX;
-        _contextY = request.Args.ClientY;
-        _focusContextMenu = true;
+        OpenContextMenu(request.Node, request.Args);
         return Task.CompletedTask;
+    }
+
+    private async Task OpenSolutionContextMenuAsync((SolutionExplorerNode Node, MouseEventArgs Args) request)
+    {
+        if (request.Node.Path is not { } path) return;
+        await Workbench.Explorer.RevealAsync(path);
+        if (FindWorkspaceNode(Workbench.Explorer.Snapshot.Root, path) is { } node) OpenContextMenu(node, request.Args);
+    }
+
+    private void OpenContextMenu(WorkspaceNode node, MouseEventArgs args)
+    {
+        _contextNode = node;
+        _contextX = args.ClientX;
+        _contextY = args.ClientY;
+        _focusContextMenu = true;
+    }
+
+    private static WorkspaceNode? FindWorkspaceNode(WorkspaceNode? node, string path)
+    {
+        if (node is null) return null;
+        if (Workbench.Paths.IsSamePath(node.Path, path)) return node;
+        foreach (var child in node.Children ?? [])
+        {
+            if (FindWorkspaceNode(child, path) is { } found) return found;
+        }
+        return null;
     }
 
     private void CloseContextMenu() => _contextNode = null;

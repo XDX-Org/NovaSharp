@@ -55,6 +55,21 @@ public sealed class SolutionWorkbenchContractTests
         Assert.Contains("_solution = Workbench.Solutions.Snapshot;", explorer, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void SolutionView_ExposesMouseAndKeyboardContextMenusThroughExplorerActions()
+    {
+        var explorer = Read("WorkspaceExplorer.razor");
+        var tree = Read("SolutionTree.razor");
+        var node = Read("SolutionTreeNode.razor");
+
+        Assert.Contains("OnContextMenu=\"OpenSolutionContextMenuAsync\"", explorer, StringComparison.Ordinal);
+        Assert.Contains("OnContextMenu=\"OnContextMenu\"", tree, StringComparison.Ordinal);
+        Assert.Contains("@oncontextmenu=\"OpenContextMenuAsync\"", node, StringComparison.Ordinal);
+        Assert.Contains("@oncontextmenu:preventDefault", node, StringComparison.Ordinal);
+        Assert.Contains("args.Key == \"ContextMenu\"", node, StringComparison.Ordinal);
+        Assert.Contains("args.Key == \"F10\" && args.ShiftKey", node, StringComparison.Ordinal);
+    }
+
     private static string Read(string file)
     {
         return File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Contracts", file));

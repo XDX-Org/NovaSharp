@@ -1,7 +1,7 @@
 namespace NovaSharp.Platform;
 
 /// <summary>
-/// Converts operating-system file paths into the canonical document identity that NovaSharp and Monaco share.
+/// Converts operating-system file paths into NovaSharp's canonical document identity.
 /// </summary>
 /// <remarks>
 /// This is the seam that keeps path handling out of feature code. Implementations must not branch on the host

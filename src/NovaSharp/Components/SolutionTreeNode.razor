@@ -14,7 +14,9 @@
             draggable="@(Node.Kind == SolutionExplorerNodeKind.Document ? "true" : null)"
             data-workspace-path="@(Node.Kind == SolutionExplorerNodeKind.Document ? Node.Path : null)"
             data-workspace-kind="@(Node.Kind == SolutionExplorerNodeKind.Document ? "file" : null)"
-            @onclick="ClickAsync" @onkeydown="OnKeyDownAsync">
+            @onclick="ClickAsync" @onkeydown="OnKeyDownAsync"
+            @oncontextmenu="OpenContextMenuAsync"
+            @oncontextmenu:preventDefault @oncontextmenu:stopPropagation>
         <span class="tree-twist" aria-hidden="true">
             @if (Node.CanExpand)
             {
@@ -35,7 +37,8 @@
             {
                 <SolutionTreeNode @key="child.Id" Node="child" Level="@(Level + 1)"
                                   Expanded="Expanded" SelectedId="SelectedId"
-                                  OnSelect="OnSelect" OnToggle="OnToggle" OnOpen="OnOpen" />
+                                  OnSelect="OnSelect" OnToggle="OnToggle" OnOpen="OnOpen"
+                                  OnContextMenu="OnContextMenu" />
             }
             @if (Node.Children.Count > _visibleChildren)
             {
@@ -55,10 +58,17 @@
     [Parameter] public EventCallback<SolutionExplorerNode> OnSelect { get; set; }
     [Parameter] public EventCallback<string> OnToggle { get; set; }
     [Parameter] public EventCallback<string> OnOpen { get; set; }
+    [Parameter] public EventCallback<(SolutionExplorerNode Node, MouseEventArgs Args)> OnContextMenu { get; set; }
 
     private int _visibleChildren = 250;
 
     private void ShowMore() => _visibleChildren += 250;
+
+    private async Task OpenContextMenuAsync(MouseEventArgs args)
+    {
+        await OnSelect.InvokeAsync(Node);
+        await OnContextMenu.InvokeAsync((Node, args));
+    }
 
     private async Task ClickAsync()
     {
@@ -81,6 +91,8 @@
         else if (args.Key == "ArrowUp") await JSRuntime.InvokeVoidAsync("NovaWorkspace.focus", Node.Id, "previous");
         else if (args.Key == "Home") await JSRuntime.InvokeVoidAsync("NovaWorkspace.focus", Node.Id, "first");
         else if (args.Key == "End") await JSRuntime.InvokeVoidAsync("NovaWorkspace.focus", Node.Id, "last");
+        else if (args.Key == "ContextMenu" || (args.Key == "F10" && args.ShiftKey))
+            await OpenContextMenuAsync(new MouseEventArgs());
     }
 
     private static SemanticIcon Icon(SolutionExplorerNodeKind kind) => kind switch

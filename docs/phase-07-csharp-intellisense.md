@@ -25,6 +25,7 @@ AI/inline prediction, Razor projection, and third-party language servers are def
 - `CSharpLanguageService` reads exact-version immutable documents from the phase 6 workspace. Its public capability DTOs contain no Roslyn types.
 - A bounded two-lane worker queue prioritizes completion, resolve, signature, hover, and formatting over semantic refresh. A latest-request owner per document/capability cancels superseded work.
 - Requests and responses carry canonical URI, active project ID, solution source version, Monaco model sequence, position/range, trigger, and request ID. Both .NET and JavaScript reject changed stamps.
+- JavaScript retains the host canonical URI separately from Monaco's normalized model-map key, so replication, resynchronization, and language requests preserve Windows, macOS, and Linux identities exactly.
 - Completion is capped at 500 Roslyn items, keeps at most 512 lazy resolve entries, includes host snippets, and transports commit characters and additional edits. Documentation and final changes resolve only for the focused item.
 - Monaco registers one disposable language configuration plus completion, signature, hover, document/range formatting, and document/range semantic-token providers. Provider disposal is tied to the editor host.
 - The `cSharpSuggestions` user/workspace setting controls completion without disabling hover, signature, formatting, or semantic tokens. The status bar reports loading or unavailable project services.
@@ -79,7 +80,7 @@ The named medium fixture is `tests/fixtures/phase-06/Workspace.slnx`, restored a
 ## Verification
 
 - Managed tests cover unsaved project-aware completion and lazy resolution, snippets, signature parameter selection, hover, formatting, semantic classifications, stale-sequence rejection, metrics, and Roslyn-free provider contracts.
-- Browser interaction tests prove public Monaco registration, stamped completion requests, Monaco-owned suggestion UI, deterministic provider disposal/reregistration, typing/paint latency, bounded replication, and 100-cycle heap retention.
+- Browser interaction tests prove public Monaco registration, platform-shaped canonical URIs across replication/resynchronization/language requests, stamped completion requests, Monaco-owned suggestion UI, deterministic provider disposal/reregistration, typing/paint latency, bounded replication, and 100-cycle heap retention.
 - `tools/NovaSharp.PhaseVerification` executes the feature budgets, exact-replica result checks, solution/snapshot bounds, packaged native smoke, and existing startup/editor/Explorer gates per RID.
 - Verification records separate queue delay, replica barrier, Roslyn execution, total provider latency, and browser interop latency.
 - Qualification remains incomplete until all six matrix rows retain passing records from the same commit. A local result is development evidence only.

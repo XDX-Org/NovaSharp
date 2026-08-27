@@ -54,6 +54,19 @@ public sealed class CSharpLanguageServiceTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task TypingDot_ProducesMemberCompletionWithoutExplicitInvocation()
+    {
+        const string source = "internal sealed class Shared { void M() { string. } }";
+        await OpenWithReplicaAsync(source, 8);
+
+        var completion = await _language.GetCompletionsAsync(
+            Request("dot", 8, source.IndexOf("string.", StringComparison.Ordinal) + "string.".Length, trigger: "."),
+            TestContext.Current.CancellationToken);
+
+        Assert.Contains(completion!.Items, item => item.Label == "Empty");
+    }
+
+    [Fact]
     public async Task SignatureHoverFormattingAndSemanticTokens_UseExactReplica()
     {
         const string source = "/// <summary>A shared value.</summary>\ninternal sealed class Shared{void M(){string.Concat(\"a\",\"b\");}}";

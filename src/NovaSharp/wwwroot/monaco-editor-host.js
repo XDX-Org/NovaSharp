@@ -2,7 +2,8 @@
 //
 // Monaco owns live text, undo/redo, selection, composition, viewport rendering, and token colours. This module owns
 // the editor's lifetime and the replication stream: creating the editor after its container is mounted, keeping one
-// text model per canonical document URI, turning Monaco's change events into ordered edit batches, and disposing
+// text model per canonical document identity, retaining the host's URI spelling for protocol messages, turning
+// Monaco's change events into ordered edit batches, and disposing
 // everything deterministically.
 //
 // Nothing here waits for .NET on the typing path. A change event appends to a queue and returns; a pump sends what is
@@ -164,9 +165,10 @@ function countExternalRequests() {
 }
 
 /**
- * Models are keyed by canonical document URI and reference counted, so a document shown in more than one editor is
- * one model with shared text and undo history. Phase 2 shows one at a time; the leases are what make split views in
- * phase 5 a change of caller rather than a change of ownership.
+ * Models are keyed by Monaco's normalized spelling of the host canonical URI and reference counted, so a document
+ * shown in more than one editor is one model with shared text and undo history. The host spelling remains on the
+ * document object for protocol messages. Phase 2 shows one at a time; the leases are what make split views in phase 5
+ * a change of caller rather than a change of ownership.
  */
 const leasesByUri = new Map();
 
@@ -260,6 +262,7 @@ export function createEditor(container, bridge) {
         scrollbar: { horizontal: 'hidden' },
         scrollBeyondLastLine: false,
         tabSize: 4,
+        wordBasedSuggestions: 'off',
     });
     let editor = createCodeEditor(container);
 
@@ -317,7 +320,7 @@ export function createEditor(container, bridge) {
         if (!context?.available || model.getLanguageId() !== 'csharp' || (options.suggestion && !context.suggestionsEnabled)) return null;
         return {
             requestId: `language-${++languageRequestSequence}`,
-            documentUri: model.uri.toString(),
+            documentUri: context.documentUri,
             projectContextId: context.projectContextId,
             sourceVersion: context.sourceVersion,
             sequence: model.getVersionId(),
@@ -548,7 +551,7 @@ export function createEditor(container, bridge) {
         document.sending = true;
         document.resyncRequestPending = false;
         try {
-            await bridge.invokeMethodAsync('RequestResync', document.model.uri.toString());
+            await bridge.invokeMethodAsync('RequestResync', document.canonicalUri);
         } catch {
             // The page is going away. A later open reconstructs the shadow from the file and a fresh model.
         } finally {
@@ -618,7 +621,7 @@ export function createEditor(container, bridge) {
         }
 
         const batch = {
-            documentUri: document.model.uri.toString(),
+            documentUri: document.canonicalUri,
             baseSequence: document.sentSequence,
             resultSequence: event.versionId,
             alternativeSequence: document.model.getAlternativeVersionId(),
@@ -814,6 +817,7 @@ export function createEditor(container, bridge) {
         if (!document) {
             const model = acquireModel(uriString, languageId, text, lineEnding);
             document = {
+                canonicalUri: uriString,
                 model,
                 readOnly: readOnly === true,
                 sentSequence: model.getVersionId(),
@@ -829,6 +833,7 @@ export function createEditor(container, bridge) {
             document.contentSubscription = model.onDidChangeContent(event => onContentChanged(document, event));
             documents.set(key, document);
         }
+        document.canonicalUri = uriString;
         document.readOnly = readOnly === true;
         return document;
     }
@@ -1162,6 +1167,7 @@ export function createEditor(container, bridge) {
             }
 
             if (oldKey === newKey) {
+                oldDocument.canonicalUri = newUriString;
                 return {
                     text: oldDocument.model.getValue(),
                     ...readSequence(oldDocument.model),
@@ -1178,6 +1184,7 @@ export function createEditor(container, bridge) {
             const model = acquireModel(newUriString, languageId, oldDocument.model.getValue(), oldDocument.model.getEOL());
             const document = {
                 ...oldDocument,
+                canonicalUri: newUriString,
                 model,
                 sentSequence: model.getVersionId(),
                 queued: [],
@@ -1346,6 +1353,7 @@ export function createEditor(container, bridge) {
         setLanguageContext(uriString, projectContextId, sourceVersion, available, suggestionsEnabled) {
             ensureLive();
             languageContexts.set(monaco.Uri.parse(uriString).toString(), {
+                documentUri: uriString,
                 projectContextId: projectContextId ?? null,
                 sourceVersion,
                 available: Boolean(available),
