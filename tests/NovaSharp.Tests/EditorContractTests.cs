@@ -28,6 +28,22 @@ public sealed class EditorContractTests
     }
 
     [Fact]
+    public void EditorPanel_DoesNotRerenderMonacoForPointerOrUnchangedSolutionEvents()
+    {
+        var panel = ReadContract("EditorPanel.razor");
+        var pane = ReadContract("EditorGroupPane.razor");
+        var shell = ReadContract("workbench-shell.js");
+
+        Assert.DoesNotContain("@onpointerdown=\"CloseCommandMenu\"", panel, StringComparison.Ordinal);
+        Assert.Contains("if (_contexts.SequenceEqual(previous)) return;", panel, StringComparison.Ordinal);
+        Assert.Contains("@key=\"_groups.Layout.Id\"", panel, StringComparison.Ordinal);
+        Assert.Contains("@key=\"split.First.Id\"", pane, StringComparison.Ordinal);
+        Assert.Contains("@key=\"split.Second.Id\"", pane, StringComparison.Ordinal);
+        Assert.Contains("CultureInfo.InvariantCulture", pane, StringComparison.Ordinal);
+        Assert.Contains("DismissCommandMenusAsync", shell, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void AppStylesheet_StylesNoEditorSurfaceOtherThanMonaco()
     {
         var css = ReadContract("app.css");

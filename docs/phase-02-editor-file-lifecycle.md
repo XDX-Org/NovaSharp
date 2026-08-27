@@ -44,7 +44,10 @@ rewrites the rest of the file.
 
 The document lifecycle: the replication pump, the versioned replica and its save barrier, encoding and line-ending
 resolution, open, save, save-as, reload, reopen-with-encoding, comparison against the file on disk, external-change
-detection with compare/reload/keep, and prompts before anything discards unsaved text.
+detection with compare/reload/keep, and prompts before anything discards unsaved text. Watcher metadata checks use the
+bounded I/O queue, but any resulting reload is orchestrated after that worker is released so it cannot re-enter and
+deadlock the same queue. A rewrite whose decoded text is unchanged refreshes disk metadata without replacing Monaco's
+model, preventing external formatters and generators from repeatedly repainting an otherwise unchanged editor.
 
 The three cross-cutting foundations this phase introduces are in place:
 

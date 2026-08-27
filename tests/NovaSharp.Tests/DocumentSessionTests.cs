@@ -12,7 +12,8 @@ namespace NovaSharp.Tests;
 
 public sealed class DocumentSessionTests : IAsyncDisposable
 {
-    private readonly BoundedWorkQueue _queue = new(capacity: 16, workerCount: 2);
+    // A single worker catches watcher callbacks that accidentally re-enter the shared I/O queue.
+    private readonly BoundedWorkQueue _queue = new(capacity: 16, workerCount: 1);
     private readonly DocumentFileStore _store = new();
     private readonly FakeEditorHost _host = new();
     private readonly FakeDocumentWatcher _watcher = new();
@@ -65,13 +66,39 @@ public sealed class DocumentSessionTests : IAsyncDisposable
     public async Task OpenAsync_ShowsAnUnmodifiedDocument()
     {
         await OpenAsync("widget.cs", "class Widget;\n");
-
         var status = _session.Status;
         Assert.True(status.IsOpen);
         Assert.False(status.IsDirty);
         Assert.Equal("widget.cs", status.DisplayName);
         Assert.Equal(LineEndingStyle.Lf, status.LineEnding);
         Assert.Equal("class Widget;\n", _session.Replica?.Snapshot().Text);
+    }
+
+    [Fact]
+    public async Task Dispose_ReleasesTheReplicaIdentity()
+    {
+        await OpenAsync("widget.cs", "class Widget;\n");
+        var expected = _session.DocumentUri;
+        DocumentReplicaClose? closed = null;
+        _session.ReplicaClosed += change => closed = change;
+
+        await _session.DisposeAsync();
+
+        Assert.Equal(expected, closed?.DocumentUri);
+        Assert.False(closed?.WasDirty);
+    }
+
+    [Fact]
+    public async Task Dispose_ReportsWhenTheReleasedReplicaWasDirty()
+    {
+        await OpenAsync("widget.cs", "class Widget;\n");
+        DocumentReplicaClose? closed = null;
+        _session.ReplicaClosed += change => closed = change;
+
+        _host.Type("// dirty\n");
+        await _session.DisposeAsync();
+
+        Assert.True(closed?.WasDirty);
     }
 
     [Fact]
@@ -201,6 +228,22 @@ public sealed class DocumentSessionTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task ExternalRewriteWithIdenticalText_DoesNotReplaceTheMonacoModel()
+    {
+        var path = await OpenAsync("widget.cs", "class Widget;\n");
+        var sequence = _host.Sequence;
+
+        await Task.Delay(20, TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(path, "class Widget;\n", TestContext.Current.CancellationToken);
+        _watcher.Notify();
+
+        await Task.Delay(200, TestContext.Current.CancellationToken);
+        Assert.Equal(sequence, _host.Sequence);
+        Assert.Equal("class Widget;\n", _session.Replica?.Snapshot().Text);
+        Assert.False(_session.Status.IsDirty);
+    }
+
+    [Fact]
     public async Task ExternalChange_ToADirtyDocumentAsksInsteadOfOverwritingIt()
     {
         var path = await OpenAsync("widget.cs", "class Widget;\n");
@@ -257,6 +300,8 @@ public sealed class DocumentSessionTests : IAsyncDisposable
 
         await File.WriteAllTextAsync(path, "from disk\n", TestContext.Current.CancellationToken);
         var snapshotsBefore = _host.SnapshotCount;
+        DocumentReplicaChange? changed = null;
+        _session.ReplicaChanged += change => changed = change;
 
         await _session.ReloadAsync(cancellationToken: TestContext.Current.CancellationToken);
 
@@ -264,6 +309,7 @@ public sealed class DocumentSessionTests : IAsyncDisposable
         Assert.Equal("from disk\n", _session.Replica?.Snapshot().Text);
         Assert.False(_session.Status.IsDirty);
         Assert.Equal(snapshotsBefore, _host.SnapshotCount);
+        Assert.Equal("from disk\n", changed?.Replica.Snapshot().Text);
     }
 
     [Fact]

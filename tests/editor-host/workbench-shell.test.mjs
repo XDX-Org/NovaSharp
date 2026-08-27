@@ -57,14 +57,16 @@ const FIXTURE = `<!doctype html>
     </div>
     <aside class="explorer" style="width:280px" aria-label="Explorer">
       <header class="explorer-header"><strong>Explorer</strong><button aria-label="Open folder"><i class="codicon codicon-folder-opened"></i></button><button aria-label="Refresh"><i class="codicon codicon-refresh"></i></button><button aria-label="Collapse all folders" data-reachable><i class="codicon codicon-collapse-all"></i></button><button aria-label="Close Explorer" data-reachable><i class="codicon codicon-close"></i></button></header>
+      <div class="explorer-view"><select aria-label="Explorer view"><option value="folder">Folder view</option><option value="solution">Solution view</option></select></div>
       <div class="workspace-path">D:/Repos/NovaSharp</div>
-      <div class="workspace-tree" role="tree">
+      <div class="workspace-tree"><div role="tree" aria-label="Workspace files" data-explorer-view="folder">
         <div class="tree-item" data-kind="directory" data-root="true"><button class="tree-row" style="padding-left:8px" data-workspace-path="/workspace" data-workspace-kind="directory" data-workspace-drop-target="true"><span class="tree-twist"><i class="codicon codicon-chevron-down"></i></span><i class="codicon codicon-folder tree-icon"></i><span class="tree-name">NovaSharp</span></button></div>
         <div class="tree-item" data-kind="directory"><button class="tree-row" style="padding-left:24px" draggable="true" data-workspace-path="/workspace/Async" data-workspace-kind="directory" data-workspace-drop-target="true"><span class="tree-twist"><i class="codicon codicon-chevron-down"></i></span><i class="codicon codicon-folder tree-icon"></i><span class="tree-name">Async</span></button></div>
         <div class="tree-item selected" data-kind="file"><button class="tree-row" style="padding-left:40px" draggable="true" data-workspace-path="/workspace/Async/SupersedingOperation.cs" data-workspace-kind="file"><span class="tree-twist"></span><i class="codicon codicon-file-code tree-icon"></i><span class="tree-name">SupersedingOperation.cs</span></button></div>
         <div class="tree-item" data-kind="file"><button class="tree-row" style="padding-left:40px" draggable="true" data-workspace-path="/workspace/Async/BoundedWorkQueue.cs" data-workspace-kind="file"><span class="tree-twist"></span><i class="codicon codicon-file-code tree-icon"></i><span class="tree-name">BoundedWorkQueue.cs</span></button></div>
         <div class="tree-item" data-kind="directory"><button class="tree-row" style="padding-left:24px" draggable="true" data-workspace-path="/workspace/Components" data-workspace-kind="directory" data-workspace-drop-target="true"><span class="tree-twist"><i class="codicon codicon-chevron-right"></i></span><i class="codicon codicon-folder tree-icon"></i><span class="tree-name">Components</span></button></div>
         <div class="tree-item" data-kind="file"><button class="tree-row" style="padding-left:24px" draggable="true" data-workspace-path="/workspace/Workbench.cs" data-workspace-kind="file"><span class="tree-twist"></span><i class="codicon codicon-file-code tree-icon"></i><span class="tree-name">Workbench.cs</span></button></div>
+      </div>
       </div>
       <div class="explorer-resizer" role="separator" aria-label="Resize Explorer" aria-valuenow="280" tabindex="0"></div>
     </aside>
@@ -152,6 +154,21 @@ const FIXTURE = `<!doctype html>
     { id: 'explorer', keybindings: ['CtrlCmd+KeyB'] },
   ], 'palette');
   const explorer = document.querySelector('.explorer');
+  const folderTree = explorer.querySelector('[data-explorer-view="folder"]');
+  explorer.querySelector('[aria-label="Explorer view"]').addEventListener('change', event => {
+    if (event.target.value === 'folder') {
+      explorer.querySelector('[data-explorer-view="solution"]')?.remove();
+      folderTree.hidden = false;
+      return;
+    }
+    folderTree.hidden = true;
+    const solutionTree = document.createElement('div');
+    solutionTree.setAttribute('role', 'tree');
+    solutionTree.setAttribute('aria-label', 'Solution files');
+    solutionTree.dataset.explorerView = 'solution';
+    solutionTree.innerHTML = '<div class="tree-item" role="treeitem" aria-expanded="true"><button class="tree-row" style="padding-left:8px"><span class="tree-twist"><i class="codicon codicon-chevron-down"></i></span><i class="codicon codicon-project tree-icon"></i><span class="tree-name">NovaSharp.slnx</span></button><div role="group"><div class="tree-item" role="treeitem" aria-expanded="true"><button class="tree-row" style="padding-left:24px"><span class="tree-twist"><i class="codicon codicon-chevron-down"></i></span><i class="codicon codicon-project tree-icon"></i><span class="tree-name">NovaSharp</span><span class="tree-detail">net10.0</span></button><div role="group"><div class="tree-item" role="treeitem"><button class="tree-row" style="padding-left:40px" draggable="true" data-workspace-path="/workspace/Workbench.cs" data-workspace-kind="file"><span class="tree-twist"></span><i class="codicon codicon-file-code tree-icon"></i><span class="tree-name">Workbench.cs</span></button></div></div></div></div></div>';
+    folderTree.parentElement.append(solutionTree);
+  });
   NovaWorkspace.attachDragSurface(explorer);
   explorer.addEventListener('dragstart', event => workspaceDragPayloads.push({
     kind: event.target.dataset.workspaceKind,
@@ -403,6 +420,18 @@ try {
             check(`${engine} exposes labelled command, activity, tabs, alerts, resize, panel, and status regions`,
                 JSON.stringify(accessibleRegions) === JSON.stringify({ commands: 1, activity: 1, tabs: 4, alerts: 1, resize: 1, panel: 1, status: 1 }),
                 JSON.stringify(accessibleRegions));
+            const explorerView = page.getByRole('combobox', { name: 'Explorer view' });
+            check(`${engine} Explorer exposes folder and solution view options`,
+                JSON.stringify(await explorerView.locator('option').allTextContents()) === JSON.stringify(['Folder view', 'Solution view']));
+            await explorerView.selectOption('solution');
+            check(`${engine} solution view uses the folder tree hierarchy and icons`,
+                await page.getByRole('tree', { name: 'Solution files' }).isVisible()
+                    && !(await page.getByRole('tree', { name: 'Workspace files' }).isVisible())
+                    && await page.locator('[data-explorer-view="solution"] .tree-row .tree-icon').count() === 3);
+            await explorerView.selectOption('folder');
+            check(`${engine} folder view restores the filesystem tree`,
+                await page.getByRole('tree', { name: 'Workspace files' }).isVisible()
+                    && await page.getByRole('tree', { name: 'Solution files' }).count() === 0);
             await page.getByRole('button', { name: 'File menu' }).click();
             await page.getByRole('button', { name: 'Workspace menu' }).click();
             check(`${engine} opening a top menu closes the previous one`,
@@ -511,11 +540,14 @@ try {
             const workspaceEditorDrop = await page.evaluate(() => ({
                 drops: globalThis.editorGroupWorkspaceDrops,
                 feedback: globalThis.editorGroupDragFeedback,
+                captured: NovaEditorGroups.takeDroppedWorkspaceFile(
+                    document.getElementById('editor-groups-fixture')),
             }));
             check(`${engine} Explorer files can be dropped on an editor edge`,
                 workspaceEditorDrop.drops.some(drop => drop.path === '/workspace/Async/SupersedingOperation.cs'
                     && drop.target === 'left')
-                    && workspaceEditorDrop.feedback.some(feedback => feedback.prevented && feedback.effect === 'copy'),
+                    && workspaceEditorDrop.feedback.some(feedback => feedback.prevented && feedback.effect === 'copy')
+                    && workspaceEditorDrop.captured === '/workspace/Async/SupersedingOperation.cs',
                 JSON.stringify(workspaceEditorDrop));
             await page.dragAndDrop(workspaceFile, '.tree-row[data-workspace-path="/workspace/Components"]');
             const workspaceDrops = await page.evaluate(() => globalThis.workspaceDrops);

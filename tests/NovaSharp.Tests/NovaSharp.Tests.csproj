@@ -41,5 +41,9 @@
              Link="Contracts/CommandMenu.razor" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../../src/NovaSharp/Components/WorkspaceTreeNode.razor"
              Link="Contracts/WorkspaceTreeNode.razor" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../src/NovaSharp/Components/SolutionTree.razor"
+             Link="Contracts/SolutionTree.razor" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../src/NovaSharp/Components/SolutionTreeNode.razor"
+             Link="Contracts/SolutionTreeNode.razor" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

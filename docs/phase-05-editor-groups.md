@@ -51,7 +51,9 @@ Creating, moving, resizing, or closing a view must not clone model text or synch
   direction, move or copy to the next group, focus neighboring groups, close a group, and distribute sizes.
 - Recursive group panes provide accessible tablists and splitters plus tab insertion, center, and edge drop targets.
   Native drag metadata makes the four broad edge previews and center/tab targets work consistently across browser
-  engines. Pointer resizing is animation-frame-coalesced and commits once; arrow keys resize through the same ratio operation.
+  engines. The receiving editor surface retains an Explorer file payload until the Blazor drop callback consumes it,
+  so source-side drag-end ordering cannot discard the path. Pointer resizing is animation-frame-coalesced and commits
+  once; arrow keys resize through the same ratio operation.
 - Every duplicate view is a separate Monaco editor attached to the existing URI-keyed `ITextModel`. Browser gates
   prove shared text and undo, independent cursor/scroll state, and model survival after a copied view closes.
 - Workspace-state schema 3 persists the split tree, ratios, ordered views, active view per group, focused group, and

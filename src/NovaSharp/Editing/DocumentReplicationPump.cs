@@ -67,6 +67,9 @@ public sealed class DocumentReplicationPump : IAsyncDisposable
     /// <summary>Raised when a resynchronization could not be completed, so the workbench can say so.</summary>
     public event Action<Exception>? ResyncFailed;
 
+    /// <summary>Raised from the pump worker after the replica advances.</summary>
+    public event Action<long>? ReplicaAdvanced;
+
     /// <summary>
     /// Hands <paramref name="batch"/> to the pump without waiting.
     /// </summary>
@@ -125,10 +128,16 @@ public sealed class DocumentReplicationPump : IAsyncDisposable
                 // A batch already contained in a snapshot taken after it was queued is not a gap; it is work the
                 // resynchronization has already done. Applying it would fail validation and ask for another snapshot,
                 // turning one recovery into one per stale batch.
-                if (batch.ResultSequence > _replica.Sequence &&
-                    _replica.Apply(batch) == ReplicaApplyOutcome.NeedsResync)
+                if (batch.ResultSequence > _replica.Sequence)
                 {
-                    RequestResync();
+                    if (_replica.Apply(batch) == ReplicaApplyOutcome.NeedsResync)
+                    {
+                        RequestResync();
+                    }
+                    else
+                    {
+                        ReplicaAdvanced?.Invoke(_replica.Sequence);
+                    }
                 }
 
                 if (Interlocked.Exchange(ref _resyncPending, 0) == 1)
@@ -149,6 +158,7 @@ public sealed class DocumentReplicationPump : IAsyncDisposable
         {
             var snapshot = await _requestSnapshot(_shutdown.Token).ConfigureAwait(false);
             _replica.Resync(snapshot.Text, snapshot.Sequence, snapshot.AlternativeSequence);
+            ReplicaAdvanced?.Invoke(snapshot.Sequence);
         }
         catch (OperationCanceledException)
         {

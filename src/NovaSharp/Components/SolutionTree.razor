@@ -1,0 +1,66 @@
+@using NovaSharp.Shell
+@using NovaSharp.Solutions
+
+@if (Snapshot.State != SolutionLoadState.Closed && _root is not null)
+{
+    <section class="solution-tree" aria-label="Solution projects" aria-busy="@(Snapshot.State == SolutionLoadState.Loading)">
+        @if (Snapshot.State == SolutionLoadState.Loading)
+        {
+            <div class="solution-status">
+                <span role="status">Loading…</span>
+                <button type="button" class="tab-close" aria-label="Cancel solution loading"
+                        @onclick="() => CancelLoad.InvokeAsync()">
+                    <ShellIcon Name="SemanticIcon.Close" />
+                </button>
+            </div>
+        }
+        @if (Snapshot.Progress.LastOrDefault() is { } progress && Snapshot.State == SolutionLoadState.Loading)
+        {
+            <div class="solution-progress">@progress.Operation — @Path.GetFileName(progress.ProjectPath) @progress.TargetFramework</div>
+        }
+        @if (Snapshot.Error is { } error)
+        {
+            <div class="tree-error" role="alert">@error</div>
+        }
+        <div role="tree" aria-label="Solution files">
+            <SolutionTreeNode Node="_root" Expanded="_expanded" SelectedId="_selectedId"
+                              OnSelect="Select" OnToggle="Toggle" OnOpen="OpenFile" />
+        </div>
+    </section>
+}
+
+@code {
+    [Parameter, EditorRequired] public SolutionWorkspaceSnapshot Snapshot { get; set; } = null!;
+    [Parameter] public EventCallback<string> OpenFile { get; set; }
+    [Parameter] public EventCallback CancelLoad { get; set; }
+
+    private readonly HashSet<string> _expanded = new(StringComparer.Ordinal);
+    private IReadOnlyList<ProjectContextSnapshot>? _projects;
+    private SolutionExplorerNode? _root;
+    private string? _selectedId;
+    private long _sourceVersion = -1;
+
+    protected override void OnParametersSet()
+    {
+        if (_root is not null && _sourceVersion == Snapshot.SourceVersion && ReferenceEquals(_projects, Snapshot.Projects)) return;
+        _root = SolutionExplorerTree.Create(Snapshot, Workbench.Paths);
+        _projects = Snapshot.Projects;
+        _sourceVersion = Snapshot.SourceVersion;
+        _expanded.Add(_root.Id);
+    }
+
+    public Task CollapseAllAsync()
+    {
+        _expanded.Clear();
+        if (_root is not null) _expanded.Add(_root.Id);
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private void Select(SolutionExplorerNode node) => _selectedId = node.Id;
+
+    private void Toggle(string identity)
+    {
+        if (!_expanded.Add(identity)) _expanded.Remove(identity);
+    }
+}

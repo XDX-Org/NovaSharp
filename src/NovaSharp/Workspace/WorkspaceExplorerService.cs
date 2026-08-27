@@ -51,6 +51,7 @@ public sealed class WorkspaceExplorerService : IAsyncDisposable
 
     public event Action<WorkspaceSnapshot>? Changed;
     public event Func<WorkspaceRelocation, Task>? Relocated;
+    public event Action<WorkspaceChangeBatch>? FilesChanged;
 
     public void SetIgnoredPaths(IReadOnlyList<string>? paths) =>
         _ignoredPaths = paths is null or { Count: 0 } ? DefaultIgnored : [.. DefaultIgnored, .. paths];
@@ -332,6 +333,7 @@ public sealed class WorkspaceExplorerService : IAsyncDisposable
 
     private async Task OnWatcherChangedAsync(WorkspaceChangeBatch batch)
     {
+        FilesChanged?.Invoke(batch);
         var snapshot = Snapshot;
         if (snapshot.RootPath is null || snapshot.Root is null)
         {
@@ -476,7 +478,12 @@ public sealed class WorkspaceExplorerService : IAsyncDisposable
         WorkspaceSnapshot snapshot;
         lock (_gate)
         {
-            snapshot = update(_snapshot) with { Version = _snapshot.Version + 1 };
+            var candidate = update(_snapshot);
+            if (candidate == _snapshot)
+            {
+                return;
+            }
+            snapshot = candidate with { Version = _snapshot.Version + 1 };
             _snapshot = snapshot;
         }
         Changed?.Invoke(snapshot);

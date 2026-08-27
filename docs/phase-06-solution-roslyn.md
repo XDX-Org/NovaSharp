@@ -1,5 +1,10 @@
 # Phase 6: solution model and Roslyn
 
+## Status
+
+In progress. The implementation and phase-specific local gates are complete; all six supported runtime rows must pass from one commit before this phase can
+be marked complete.
+
 ## Goal
 
 Load a .NET solution or project accurately enough for semantic C# services.
@@ -35,6 +40,67 @@ Build execution and IntelliSense presentation are deferred; this phase establish
 - Reload preserves open documents and reports removed/changed project contexts.
 - Integration tests use fixture solutions and run without relying on machine-global state beyond the selected SDK.
 - Load/reload cancellation, concurrent project completion order, edit-during-reload, worker saturation, snapshot bounds, and UI responsiveness meet numeric budgets.
+
+## Delivered implementation
+
+- [ADR 0006](decisions/0006-solution-and-roslyn-hosting.md) selects the in-process `MSBuildWorkspace` authority, SDK-style project boundary,
+  and separate target-framework contexts. The unused phase 7 Roslyn Features dependency was removed.
+- `SolutionWorkspaceService` supersedes stale loads and publishes replacements only through one mutation writer. The current workspace, its
+  replica-signal channel, project progress, raw build log, diagnostics, display documents, and retained Roslyn solution are all explicitly bounded.
+- Solution evaluation has its own bounded worker, so cancellation cleanup and watcher-driven reloads cannot consume the foreground file-I/O workers.
+  Changes observed while evaluation is already loading are covered by that evaluation instead of feeding a reload loop. Completed debounce state is
+  released before disposal, and delayed watcher batches stamped before the successful publication are discarded. Closing a clean editor releases its
+  overlay without reloading; closing a discarded dirty overlay reloads the disk-backed Roslyn text.
+- `.sln`, `.slnx`, and `.csproj` inputs open from the Explorer, native picker, Workspace menu, or command palette. A single top-level solution is
+  discovered when a folder opens. An accessible Explorer dropdown switches between folder and solution views. Solution view uses the same
+  hierarchical tree rows, icons, keyboard navigation, incremental rendering, and collapse behavior as folder view; project-relative folders,
+  linked files, target frameworks, dependencies, load progress, and failures remain visible without exposing intermediate build directories.
+- Solution loading can be cancelled from its accessible progress control or the Workspace command palette. Closing the window cancels Roslyn
+  evaluation immediately, awaits its cleanup, and keeps overall application shutdown within one explicit deadline.
+- Physical file URIs map to every linked and target-framework `DocumentId`. The active editor exposes a project-context selector when a mapping
+  is ambiguous.
+- Ordered replicas signal Roslyn only after the .NET shadow advances. Foreground callers can await the Monaco sequence barrier; reload overlays
+  the newest dirty snapshots before atomic publication and never writes them to disk.
+- Workspace watcher changes to solutions, projects, imports, restore assets, and source-set membership coalesce into a reload. Content changes to
+  existing C# and generated C# inputs update mapped Roslyn documents through the mutation coordinator without project reevaluation, preventing
+  evaluation outputs from feeding a watcher/reload loop. Reload reports added and removed contexts while open Monaco models remain alive.
+- `DiagnosticStore` keys bounded structured results by producer, context, source version, and stable identity. Concise failures reach notifications;
+  the separately bounded raw MSBuild log remains available for investigation.
+- The representative fixture contains console, library, Web/Razor, multi-project, multi-target, linked-file, project-reference, defines, nullable,
+  language-version, framework/package assembly, and analyzer inputs. Real `MSBuildWorkspace` integration tests use the selected repository SDK.
+
+## Performance budgets
+
+Each CI matrix row records these against its named hosted-runner/RID fixture in `phase-01-06-native.json`:
+
+| Gate | Budget |
+|---|---:|
+| Representative solution cold load | ≤ 20,000 ms |
+| Representative solution reload with dirty overlay | ≤ 15,000 ms |
+| Foreground replica-to-Roslyn barrier | ≤ 500 ms |
+| First semantic model | ≤ 5,000 ms |
+| First phase 7 completion result | ≤ 750 ms |
+| Managed memory added by the solution workspace | ≤ 384 MB |
+| Retained current Roslyn solutions | 1 |
+| Mutation queue | 128 items; pending count never exceeds capacity |
+| Open-replica overlay cache | 1,024 sources; closed sources are released |
+
+The first-completion budget is fixed here but becomes executable with the completion provider in phase 7. Solution measurements run after the
+fixture projects have restored and built, so acquisition time is not hidden inside load time. Phase completion still requires retained records
+from every supported runtime identifier; a local measurement is development evidence only.
+
+## Verification
+
+- Managed behavior tests cover real SDK evaluation, `.slnx`, multi-target progress, linked mappings, project and package/framework references,
+  dirty synchronization, explicit context selection, edit-during-reload, removed contexts, stale progress, user cancellation, shutdown cleanup, diagnostic redaction,
+  discovery, bounded saturation, and accessible project-tree contracts.
+- `tools/NovaSharp.PhaseVerification` records load/reload, dirty barrier, first semantic model, memory, mapping, queue, and snapshot gates alongside
+  the existing native/editor/Explorer budgets on every CI row.
+- CI continues to run identical bootstrap, managed/browser tests, explicit-RID publish, packaged native smoke, performance, disposal, and retained
+  evidence gates for all six matrix rows.
+
+Local development evidence is not qualification evidence. On the current development host, every phase 6 and packaged-solution gate passes;
+the pre-existing 10 MB editor working-set fixture remains hosted-runner-qualified and can fluctuate around its 60 MB local threshold.
 
 ## Next phase
 

@@ -121,6 +121,24 @@ public sealed class WorkspaceExplorerTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task WatcherChangeOutsideExpandedTree_DoesNotPublishAnUnchangedSnapshot()
+    {
+        var directory = Directory.CreateDirectory(Path.Combine(_root, "src")).FullName;
+        await _explorer.OpenAsync(_root, TestContext.Current.CancellationToken);
+        var changed = 0;
+        var filesChanged = 0;
+        _explorer.Changed += _ => changed++;
+        _explorer.FilesChanged += _ => filesChanged++;
+
+        await _watcher.NotifyAsync(new WorkspaceChangeBatch([
+            new WorkspaceChange(WorkspaceChangeKind.Changed, Path.Combine(directory, "Generated.cs")),
+        ]));
+
+        Assert.Equal(1, filesChanged);
+        Assert.Equal(0, changed);
+    }
+
+    [Fact]
     public async Task WatcherOverflow_RescansExpandedBranchesAndReportsRecovery()
     {
         var directory = Directory.CreateDirectory(Path.Combine(_root, "src")).FullName;

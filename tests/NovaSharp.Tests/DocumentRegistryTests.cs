@@ -164,6 +164,30 @@ public sealed class DocumentRegistryTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Restore_LoadsInactiveDocumentsWithoutReplacingTheActiveEditor()
+    {
+        var active = await CreateFileAsync("active.cs");
+        var inactive = await CreateFileAsync("inactive.cs");
+        var activeUri = _paths.ToDocumentUri(active).AbsoluteUri;
+        var inactiveUri = _paths.ToDocumentUri(inactive).AbsoluteUri;
+        await _persistence.SaveAsync(new WorkspaceStateDocument
+        {
+            OpenDocuments =
+            [
+                new PersistedDocumentView(activeUri, active, false, false, true),
+                new PersistedDocumentView(inactiveUri, inactive, false, false, true),
+            ],
+            ActiveDocumentId = activeUri,
+        }, TestContext.Current.CancellationToken);
+
+        await _registry.RestoreAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(activeUri, _host.ActiveUri);
+        Assert.Equal(2, _host.ModelCount);
+        Assert.Equal(1, _host.PreparedDocumentCount);
+    }
+
+    [Fact]
     public async Task RapidSwitchingAndClose_ReusesModelsAndReleasesEveryLease()
     {
         var paths = await Task.WhenAll(Enumerable.Range(0, 12).Select(index => CreateFileAsync($"file-{index}.cs")));
@@ -230,6 +254,7 @@ internal sealed class RegistryEditorHost : IEditorHost
     private string _activeViewId = EditorGroupManager.MainGroupId;
     public string? ActiveUri { get; private set; }
     public int ModelCount => _models.Count;
+    public int PreparedDocumentCount { get; private set; }
     public Uri? UriForView(string viewId) => _viewDocuments.GetValueOrDefault(viewId);
 
     public ValueTask InitializeAsync(ElementReference container, EditorBridge bridge, CancellationToken cancellationToken)
@@ -290,15 +315,27 @@ internal sealed class RegistryEditorHost : IEditorHost
 
     public ValueTask<EditorSequence> OpenDocumentAsync(DocumentContent content, CancellationToken cancellationToken)
     {
+        var model = GetOrCreate(content);
+        ActiveUri = content.Uri.AbsoluteUri;
+        _viewDocuments[_activeViewId] = content.Uri;
+        return ValueTask.FromResult(Sequence(model));
+    }
+
+    public ValueTask<EditorSequence> PrepareDocumentAsync(DocumentContent content, CancellationToken cancellationToken)
+    {
+        PreparedDocumentCount++;
+        return ValueTask.FromResult(Sequence(GetOrCreate(content)));
+    }
+
+    private Model GetOrCreate(DocumentContent content)
+    {
         if (!_models.TryGetValue(content.Uri.AbsoluteUri, out var model))
         {
             model = new Model { Uri = content.Uri, ReadOnly = content.ReadOnly };
             model.Text.Append(content.Text);
             _models.Add(content.Uri.AbsoluteUri, model);
         }
-        ActiveUri = content.Uri.AbsoluteUri;
-        _viewDocuments[_activeViewId] = content.Uri;
-        return ValueTask.FromResult(Sequence(model));
+        return model;
     }
 
     public ValueTask SwitchDocumentAsync(Uri uri, EditorViewState? viewState, CancellationToken cancellationToken)

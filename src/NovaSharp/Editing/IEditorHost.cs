@@ -75,6 +75,9 @@ public interface IEditorHost : IAsyncDisposable
     /// <returns>The sequence the new model starts at.</returns>
     ValueTask<EditorSequence> OpenDocumentAsync(DocumentContent content, CancellationToken cancellationToken);
 
+    /// <summary>Loads a document model without changing the visible editor, selection, or focus.</summary>
+    ValueTask<EditorSequence> PrepareDocumentAsync(DocumentContent content, CancellationToken cancellationToken);
+
     /// <summary>Attaches an already-open model and restores its validated view state.</summary>
     ValueTask SwitchDocumentAsync(Uri uri, EditorViewState? viewState, CancellationToken cancellationToken);
 

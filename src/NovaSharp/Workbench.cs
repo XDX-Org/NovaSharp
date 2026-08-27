@@ -1,9 +1,10 @@
-using NovaSharp.Async;
+﻿using NovaSharp.Async;
 using NovaSharp.Commands;
 using NovaSharp.Configuration;
 using NovaSharp.Diagnostics;
 using NovaSharp.Editing;
 using NovaSharp.Platform;
+using NovaSharp.Solutions;
 using NovaSharp.Workspace;
 
 namespace NovaSharp;
@@ -23,6 +24,7 @@ internal static class Workbench
     private static readonly TimeSpan ShutdownDeadline = TimeSpan.FromSeconds(10);
 
     private static readonly BoundedWorkQueue BackgroundWork = new(capacity: 32, workerCount: 2);
+    private static readonly BoundedWorkQueue SolutionWork = new(capacity: 4, workerCount: 1);
     private static readonly IDocumentFileStore Files = new DocumentFileStore();
     private static readonly DocumentTextCodec Codec = new();
 
@@ -31,6 +33,8 @@ internal static class Workbench
 
     /// <summary>Where NovaSharp tells the user something.</summary>
     internal static INotificationService Notifications { get; } = new NotificationService(Log);
+
+    internal static DiagnosticStore Diagnostics { get; } = new();
 
     /// <summary>The one place a command identifier turns into behaviour.</summary>
     internal static ICommandRegistry Commands { get; } = new CommandRegistry(Log);
@@ -46,6 +50,10 @@ internal static class Workbench
         new(new ApplicationPaths(), Files, BackgroundWork);
 
     internal static WorkspaceExplorerService Explorer { get; } = CreateExplorer();
+
+    internal static SolutionWorkspaceService Solutions { get; } = CreateSolutions();
+
+    internal static SolutionDiscovery SolutionDiscovery { get; } = new(Paths, BackgroundWork);
 
     /// <summary>Reads documents off the UI thread, through the bounded background queue.</summary>
     internal static DocumentLoader Loader { get; } = new(Paths, Files, Codec, BackgroundWork);
@@ -64,8 +72,9 @@ internal static class Workbench
     internal static DocumentSession? ActiveDocument => Documents?.ActiveDocument;
 
     /// <summary>Creates the session for one editor, wiring it to the shared services.</summary>
-    internal static DocumentSession CreateSession(IEditorHost host) =>
-        new(host,
+    internal static DocumentSession CreateSession(IEditorHost host)
+    {
+        var session = new DocumentSession(host,
             Loader,
             Saver,
             Files,
@@ -73,6 +82,10 @@ internal static class Workbench
             BackgroundWork,
             Notifications,
             static () => Configuration.Current.Settings);
+        session.ReplicaChanged += Solutions.QueueReplica;
+        session.ReplicaClosed += closed => Solutions.RemoveReplica(closed.DocumentUri, closed.WasDirty);
+        return session;
+    }
 
     internal static DocumentRegistry CreateDocumentRegistry(IEditorHost host) =>
         new(host, Paths, WorkspacePersistence, () => CreateSession(host), Notifications, () => Explorer.Snapshot.RootPath);
@@ -86,6 +99,19 @@ internal static class Workbench
             watcher,
             WorkspacePersistence,
             Notifications);
+    }
+
+    private static SolutionWorkspaceService CreateSolutions()
+    {
+        var service = new SolutionWorkspaceService(
+            Paths,
+            new MSBuildSolutionLoader(),
+            SolutionWork,
+            Diagnostics,
+            Notifications,
+            Log);
+        Explorer.FilesChanged += service.ObserveWorkspaceChanges;
+        return service;
     }
 
     /// <summary>Reads both settings scopes and reports anything that had to be ignored.</summary>
@@ -140,15 +166,32 @@ internal static class Workbench
     /// </remarks>
     internal static void Shutdown()
     {
-        // The result is deliberately discarded: the queue applies its own deadline first, and a wait that still
-        // overruns means the process should exit anyway rather than hang on a stuck worker.
+        Explorer.FilesChanged -= Solutions.ObserveWorkspaceChanges;
         var documents = Documents;
         Documents = null;
+        try
+        {
+            if (!ShutdownAsync(documents).Wait(ShutdownDeadline))
+            {
+                Log.Write(LogLevel.Warning, "shutdown", "Workbench cleanup exceeded its deadline; process exit will continue.");
+            }
+        }
+        catch (Exception exception)
+        {
+            Log.Write(LogLevel.Warning, "shutdown", "Workbench cleanup completed with an error; process exit will continue.", exception);
+        }
+    }
+
+    private static async Task ShutdownAsync(DocumentRegistry? documents)
+    {
+        await Task.Yield();
+        await Solutions.DisposeAsync().ConfigureAwait(false);
         if (documents is not null)
         {
-            _ = documents.DisposeAsync().AsTask().Wait(ShutdownDeadline);
+            await documents.DisposeAsync().ConfigureAwait(false);
         }
-        _ = Explorer.DisposeAsync().AsTask().Wait(ShutdownDeadline);
-        _ = BackgroundWork.DisposeAsync().AsTask().Wait(ShutdownDeadline);
+        await Explorer.DisposeAsync().ConfigureAwait(false);
+        await SolutionWork.DisposeAsync().ConfigureAwait(false);
+        await BackgroundWork.DisposeAsync().ConfigureAwait(false);
     }
 }

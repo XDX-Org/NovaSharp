@@ -190,4 +190,10 @@ public static class NotificationIds
 
     /// <summary>A settings file had something in it NovaSharp could not use.</summary>
     public const string SettingsProblem = "novasharp.configuration.problem";
+
+    /// <summary>A solution or project could not be loaded.</summary>
+    public const string SolutionLoadFailed = "novasharp.solution.loadFailed";
+
+    /// <summary>An open buffer could not be applied to Roslyn.</summary>
+    public const string SolutionSyncFailed = "novasharp.solution.syncFailed";
 }

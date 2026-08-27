@@ -65,7 +65,7 @@ reported and ignored.
 
 ## Performance budgets
 
-These gates run per supported runtime identifier and are retained in `phase-01-03-native.json` with the runner/RID
+These gates run per supported runtime identifier and are retained in `phase-01-06-native.json` with the runner/RID
 fixture name. A result on one row is not evidence for another.
 
 | Budget | Limit | Fixture |

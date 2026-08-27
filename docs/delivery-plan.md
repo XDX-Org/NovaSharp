@@ -16,7 +16,8 @@ Source control UI, remote development, collaboration, notebooks, AI completion, 
 | 4. Documents and movable tabs | Complete | [Qualification run 32585228606](https://github.com/XDX-Org/NovaSharp/actions/runs/32585228606) passed the document registry, tab lifecycle, browser performance, bounded scheduling, RID publish, packaged native smoke, disposal, and retained-evidence gates on all six matrix rows from commit `3ce0da3` |
 | 4.5. Workbench shell and visual system | Complete | [Qualification run 32752027806](https://github.com/XDX-Org/NovaSharp/actions/runs/32752027806) passed bootstrap, shell/browser gates, RID publish, packaged native smoke, performance, disposal, and retained-evidence gates on all six matrix rows from commit `306e8db` |
 | 5. Editor groups and split views | Complete | [Qualification run 32759088571](https://github.com/XDX-Org/NovaSharp/actions/runs/32759088571) passed shared-model split views, bounded layout management, drag/drop, accessible resizing, schema-3 persistence, 270 managed tests, 196 browser gates, RID publish, packaged native smoke, performance, disposal, and retained-evidence gates on all six matrix rows from commit `c8186e9` |
-| 6–17 | Planned | Completion criteria not yet met |
+| 6. Solution model and Roslyn | In progress | Implementation and phase-specific local gates are complete; six-row qualification evidence is pending |
+| 7–17 | Planned | Completion criteria not yet met |
 
 Status values are `planned`, `in progress`, `blocked`, and `complete`. Update this table only from test or release evidence; documentation, packaged dependencies, or partial UI alone does not complete a phase. A phase is never `complete` on evidence from a single operating system.
 
@@ -48,6 +49,9 @@ responsive behavior are fixed by [ADR 0004](decisions/0004-workbench-shell.md), 
 shared-model views by [ADR 0005](decisions/0005-editor-groups.md). Decide C# language-service hosting before phase 6, terminal engine before
 phase 11, and debug adapter before phase 12. A dependency that presupposes one of those answers must not be added to a
 project file before its ADR exists.
+
+C# solution hosting, MSBuild discovery, supported project types, and multi-target context policy are fixed by
+[ADR 0006](decisions/0006-solution-and-roslyn-hosting.md).
 
 ## Required execution model
 
@@ -122,7 +126,7 @@ Budgets must be measured on named fixture hardware and repositories. Set numeric
 | Startup time and idle memory | 2 | [Phase 2](phase-02-editor-file-lifecycle.md#performance-budgets) |
 | Typing/render latency and large-file memory | 2 | [Phase 2](phase-02-editor-file-lifecycle.md#performance-budgets) |
 | Explorer expansion and watcher recovery | 3 | [Phase 3](phase-03-workspace-explorer.md#performance-budgets) |
-| Solution load, Roslyn snapshot count, completion first result | 6 |
+| Solution load, Roslyn snapshot count, completion first result | 6 | [Phase 6](phase-06-solution-roslyn.md#performance-budgets) |
 | Search throughput/result memory | 9 |
 | Build cancellation/process cleanup | 10 |
 | Terminal input/resize latency | 11 |
@@ -169,8 +173,11 @@ Resolve these before the named phase starts:
    [ADR 0002](decisions/0002-document-lifecycle.md): the journal is in memory only and crash recovery is phase 14's,
    the encoding surface is the framework's whole catalogue with a byte-preserving fallback, and settings are versioned
    JSON in a user and a workspace scope.
-3. Phase 6: C# language-service hosting — the pinned out-of-process Roslyn language server, in-process `Microsoft.CodeAnalysis.Workspaces.MSBuild`, or a defined split. The project file currently references both; that must be resolved to one recorded decision, with the unused dependencies removed.
-4. Phase 6: MSBuild discovery/evaluation library, supported SDK/project types, and multi-target context policy.
+3. ~~Phase 6: C# language-service hosting.~~ Resolved by [ADR 0006](decisions/0006-solution-and-roslyn-hosting.md): C# uses an
+   in-process `MSBuildWorkspace`; the executable payload is reserved for the later Razor protocol boundary and is not a second C# authority.
+4. ~~Phase 6: MSBuild discovery/evaluation library, supported SDK/project types, and multi-target context policy.~~ Resolved by
+   [ADR 0006](decisions/0006-solution-and-roslyn-hosting.md): `MSBuildLocator`, SDK-style inputs, separate target-framework contexts,
+   and an explicit active context.
 5. Phase 11: terminal emulator implementation or dependency, licensing, and the pseudoterminal strategy for every supported platform.
 6. Phase 12: debug adapter/engine, protocol transport, redistribution/licensing, attach permissions, and capability fallback.
 7. Phase 15: Razor projection ownership. Protocol-based, pinned Roslyn/Razor acquisition is fixed by the language-server asset manifest.

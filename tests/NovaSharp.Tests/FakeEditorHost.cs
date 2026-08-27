@@ -48,6 +48,9 @@ internal sealed class FakeEditorHost : IEditorHost
         return ValueTask.FromResult(new EditorSequence(Sequence, AlternativeSequence));
     }
 
+    public ValueTask<EditorSequence> PrepareDocumentAsync(DocumentContent content, CancellationToken cancellationToken) =>
+        OpenDocumentAsync(content, cancellationToken);
+
     public ValueTask SwitchDocumentAsync(Uri uri, EditorViewState? viewState, CancellationToken cancellationToken) =>
         ValueTask.CompletedTask;
 

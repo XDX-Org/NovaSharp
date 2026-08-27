@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Threading.Channels;
 using NovaSharp.Platform;
 
@@ -57,10 +58,14 @@ public sealed class FileSystemWorkspaceWatcher : IWorkspaceWatcher
             NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite | NotifyFilters.Attributes,
             InternalBufferSize = 32 * 1024,
         };
-        watcher.Created += (_, args) => Enqueue(new WorkspaceChange(WorkspaceChangeKind.Created, args.FullPath));
-        watcher.Changed += (_, args) => Enqueue(new WorkspaceChange(WorkspaceChangeKind.Changed, args.FullPath));
-        watcher.Deleted += (_, args) => Enqueue(new WorkspaceChange(WorkspaceChangeKind.Deleted, args.FullPath));
-        watcher.Renamed += (_, args) => Enqueue(new WorkspaceChange(WorkspaceChangeKind.Renamed, args.FullPath, args.OldFullPath));
+        watcher.Created += (_, args) => Enqueue(new WorkspaceChange(
+            WorkspaceChangeKind.Created, args.FullPath, ObservedTimestamp: Stopwatch.GetTimestamp()));
+        watcher.Changed += (_, args) => Enqueue(new WorkspaceChange(
+            WorkspaceChangeKind.Changed, args.FullPath, ObservedTimestamp: Stopwatch.GetTimestamp()));
+        watcher.Deleted += (_, args) => Enqueue(new WorkspaceChange(
+            WorkspaceChangeKind.Deleted, args.FullPath, ObservedTimestamp: Stopwatch.GetTimestamp()));
+        watcher.Renamed += (_, args) => Enqueue(new WorkspaceChange(
+            WorkspaceChangeKind.Renamed, args.FullPath, args.OldFullPath, Stopwatch.GetTimestamp()));
         watcher.Error += (_, _) => Interlocked.Exchange(ref _overflowed, 1);
         watcher.EnableRaisingEvents = true;
         _watcher = watcher;

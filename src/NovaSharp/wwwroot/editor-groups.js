@@ -1,5 +1,6 @@
 const splitters = new WeakMap();
 const dragSurfaces = new WeakMap();
+const droppedWorkspaceFiles = new WeakMap();
 const workspaceFileType = 'application/x-novasharp-workspace-file';
 
 function hasWorkspaceFile(dataTransfer) {
@@ -16,8 +17,15 @@ function detachDragSurface(element) {
     element.removeEventListener('dragover', state.onDragOver);
     element.removeEventListener('dragleave', state.onDragLeave);
     element.removeEventListener('dragend', state.onDragEnd);
-    element.removeEventListener('drop', state.onDragEnd);
+    element.removeEventListener('drop', state.onDrop);
+    droppedWorkspaceFiles.delete(element);
     dragSurfaces.delete(element);
+}
+
+function takeDroppedWorkspaceFile(element) {
+    const path = droppedWorkspaceFiles.get(element);
+    droppedWorkspaceFiles.delete(element);
+    return path ?? null;
 }
 
 function attachDragSurface(element) {
@@ -62,14 +70,20 @@ function attachDragSurface(element) {
         tabDragging = false;
         element.classList.remove('dragging');
     };
+    const onDrop = event => {
+        const path = event.dataTransfer?.getData(workspaceFileType)
+            || globalThis.NovaWorkspace?.draggedFile();
+        if (path) droppedWorkspaceFiles.set(element, path);
+        onDragEnd();
+    };
     element.addEventListener('mousedown', onMouseDown);
     element.addEventListener('dragstart', onDragStart);
     element.addEventListener('dragenter', onDragEnter);
     element.addEventListener('dragover', onDragOver);
     element.addEventListener('dragleave', onDragLeave);
     element.addEventListener('dragend', onDragEnd);
-    element.addEventListener('drop', onDragEnd);
-    dragSurfaces.set(element, { onMouseDown, onDragStart, onDragEnter, onDragOver, onDragLeave, onDragEnd });
+    element.addEventListener('drop', onDrop);
+    dragSurfaces.set(element, { onMouseDown, onDragStart, onDragEnter, onDragOver, onDragLeave, onDragEnd, onDrop });
 }
 
 function detachSplitter(element) {
@@ -127,4 +141,10 @@ function attachSplitter(element, bridge, splitId, orientation, initialRatio) {
     splitters.set(element, state);
 }
 
-globalThis.NovaEditorGroups = { attachDragSurface, detachDragSurface, attachSplitter, detachSplitter };
+globalThis.NovaEditorGroups = {
+    attachDragSurface,
+    detachDragSurface,
+    takeDroppedWorkspaceFile,
+    attachSplitter,
+    detachSplitter,
+};

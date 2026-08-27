@@ -2,6 +2,7 @@
 @using NovaSharp.Commands
 @using NovaSharp.Platform
 @using NovaSharp.Shell
+@using NovaSharp.Solutions
 @using NovaSharp.Workspace
 @implements IAsyncDisposable
 @inject IJSRuntime JSRuntime
@@ -10,6 +11,7 @@
        hidden="@(!_snapshot.SidebarVisible)">
         <header class="explorer-header">
             <strong>Explorer</strong>
+            <button type="button" title="Open solution or project" aria-label="Open solution or project" @onclick="OpenSolutionAsync"><ShellIcon Name="SemanticIcon.Solution" /></button>
             <button type="button" title="Open folder" aria-label="Open folder" @onclick="OpenFolderAsync"><ShellIcon Name="SemanticIcon.FolderOpen" /></button>
             <button type="button" title="Refresh" aria-label="Refresh Explorer" disabled="@(!_snapshot.IsOpen)" @onclick="RefreshAsync"><ShellIcon Name="SemanticIcon.Refresh" /></button>
             <button type="button" title="Collapse all folders" aria-label="Collapse all folders" disabled="@(!_snapshot.IsOpen)" @onclick="CollapseAllAsync"><ShellIcon Name="SemanticIcon.CollapseAll" /></button>
@@ -21,12 +23,27 @@
         }
         else
         {
+            <div class="explorer-view">
+                <select aria-label="Explorer view" @bind="_view">
+                    <option value="@ExplorerView.Folder">Folder view</option>
+                    <option value="@ExplorerView.Solution" disabled="@(_solution.State == SolutionLoadState.Closed)">Solution view</option>
+                </select>
+            </div>
             <div class="workspace-path" title="@_snapshot.RootPath">@_snapshot.RootPath</div>
-            <div role="tree" aria-label="Workspace files" class="workspace-tree">
-                <WorkspaceTreeNode Node="_snapshot.Root" SelectedId="_snapshot.SelectedId"
-                    OnSelect="SelectAsync" OnPreview="PreviewAsync" OnActivate="ActivateAsync" OnExpand="ExpandAsync" OnCollapse="CollapseAsync"
-                    OnRename="BeginRename" OnDelete="DeleteAsync" OnContextMenu="OpenContextMenuAsync"
-                    OnDragStart="BeginDragAsync" OnDragEnd="EndDragAsync" OnDrop="DropAsync" />
+            <div class="workspace-tree">
+                @if (_view == ExplorerView.Solution && _solution.State != SolutionLoadState.Closed)
+                {
+                    <SolutionTree @ref="_solutionTree" Snapshot="_solution" OpenFile="OpenFile" CancelLoad="CancelSolutionLoadAsync" />
+                }
+                else
+                {
+                    <div role="tree" aria-label="Workspace files">
+                        <WorkspaceTreeNode Node="_snapshot.Root" SelectedId="_snapshot.SelectedId"
+                            OnSelect="SelectAsync" OnPreview="PreviewAsync" OnActivate="ActivateAsync" OnExpand="ExpandAsync" OnCollapse="CollapseAsync"
+                            OnRename="BeginRename" OnDelete="DeleteAsync" OnContextMenu="OpenContextMenuAsync"
+                            OnDragStart="BeginDragAsync" OnDragEnd="EndDragAsync" OnDrop="DropAsync" />
+                    </div>
+                }
             </div>
         }
         <div class="explorer-resizer" role="separator" aria-label="Resize Explorer" aria-orientation="vertical"
@@ -68,6 +85,8 @@
 }
 
 @code {
+    private enum ExplorerView { Folder, Solution }
+
     [Parameter] public EventCallback<string> OpenFile { get; set; }
     [Parameter] public EventCallback<string> PreviewFile { get; set; }
     [Parameter] public EventCallback<WorkspaceNode> OnDragStart { get; set; }
@@ -75,6 +94,9 @@
 
     private readonly List<IDisposable> _registrations = [];
     private WorkspaceSnapshot _snapshot = Workbench.Explorer.Snapshot;
+    private SolutionWorkspaceSnapshot _solution = Workbench.Solutions.Snapshot;
+    private ExplorerView _view = ExplorerView.Folder;
+    private SolutionTree? _solutionTree;
     private string? _dialogMode;
     private string _dialogValue = string.Empty;
     private WorkspaceNode? _dialogNode;
@@ -94,6 +116,9 @@
     {
         Workbench.Explorer.Changed += OnChanged;
         Workbench.Explorer.Relocated += OnRelocatedAsync;
+        Workbench.Solutions.Changed += OnSolutionChanged;
+        _solution = Workbench.Solutions.Snapshot;
+        if (_solution.State != SolutionLoadState.Closed) _view = ExplorerView.Solution;
         RegisterCommands();
     }
 
@@ -121,6 +146,7 @@
             Workbench.Configuration.SetWorkspaceRoot(root);
             await Workbench.LoadConfigurationAsync();
             Workbench.Explorer.SetIgnoredPaths(Workbench.Configuration.Current.Settings.WorkspaceIgnoredPaths);
+            await DiscoverSolutionAsync(root);
         }
     }
 
@@ -133,7 +159,15 @@
         Register(WorkbenchCommands.RefreshWorkspace, token => RefreshAsync(token), () => _snapshot.IsOpen);
         Register(WorkbenchCommands.ToggleExplorer, _ => ToggleAsync());
         Register(WorkbenchCommands.RevealActiveFile, token => RevealAsync(token), () => _snapshot.IsOpen && Workbench.ActiveDocument?.Status.IsOpen == true);
+        Register(WorkbenchCommands.OpenSolution, _ => OpenSolutionAsync());
+        Register(WorkbenchCommands.ReloadSolution, token => Workbench.Solutions.ReloadAsync(token), () => _solution.Path is not null);
+        Register(WorkbenchCommands.CancelSolutionLoad, token => Workbench.Solutions.CancelLoadAsync(token),
+            () => _solution.State == SolutionLoadState.Loading);
+        Register(WorkbenchCommands.CloseSolution, token => Workbench.Solutions.CloseAsync(token), () => _solution.Path is not null);
     }
+
+    private Task CancelSolutionLoadAsync() =>
+        Workbench.Commands.InvokeAsync(WorkbenchCommands.CancelSolutionLoad, CancellationToken.None);
 
     private async Task OpenFolderAsync()
     {
@@ -143,20 +177,42 @@
         Workbench.Configuration.SetWorkspaceRoot(root);
         await Workbench.LoadConfigurationAsync();
         Workbench.Explorer.SetIgnoredPaths(Workbench.Configuration.Current.Settings.WorkspaceIgnoredPaths);
+        await DiscoverSolutionAsync(root);
+    }
+
+    private async Task OpenSolutionAsync()
+    {
+        var files = await Program.App.MainWindow.ShowOpenFileAsync(
+            title: "Open solution or project",
+            multiSelect: false,
+            filters: [(".NET solution or C# project", ["sln", "slnx", "csproj"])]);
+        if (files is [var path]) await Workbench.Solutions.OpenAsync(path);
+    }
+
+    private async Task DiscoverSolutionAsync(string root)
+    {
+        if (await Workbench.SolutionDiscovery.DiscoverAsync(root) is { } path)
+            await Workbench.Solutions.OpenAsync(path);
     }
 
     private async Task CloseFolderAsync(CancellationToken cancellationToken)
     {
         await Workbench.Explorer.CloseAsync(cancellationToken);
+        await Workbench.Solutions.CloseAsync(cancellationToken);
         Workbench.Configuration.SetWorkspaceRoot(null);
         await Workbench.LoadConfigurationAsync(cancellationToken);
     }
 
     private Task RefreshAsync() => RefreshAsync(CancellationToken.None);
-    private Task RefreshAsync(CancellationToken token) => _snapshot.RootPath is null
-        ? Task.CompletedTask
-        : Workbench.Explorer.ExpandAsync(_snapshot.RootPath, cancellationToken: token);
-    private Task CollapseAllAsync() => Workbench.Explorer.CollapseAllAsync();
+    private async Task RefreshAsync(CancellationToken token)
+    {
+        if (_snapshot.RootPath is not null)
+            await Workbench.Explorer.ExpandAsync(_snapshot.RootPath, cancellationToken: token);
+        await Workbench.Solutions.ReloadAsync(token);
+    }
+    private Task CollapseAllAsync() => _view == ExplorerView.Solution && _solutionTree is not null
+        ? _solutionTree.CollapseAllAsync()
+        : Workbench.Explorer.CollapseAllAsync();
 
     private Task ToggleAsync() => Workbench.Explorer.SetSidebarAsync(!_snapshot.SidebarVisible, _snapshot.SidebarWidth);
 
@@ -190,12 +246,22 @@
 
     private async Task ActivateAsync(WorkspaceNode node)
     {
+        if (SolutionDiscovery.IsSupported(node.Path))
+        {
+            await Workbench.Solutions.OpenAsync(node.Path);
+            return;
+        }
         await OpenFile.InvokeAsync(node.Path);
         await Workbench.Explorer.RevealAsync(node.Path);
     }
 
     private async Task PreviewAsync(WorkspaceNode node)
     {
+        if (SolutionDiscovery.IsSupported(node.Path))
+        {
+            await Workbench.Solutions.OpenAsync(node.Path);
+            return;
+        }
         await PreviewFile.InvokeAsync(node.Path);
         await Workbench.Explorer.RevealAsync(node.Path);
     }
@@ -322,6 +388,16 @@
         StateHasChanged();
     });
 
+    private void OnSolutionChanged(SolutionWorkspaceSnapshot snapshot) => _ = InvokeAsync(() =>
+    {
+        if (snapshot.Version <= _solution.Version) return;
+        var previous = _solution.State;
+        _solution = Workbench.Solutions.Snapshot;
+        if (_solution.State == SolutionLoadState.Closed) _view = ExplorerView.Folder;
+        else if (previous == SolutionLoadState.Closed) _view = ExplorerView.Solution;
+        StateHasChanged();
+    });
+
     private async Task OnRelocatedAsync(WorkspaceRelocation relocation)
     {
         if (Workbench.Documents is { } documents) await documents.RelocateAsync(relocation);
@@ -331,6 +407,7 @@
     {
         Workbench.Explorer.Changed -= OnChanged;
         Workbench.Explorer.Relocated -= OnRelocatedAsync;
+        Workbench.Solutions.Changed -= OnSolutionChanged;
         foreach (var registration in _registrations) registration.Dispose();
         _registrations.Clear();
         try

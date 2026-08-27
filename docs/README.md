@@ -36,6 +36,8 @@ The sequence is dependency order, not a promise that every phase has equal size.
   responsive behavior, and accessibility fixtures.
 - [Editor groups decision](decisions/0005-editor-groups.md) for bounded split layout ownership, shared Monaco models,
   per-view state, and persistence.
+- [Solution and Roslyn decision](decisions/0006-solution-and-roslyn-hosting.md) for in-process MSBuild evaluation, SDK-style inputs,
+  target-framework contexts, and single-writer workspace mutation.
 - [Workbench shell contract](workbench-shell.md) for region ownership, keyboard behavior, tokens, and visual fixtures.
 - [Supported platform matrix](delivery-plan.md#supported-platform-matrix) and its parity rule, which govern every phase equally.
 - [Language-server assets](language-server-assets.md) for automatic acquisition, pinned versions, hashes, and runtime policy.

@@ -283,6 +283,7 @@ jobs:
               dotnet run --project tools/NovaSharp.PhaseVerification/NovaSharp.PhaseVerification.csproj --no-build --
               --application "${{ matrix.application }}"
               --source src/NovaSharp/Workbench.cs
+              --solution NovaSharp.slnx
               --output "artifacts/verification/${{ matrix.rid }}/native-attempt-${attempt}"
               --fixture-name "${{ matrix.runner }} / ${{ matrix.rid }} / attempt ${attempt}"
               --cold-start-limit "${{ matrix.cold_start_limit }}"

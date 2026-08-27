@@ -47,6 +47,8 @@ public sealed class WorkbenchShellTests
         Assert.DoesNotContain("--sidebar-min", css, StringComparison.Ordinal);
         Assert.DoesNotContain("--sidebar-max", css, StringComparison.Ordinal);
         Assert.Contains(".workspace-tree { min-height: 0; overflow-x: hidden; overflow-y: auto;", css, StringComparison.Ordinal);
+        Assert.Contains(".explorer-view select { width: 100%;", css, StringComparison.Ordinal);
+        Assert.Contains(".tree-detail {", css, StringComparison.Ordinal);
         Assert.Contains(".bottom-panel { height: min(190px, 40vh); overflow-x: hidden;", css, StringComparison.Ordinal);
         Assert.Contains(".tabs-strip::-webkit-scrollbar { display: none; }", css, StringComparison.Ordinal);
         Assert.Matches(@"\.command-bar \{[^\r\n]*background: var\(--surface-region\);", css);
@@ -110,9 +112,12 @@ public sealed class WorkbenchShellTests
     {
         var shell = ReadContract("EditorPanel.razor");
         var menu = ReadContract("CommandMenu.razor");
+        var navigation = ReadContract("workbench-shell.js");
 
         Assert.Contains("_openCommandMenu == category", shell, StringComparison.Ordinal);
-        Assert.Contains("@onpointerdown=\"CloseCommandMenu\"", shell, StringComparison.Ordinal);
+        Assert.DoesNotContain("@onpointerdown=\"CloseCommandMenu\"", shell, StringComparison.Ordinal);
+        Assert.Contains("document.addEventListener('pointerdown', onPointerDown, true)", navigation, StringComparison.Ordinal);
+        Assert.Contains("DismissCommandMenusAsync", navigation, StringComparison.Ordinal);
         Assert.Contains("@onpointerdown:stopPropagation", menu, StringComparison.Ordinal);
         Assert.Contains("@oncontextmenu=\"CloseAsync\"", menu, StringComparison.Ordinal);
         Assert.Contains("@oncontextmenu:preventDefault", menu, StringComparison.Ordinal);

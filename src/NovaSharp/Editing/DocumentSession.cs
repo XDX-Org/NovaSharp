@@ -16,6 +16,9 @@ public enum ExternalChangeChoice
     Keep,
 }
 
+public sealed record DocumentReplicaChange(Uri DocumentUri, string Path, DocumentReplica Replica, long Sequence);
+public sealed record DocumentReplicaClose(Uri DocumentUri, bool WasDirty);
+
 /// <summary>
 /// One open document: its Monaco model, its .NET shadow, its file, and the commands that move text between them.
 /// </summary>
@@ -27,6 +30,11 @@ public enum ExternalChangeChoice
 /// </remarks>
 public sealed class DocumentSession : IAsyncDisposable
 {
+    private sealed record ExternalChangeObservation(
+        DocumentRecord? Record,
+        bool IsDirty,
+        ExternalChangeState? State);
+
     private readonly IEditorHost _host;
     private readonly DocumentLoader _loader;
     private readonly DocumentSaver _saver;
@@ -34,6 +42,7 @@ public sealed class DocumentSession : IAsyncDisposable
     private readonly IDocumentWatcher _watcher;
     private readonly BoundedWorkQueue _queue;
     private readonly SupersedingOperation _open = new();
+    private readonly SupersedingOperation _externalChange = new();
     private readonly Lock _gate = new();
 
     private readonly INotificationService _notifications;
@@ -97,6 +106,12 @@ public sealed class DocumentSession : IAsyncDisposable
 
     /// <summary>Raised whenever <see cref="Status"/> changes, possibly from a background thread.</summary>
     public event Func<DocumentStatus, Task>? StatusChanged;
+
+    /// <summary>Raised on the replica worker after ordered text reaches the .NET shadow.</summary>
+    public event Action<DocumentReplicaChange>? ReplicaChanged;
+
+    /// <summary>Raised when this session releases a document replica.</summary>
+    public event Action<DocumentReplicaClose>? ReplicaClosed;
 
     /// <summary>Whether closing now would lose the user's work.</summary>
     /// <remarks>
@@ -225,7 +240,7 @@ public sealed class DocumentSession : IAsyncDisposable
                     Settings.DefaultLineEnding,
                     foreground,
                     token),
-                AdoptAsync,
+                (opened, token) => AdoptAsync(opened, foreground, token),
                 cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception) when (IsFileFailure(exception))
@@ -236,9 +251,11 @@ public sealed class DocumentSession : IAsyncDisposable
         }
     }
 
-    private async Task AdoptAsync(OpenedDocument opened, CancellationToken cancellationToken)
+    private async Task AdoptAsync(OpenedDocument opened, bool activate, CancellationToken cancellationToken)
     {
-        var sequence = await _host.OpenDocumentAsync(opened.Content, cancellationToken).ConfigureAwait(false);
+        var sequence = activate
+            ? await _host.OpenDocumentAsync(opened.Content, cancellationToken).ConfigureAwait(false)
+            : await _host.PrepareDocumentAsync(opened.Content, cancellationToken).ConfigureAwait(false);
 
         // Replaced wholesale rather than reset: a new document is a new model, a new shadow, and a new pump, and
         // reusing any of them would carry the previous document's sequence into this one.
@@ -247,6 +264,7 @@ public sealed class DocumentSession : IAsyncDisposable
         var replica = new DocumentReplica(opened.Content.Text, sequence.Sequence, sequence.AlternativeSequence);
         var pump = new DocumentReplicationPump(replica, RequestSnapshotAsync);
         pump.ResyncFailed += OnResyncFailed;
+        pump.ReplicaAdvanced += OnReplicaAdvanced;
 
         lock (_gate)
         {
@@ -276,6 +294,7 @@ public sealed class DocumentSession : IAsyncDisposable
         }
 
         await PublishAsync(BuildStatus()).ConfigureAwait(false);
+        ReplicaChanged?.Invoke(new DocumentReplicaChange(opened.Record.Uri, opened.Record.Path, replica, replica.Sequence));
     }
 
     /// <summary>Reads the file as it is on disk right now, decoded the way the open document was.</summary>
@@ -551,15 +570,27 @@ public sealed class DocumentSession : IAsyncDisposable
                 .OpenAsync(record.Path, encoding ?? record.Encoding, Settings.DefaultLineEnding, cancellationToken)
                 .ConfigureAwait(false);
 
-            // Pushed as an edit with its own undo stop, so the model keeps its view state and the change stays undoable.
-            var sequence = await _host
-                .ReplaceDocumentAsync(record.Uri, opened.Content.Text, opened.Content.LineEnding, cancellationToken)
-                .ConfigureAwait(false);
+            var current = replica?.Snapshot();
+            var textChanged = current is null
+                || !string.Equals(current.Text, opened.Content.Text, StringComparison.Ordinal);
+            EditorSequence sequence;
+            if (textChanged)
+            {
+                // Pushed as an edit with its own undo stop, so the model keeps its view state and the change stays undoable.
+                sequence = await _host
+                    .ReplaceDocumentAsync(record.Uri, opened.Content.Text, opened.Content.LineEnding, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                sequence = new EditorSequence(current!.Sequence, current.AlternativeSequence);
+            }
 
-            // The shadow is set from the text that was just written into the model rather than read back out of it.
-            // The editor suppresses replication for its own replacement precisely so this is exact: one snapshot both
-            // sides already agree on, instead of a round trip to fetch what NovaSharp is holding anyway.
-            replica?.Resync(opened.Content.Text, sequence.Sequence, sequence.AlternativeSequence);
+            if (textChanged)
+            {
+                // The shadow is set from the text that was just written into the model rather than read back out of it.
+                replica?.Resync(opened.Content.Text, sequence.Sequence, sequence.AlternativeSequence);
+            }
 
             lock (_gate)
             {
@@ -567,6 +598,14 @@ public sealed class DocumentSession : IAsyncDisposable
                 _alternativeSequence = sequence.AlternativeSequence;
                 _externalChangeAcknowledged = false;
                 _status = _status with { ExternalChange = ExternalChangeState.None };
+            }
+            if (textChanged && replica is not null)
+            {
+                ReplicaChanged?.Invoke(new DocumentReplicaChange(
+                    opened.Record.Uri,
+                    opened.Record.Path,
+                    replica,
+                    sequence.Sequence));
             }
 
             _notifications.Dismiss(Scoped(NotificationIds.ExternalChange));
@@ -616,70 +655,94 @@ public sealed class DocumentSession : IAsyncDisposable
         return PublishAsync(BuildStatus());
     }
 
-    private void OnFileChanged()
+    private void OnFileChanged() => _ = ObserveExternalChangeAsync();
+
+    private async Task ObserveExternalChangeAsync()
     {
-        // The watcher fires on a background thread and knows only that something happened. Confirming it against the
-        // metadata NovaSharp recorded is what turns a stream of file-system noise into at most one question.
-        _ = _queue.EnqueueAsync(async _ =>
+        try
         {
-            DocumentRecord? record;
-            bool acknowledged;
-            bool isDirty;
-            lock (_gate)
+            await _externalChange.RunAsync(
+                token => _queue.EnqueueAsync(CheckExternalChangeAsync, token),
+                ApplyExternalChangeAsync).ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException) when (_disposed)
+        {
+        }
+    }
+
+    private Task<ExternalChangeObservation> CheckExternalChangeAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        DocumentRecord? record;
+        bool acknowledged;
+        bool isDirty;
+        lock (_gate)
+        {
+            record = _record;
+            acknowledged = _externalChangeAcknowledged;
+            isDirty = record is not null && record.IsDirty(_alternativeSequence);
+        }
+
+        if (record is null || acknowledged)
+        {
+            return Task.FromResult(new ExternalChangeObservation(record, isDirty, null));
+        }
+
+        var current = _store.GetState(record.Path);
+        ExternalChangeState? state = current.Matches(record.Disk)
+            ? null
+            : current.Exists ? ExternalChangeState.Modified : ExternalChangeState.Deleted;
+        return Task.FromResult(new ExternalChangeObservation(record, isDirty, state));
+    }
+
+    private async Task ApplyExternalChangeAsync(
+        ExternalChangeObservation observation,
+        CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            if (!ReferenceEquals(_record, observation.Record) || _externalChangeAcknowledged)
             {
-                record = _record;
-                acknowledged = _externalChangeAcknowledged;
-                isDirty = record is not null && record.IsDirty(_alternativeSequence);
+                return;
             }
+        }
+        if (observation.Record is not { } record || observation.State is not { } state)
+        {
+            return;
+        }
 
-            if (record is null || acknowledged)
+        // Reloading queues a separate file read, so it must happen after the metadata check has released its shared
+        // I/O worker. Re-entering the same bounded queue from a worker can deadlock every document and persistence read.
+        if (!observation.IsDirty && state == ExternalChangeState.Modified && Settings.ReloadUnmodifiedFiles)
+        {
+            await ReloadAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        lock (_gate)
+        {
+            if (!ReferenceEquals(_record, record))
             {
-                return false;
+                return;
             }
-
-            var current = _store.GetState(record.Path);
-            if (current.Matches(record.Disk))
-            {
-                return false;
-            }
-
-            var state = current.Exists ? ExternalChangeState.Modified : ExternalChangeState.Deleted;
-
-            // A clean document can simply follow the file, when the user has asked for that. A dirty one never loses
-            // text to a background event: the question is asked and the editor keeps what the user typed until they
-            // answer it.
-            if (!isDirty && state == ExternalChangeState.Modified && Settings.ReloadUnmodifiedFiles)
-            {
-                await ReloadAsync().ConfigureAwait(false);
-                return true;
-            }
-
-            var deleted = state == ExternalChangeState.Deleted;
-            _notifications.Raise(new Notification(
-                Scoped(NotificationIds.ExternalChange),
-                NotificationSeverity.Warning,
-                deleted
-                    ? $"{record.DisplayName} was deleted on disk. The editor still has your text."
-                    : $"{record.DisplayName} changed on disk.",
-                // Named as commands, so the buttons a notification offers are the same commands the palette and the
-                // toolbar invoke, with the same enablement.
-                deleted
-                    ? [new NotificationAction(WorkbenchCommands.KeepEditorText, "Keep my text", record.Uri.AbsoluteUri)]
-                    : [
-                        new NotificationAction(WorkbenchCommands.Compare, "Compare", record.Uri.AbsoluteUri),
-                        new NotificationAction(WorkbenchCommands.Reload, "Reload from disk", record.Uri.AbsoluteUri),
-                        new NotificationAction(WorkbenchCommands.KeepEditorText, "Keep my text", record.Uri.AbsoluteUri),
-                    ],
-                DateTimeOffset.UtcNow));
-
-            lock (_gate)
-            {
-                _status = _status with { ExternalChange = state };
-            }
-
-            await PublishAsync(BuildStatus()).ConfigureAwait(false);
-            return true;
-        });
+            _status = _status with { ExternalChange = state };
+        }
+        var deleted = state == ExternalChangeState.Deleted;
+        _notifications.Raise(new Notification(
+            Scoped(NotificationIds.ExternalChange),
+            NotificationSeverity.Warning,
+            deleted
+                ? $"{record.DisplayName} was deleted on disk. The editor still has your text."
+                : $"{record.DisplayName} changed on disk.",
+            deleted
+                ? [new NotificationAction(WorkbenchCommands.KeepEditorText, "Keep my text", record.Uri.AbsoluteUri)]
+                : [
+                    new NotificationAction(WorkbenchCommands.Compare, "Compare", record.Uri.AbsoluteUri),
+                    new NotificationAction(WorkbenchCommands.Reload, "Reload from disk", record.Uri.AbsoluteUri),
+                    new NotificationAction(WorkbenchCommands.KeepEditorText, "Keep my text", record.Uri.AbsoluteUri),
+                ],
+            DateTimeOffset.UtcNow));
+        await PublishAsync(BuildStatus()).ConfigureAwait(false);
     }
 
     private void OnResyncFailed(Exception exception) =>
@@ -770,6 +833,7 @@ public sealed class DocumentSession : IAsyncDisposable
             if (ReferenceEquals(_pump, pump)) _pump = null;
         }
         pump.ResyncFailed -= OnResyncFailed;
+        pump.ReplicaAdvanced -= OnReplicaAdvanced;
         await pump.DisposeAsync().ConfigureAwait(false);
         return replica.Snapshot();
     }
@@ -778,7 +842,24 @@ public sealed class DocumentSession : IAsyncDisposable
     {
         var replacement = new DocumentReplicationPump(replica, RequestSnapshotAsync);
         replacement.ResyncFailed += OnResyncFailed;
+        replacement.ReplicaAdvanced += OnReplicaAdvanced;
         return replacement;
+    }
+
+    private void OnReplicaAdvanced(long sequence)
+    {
+        DocumentRecord? record;
+        DocumentReplica? replica;
+        lock (_gate)
+        {
+            record = _record;
+            replica = _replica;
+        }
+
+        if (record is not null && replica is not null)
+        {
+            ReplicaChanged?.Invoke(new DocumentReplicaChange(record.Uri, record.Path, replica, sequence));
+        }
     }
 
     private void RestorePumpAfterFailedRelocation(DocumentReplica? replica)
@@ -795,9 +876,13 @@ public sealed class DocumentSession : IAsyncDisposable
     private async Task DisposeDocumentAsync()
     {
         DocumentReplicationPump? pump;
+        Uri? documentUri;
+        var wasDirty = false;
         lock (_gate)
         {
             pump = _pump;
+            documentUri = _record?.Uri;
+            wasDirty = _record?.IsDirty(_alternativeSequence) == true;
             _pump = null;
             _replica = null;
             _record = null;
@@ -806,7 +891,12 @@ public sealed class DocumentSession : IAsyncDisposable
         if (pump is not null)
         {
             pump.ResyncFailed -= OnResyncFailed;
+            pump.ReplicaAdvanced -= OnReplicaAdvanced;
             await pump.DisposeAsync().ConfigureAwait(false);
+        }
+        if (documentUri is not null)
+        {
+            ReplicaClosed?.Invoke(new DocumentReplicaClose(documentUri, wasDirty));
         }
     }
 
@@ -827,6 +917,7 @@ public sealed class DocumentSession : IAsyncDisposable
         // that is still draining edits into a replica nothing will read again.
         _watcher.Changed -= OnFileChanged;
         await _watcher.DisposeAsync().ConfigureAwait(false);
+        await _externalChange.DisposeAsync().ConfigureAwait(false);
         await _open.DisposeAsync().ConfigureAwait(false);
         await DisposeDocumentAsync().ConfigureAwait(false);
         foreach (var id in new[]

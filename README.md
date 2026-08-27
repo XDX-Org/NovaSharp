@@ -65,6 +65,11 @@ tabs move or copy by command or drag/drop, duplicate editors share one document 
 restore safely.
 Choose the optional Fast Mono font from View → Change Editor Font… or the command palette.
 
+Phase 6 implementation is ready for cross-platform qualification. Open an SDK-style `.sln`, `.slnx`, or `.csproj` from
+the Explorer, Workspace menu, command palette, or solution picker. NovaSharp displays evaluated project contexts, files,
+and references; keeps dirty editor replicas synchronized with Roslyn; reloads project state after relevant file changes;
+and offers a project-context selector for linked or multi-target documents. C# IntelliSense presentation remains phase 7.
+
 Expect:
 
 * Missing features
@@ -203,7 +208,8 @@ passes every gate through Phase 5 on all six supported runtime identifiers.
 > state, safe save and reload, encoding and line-ending handling, and external-change resolution — is in place.
 > The Phase 3 workspace Explorer implementation is also present, with lazy folders, bounded watcher recovery, file
 > operations, accessible incremental tree rendering, and versioned state. Phase 4's multi-document tab implementation
-> and Phase 5's editor groups and shared-model split views are complete and qualified. Phases 1–5 are complete: their implementation,
+> and Phase 5's editor groups and shared-model split views are complete and qualified. Phase 6's solution/Roslyn implementation is
+> awaiting six-row qualification. Phases 1–5 are complete: their implementation,
 > foundations, native host, browser behavior, performance, cancellation, disposal, packaging, and retained-evidence
 > gates pass on every supported runtime identifier.
 

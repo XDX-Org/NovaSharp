@@ -189,6 +189,102 @@ public sealed class EditorGroupManagerTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task RestoringRemainingSplitGroupReusesThePrimaryEditor()
+    {
+        await OpenAsync("first.cs");
+        await OpenAsync("second.cs");
+        var groups = await CreateGroupsAsync();
+        var firstView = groups.Snapshot.ActiveGroup.Tabs.Single(tab => tab.Label == "first.cs");
+        await groups.SplitAsync(EditorSplitDirection.Right, TestContext.Current.CancellationToken);
+        var remainingGroup = groups.Snapshot.ActiveGroupId;
+        await groups.RegisterGroupAsync(remainingGroup, default, TestContext.Current.CancellationToken);
+        await groups.CopyViewAsync(firstView.ViewId, remainingGroup, 0, TestContext.Current.CancellationToken);
+        await groups.CloseGroupAsync(EditorGroupManager.MainGroupId, discardDirty: false,
+            TestContext.Current.CancellationToken);
+        Assert.Equal(remainingGroup, groups.Snapshot.ActiveGroupId);
+        await groups.DisposeAsync();
+        _groups = null;
+
+        groups = await CreateGroupsAsync();
+
+        Assert.Equal(EditorGroupManager.MainGroupId, groups.Snapshot.ActiveGroupId);
+        Assert.Equal(EditorGroupManager.MainGroupId,
+            Assert.IsType<EditorGroupNodeSnapshot>(groups.Snapshot.Layout).GroupId);
+        Assert.Equal(["first.cs", "second.cs"], groups.Snapshot.ActiveGroup.Tabs.Select(tab => tab.Label));
+        Assert.Equal("first.cs", groups.Snapshot.ActiveTab!.Label);
+        Assert.Equal(groups.Snapshot.ActiveTab.DocumentUri, _host.UriForView(EditorGroupManager.MainGroupId));
+    }
+
+    [Fact]
+    public async Task RestoredSplitWithoutPrimaryGroupPreservesGroupTabsAndFocus()
+    {
+        await OpenAsync("first.cs");
+        await OpenAsync("second.cs");
+        var first = _documents.Snapshot.Tabs.Single(tab => tab.Label == "first.cs");
+        var second = _documents.Snapshot.Tabs.Single(tab => tab.Label == "second.cs");
+        await _persistence.UpdateAsync(state => state with
+        {
+            EditorLayout = new PersistedEditorLayout(
+                new PersistedEditorLayoutNode("split-restored", "split", Orientation: "Vertical", Ratio: 0.65,
+                    First: new PersistedEditorLayoutNode("group-left", "group", GroupId: "group-left"),
+                    Second: new PersistedEditorLayoutNode("group-right", "group", GroupId: "group-right")),
+                [
+                    new PersistedEditorGroup("group-left", [new PersistedEditorView("view-first", first.Id)],
+                        "view-first"),
+                    new PersistedEditorGroup("group-right", [new PersistedEditorView("view-second", second.Id)],
+                        "view-second"),
+                ],
+                "group-right"),
+        }, TestContext.Current.CancellationToken);
+
+        var groups = await CreateGroupsAsync();
+
+        var layout = Assert.IsType<EditorSplitNodeSnapshot>(groups.Snapshot.Layout);
+        Assert.Equal(EditorSplitOrientation.Vertical, layout.Orientation);
+        Assert.Equal(0.65, layout.Ratio);
+        Assert.Equal("group-left", Assert.IsType<EditorGroupNodeSnapshot>(layout.First).GroupId);
+        Assert.Equal(EditorGroupManager.MainGroupId, Assert.IsType<EditorGroupNodeSnapshot>(layout.Second).GroupId);
+        Assert.Equal(EditorGroupManager.MainGroupId, groups.Snapshot.ActiveGroupId);
+        Assert.Equal("first.cs", Assert.Single(groups.Snapshot.Groups["group-left"].Tabs).Label);
+        Assert.Equal("second.cs", Assert.Single(groups.Snapshot.ActiveGroup.Tabs).Label);
+        Assert.Equal(second.DocumentUri, _host.UriForView(EditorGroupManager.MainGroupId));
+    }
+
+    [Fact]
+    public async Task RestoredSplitAttachesEachDocumentToItsPersistedGroup()
+    {
+        await OpenAsync("first.cs");
+        await OpenAsync("second.cs");
+        var first = _documents.Snapshot.Tabs.Single(tab => tab.Label == "first.cs");
+        var second = _documents.Snapshot.Tabs.Single(tab => tab.Label == "second.cs");
+        const string secondaryGroup = "group-secondary";
+        await _persistence.UpdateAsync(state => state with
+        {
+            EditorLayout = new PersistedEditorLayout(
+                new PersistedEditorLayoutNode("split-restored", "split", Orientation: "Vertical", Ratio: 0.65,
+                    First: new PersistedEditorLayoutNode("main", "group", GroupId: "main"),
+                    Second: new PersistedEditorLayoutNode(secondaryGroup, "group", GroupId: secondaryGroup)),
+                [
+                    new PersistedEditorGroup("main", [new PersistedEditorView("view-first", first.Id)], "view-first"),
+                    new PersistedEditorGroup(secondaryGroup, [new PersistedEditorView("view-second", second.Id)],
+                        "view-second"),
+                ],
+                secondaryGroup),
+        }, TestContext.Current.CancellationToken);
+
+        var groups = await CreateGroupsAsync();
+
+        Assert.Equal(first.DocumentUri, _host.UriForView(EditorGroupManager.MainGroupId));
+        Assert.Equal(second.Id, _documents.Snapshot.ActiveId);
+
+        await groups.RegisterGroupAsync(secondaryGroup, default, TestContext.Current.CancellationToken);
+
+        Assert.Equal(first.DocumentUri, _host.UriForView(EditorGroupManager.MainGroupId));
+        Assert.Equal(second.DocumentUri, _host.UriForView(secondaryGroup));
+        Assert.Equal(secondaryGroup, groups.Snapshot.ActiveGroupId);
+    }
+
+    [Fact]
     public async Task SplitDepthAndGroupCountsAreBounded()
     {
         await OpenAsync("bounded.cs");

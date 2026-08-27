@@ -119,7 +119,17 @@ public sealed class MonacoEditorHost : IEditorHost
     }
 
     /// <inheritdoc />
-    public async ValueTask<EditorSequence> OpenDocumentAsync(DocumentContent content, CancellationToken cancellationToken)
+    public ValueTask<EditorSequence> OpenDocumentAsync(DocumentContent content, CancellationToken cancellationToken) =>
+        OpenDocumentCoreAsync(content, activate: true, cancellationToken);
+
+    /// <inheritdoc />
+    public ValueTask<EditorSequence> PrepareDocumentAsync(DocumentContent content, CancellationToken cancellationToken) =>
+        OpenDocumentCoreAsync(content, activate: false, cancellationToken);
+
+    private async ValueTask<EditorSequence> OpenDocumentCoreAsync(
+        DocumentContent content,
+        bool activate,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(content);
 
@@ -134,8 +144,9 @@ public sealed class MonacoEditorHost : IEditorHost
             content.LanguageId,
             streamReference,
             content.LineEnding,
-            content.ReadOnly).ConfigureAwait(false);
-        _viewDocuments[_activeViewId] = content.Uri;
+            content.ReadOnly,
+            activate).ConfigureAwait(false);
+        if (activate) _viewDocuments[_activeViewId] = content.Uri;
         return sequence;
     }
 

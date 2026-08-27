@@ -4,10 +4,11 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using NovaSharp.Editing;
+using NovaSharp.Solutions;
 
 namespace NovaSharp.Verification;
 
-internal sealed record NativeSmokeTestOptions(string SourcePath, string ResultPath, string ProfilePath);
+internal sealed record NativeSmokeTestOptions(string SourcePath, string SolutionPath, string ResultPath, string ProfilePath);
 
 internal sealed record NativeSmokeTestResult(
     bool Success,
@@ -19,6 +20,8 @@ internal sealed record NativeSmokeTestResult(
     long WorkingSetBytes,
     EditorRuntimeInfo? Editor,
     int DocumentLength,
+    bool SolutionLoaded,
+    int ProjectContexts,
     string? Error);
 
 /// <summary>Drives the packaged application without dialogs for the phase 1–2 native-host gate.</summary>
@@ -27,6 +30,7 @@ internal static class NativeSmokeTest
     private const string SourceOption = "--phase-smoke-source";
     private const string ResultOption = "--phase-smoke-result";
     private const string ProfileOption = "--phase-smoke-profile";
+    private const string SolutionOption = "--phase-smoke-solution";
 
     private static readonly Stopwatch Startup = Stopwatch.StartNew();
     private static NativeSmokeTestOptions? _options;
@@ -41,12 +45,13 @@ internal static class NativeSmokeTest
         string? source = null;
         string? result = null;
         string? profile = null;
+        string? solution = null;
         var remaining = new List<string>(args.Length);
 
         for (var index = 0; index < args.Length; index++)
         {
             var argument = args[index];
-            if (argument is not SourceOption and not ResultOption and not ProfileOption)
+            if (argument is not SourceOption and not ResultOption and not ProfileOption and not SolutionOption)
             {
                 remaining.Add(argument);
                 continue;
@@ -65,26 +70,31 @@ internal static class NativeSmokeTest
             {
                 result = args[index];
             }
-            else
+            else if (argument == ProfileOption)
             {
                 profile = args[index];
             }
+            else
+            {
+                solution = args[index];
+            }
         }
 
-        if (source is null || result is null || profile is null)
+        if (source is null || result is null || profile is null || solution is null)
         {
-            if (source is not null || result is not null || profile is not null)
+            if (source is not null || result is not null || profile is not null || solution is not null)
             {
                 throw new ArgumentException(
-                    $"{SourceOption}, {ResultOption}, and {ProfileOption} must be supplied together.",
+                    $"{SourceOption}, {SolutionOption}, {ResultOption}, and {ProfileOption} must be supplied together.",
                     nameof(args));
             }
         }
 
-        if (source is not null && result is not null && profile is not null)
+        if (source is not null && solution is not null && result is not null && profile is not null)
         {
             _options = new NativeSmokeTestOptions(
                 Path.GetFullPath(source),
+                Path.GetFullPath(solution),
                 Path.GetFullPath(result),
                 Path.GetFullPath(profile));
         }
@@ -119,21 +129,28 @@ internal static class NativeSmokeTest
             CompactHeap();
 
             process.Refresh();
+            var workingSetBytes = process.WorkingSet64;
+            await Workbench.Solutions.OpenAsync(options.SolutionPath, cancellationToken).ConfigureAwait(false);
+            var solution = Workbench.Solutions.Snapshot;
             result = new NativeSmokeTestResult(
                 Success: session.Status.IsOpen &&
                     replica is not null &&
                     editor.DocumentLength == replica.Length &&
                     editor.DedicatedWorker &&
                     editor.ModelCount == 1 &&
-                    editor.ExternalRequestCount == 0,
+                    editor.ExternalRequestCount == 0 &&
+                    solution.State == SolutionLoadState.Ready &&
+                    solution.Projects.Count >= 6,
                 RuntimeInformation.RuntimeIdentifier,
                 RuntimeInformation.OSDescription,
                 RuntimeInformation.OSArchitecture,
                 interactiveEditorMilliseconds,
                 baselineWorkingSetBytes,
-                process.WorkingSet64,
+                workingSetBytes,
                 editor,
                 editor.DocumentLength,
+                solution.State == SolutionLoadState.Ready,
+                solution.Projects.Count,
                 Error: null);
         }
         catch (Exception exception)
@@ -148,6 +165,8 @@ internal static class NativeSmokeTest
                 WorkingSetBytes: 0,
                 Editor: null,
                 DocumentLength: 0,
+                SolutionLoaded: false,
+                ProjectContexts: 0,
                 Error: exception.ToString());
         }
 

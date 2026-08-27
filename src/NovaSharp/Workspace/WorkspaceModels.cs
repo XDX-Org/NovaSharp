@@ -54,6 +54,10 @@ public enum WorkspaceChangeKind
     Renamed,
 }
 
-public sealed record WorkspaceChange(WorkspaceChangeKind Kind, string Path, string? OldPath = null);
+public sealed record WorkspaceChange(
+    WorkspaceChangeKind Kind,
+    string Path,
+    string? OldPath = null,
+    long ObservedTimestamp = 0);
 
 public sealed record WorkspaceChangeBatch(IReadOnlyList<WorkspaceChange> Changes, bool Overflowed = false);

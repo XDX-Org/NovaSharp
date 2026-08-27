@@ -122,6 +122,9 @@ public sealed class EditorGroupManager : IAsyncDisposable
                 if (!restored) CreateDefaultLayout(documents);
                 EnsureEveryDocumentHasAView(documents);
             }
+            GroupState? primary;
+            lock (_gate) primary = _activeGroupId == MainGroupId ? null : _groups.GetValueOrDefault(MainGroupId);
+            if (primary is not null) await AttachGroupAsync(primary, focus: false, cancellationToken).ConfigureAwait(false);
             await ActivateCurrentAsync(focus: false, cancellationToken).ConfigureAwait(false);
             Publish();
             QueuePersist();
@@ -152,7 +155,8 @@ public sealed class EditorGroupManager : IAsyncDisposable
             if (active is not null)
             {
                 await _host.SetActiveViewAsync(group.Id, cancellationToken).ConfigureAwait(false);
-                await _documents.ActivateAsync(active.DocumentId, cancellationToken).ConfigureAwait(false);
+                if (_documents.Snapshot.ActiveId != active.DocumentId)
+                    await _documents.ActivateAsync(active.DocumentId, cancellationToken).ConfigureAwait(false);
             }
             await AttachGroupAsync(group, focus, cancellationToken).ConfigureAwait(false);
         }
@@ -643,7 +647,8 @@ public sealed class EditorGroupManager : IAsyncDisposable
             if (group.IsMounted) await _host.ClearViewAsync(group.Id, cancellationToken).ConfigureAwait(false);
             return;
         }
-        await _documents.ActivateAsync(view.DocumentId, cancellationToken).ConfigureAwait(false);
+        if (_documents.Snapshot.ActiveId != view.DocumentId)
+            await _documents.ActivateAsync(view.DocumentId, cancellationToken).ConfigureAwait(false);
         await AttachGroupAsync(group, focus, cancellationToken).ConfigureAwait(false);
     }
 
@@ -708,12 +713,29 @@ public sealed class EditorGroupManager : IAsyncDisposable
             }
             if (leaves.Any(id => !groups.ContainsKey(id))) return false;
             if (groups.Count > 1 && groups.Values.Any(group => group.Views.Count == 0)) return false;
+            var activeGroupId = groups.ContainsKey(persisted.ActiveGroupId) ? persisted.ActiveGroupId : leaves[0];
+            if (!groups.ContainsKey(MainGroupId))
+            {
+                if (nodeIds.Contains(MainGroupId, StringComparer.Ordinal)) return false;
+                var original = groups[activeGroupId];
+                var primary = new GroupState
+                {
+                    Id = MainGroupId,
+                    ActiveViewId = original.ActiveViewId,
+                    IsMounted = true,
+                };
+                primary.Views.AddRange(original.Views);
+                groups.Remove(original.Id);
+                groups.Add(primary.Id, primary);
+                layout = ReplaceGroup(layout, original.Id, new EditorGroupNodeSnapshot(primary.Id));
+                activeGroupId = primary.Id;
+            }
             lock (_gate)
             {
                 _groups.Clear();
                 foreach (var item in groups) _groups.Add(item.Key, item.Value);
                 _layout = layout;
-                _activeGroupId = groups.ContainsKey(persisted.ActiveGroupId) ? persisted.ActiveGroupId : leaves[0];
+                _activeGroupId = activeGroupId;
             }
             return true;
         }

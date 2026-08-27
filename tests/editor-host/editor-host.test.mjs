@@ -241,7 +241,6 @@ try {
     }, SOURCE);
 
     check('the editor mounts from the packaged bundle', await page.locator('.monaco-editor').count() > 0);
-
     const info = await page.evaluate(() => globalThis.editor.runtimeInfo());
 
     check('a real dedicated worker started, not a main-thread fallback', info.dedicatedWorker === true);
@@ -251,6 +250,40 @@ try {
     check('exactly one model is open', info.modelCount === 1, String(info.modelCount));
     check('the page reported no off-origin resource loads', info.externalRequestCount === 0, String(info.externalRequestCount));
     check('no request left the application origin', offOriginRequests.length === 0, offOriginRequests.join('; '));
+    const inactiveRestore = await page.evaluate(async () => {
+        const activeEditor = globalThis.NovaMonaco.editor.getEditors()[0];
+        const originalState = activeEditor.saveViewState();
+        activeEditor.setSelection(new globalThis.NovaMonaco.Selection(1, 1, 1, 10));
+        activeEditor.focus();
+        const focused = document.activeElement;
+        const selected = activeEditor.getSelection().toString();
+        const sequence = await globalThis.editor.openDocumentStreamInView(
+            'main',
+            'file:///workspace/Background.cs',
+            'csharp',
+            new Blob(['class Background;\n']),
+            '\n',
+            false,
+            false);
+        const result = {
+            activeUri: activeEditor.getModel().uri.toString(),
+            selected: activeEditor.getSelection().toString(),
+            retainedSelection: activeEditor.getSelection().toString() === selected,
+            retainedFocus: document.activeElement === focused,
+            modelCount: globalThis.NovaMonaco.editor.getModels().length,
+            sequence: sequence.sequence,
+        };
+        activeEditor.restoreViewState(originalState);
+        globalThis.editor.closeDocument('file:///workspace/Background.cs');
+        return result;
+    });
+    check('background document restoration preserves the active editor, selection, and focus',
+        inactiveRestore.activeUri === 'file:///workspace/Widget.cs'
+            && inactiveRestore.retainedSelection
+            && inactiveRestore.retainedFocus
+            && inactiveRestore.modelCount === 2
+            && inactiveRestore.sequence === 1,
+        JSON.stringify(inactiveRestore));
     const primaryRemount = await page.evaluate(() => {
         const original = document.getElementById('host');
         const replacement = document.createElement('div');

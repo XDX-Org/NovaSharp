@@ -1,0 +1,93 @@
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.JSInterop
+@using NovaSharp.Shell
+@using NovaSharp.Solutions
+@inject IJSRuntime JSRuntime
+
+<div role="treeitem"
+     aria-expanded="@(Node.CanExpand ? Expanded.Contains(Node.Id) : null)"
+     aria-selected="@(Node.Id == SelectedId)"
+     class="tree-item @(Node.Id == SelectedId ? "selected" : null)"
+     data-node-id="@Node.Id">
+    <button type="button" class="tree-row" style="padding-left: @(8 + Level * 16)px"
+            title="@Node.Path" tabindex="0"
+            draggable="@(Node.Kind == SolutionExplorerNodeKind.Document ? "true" : null)"
+            data-workspace-path="@(Node.Kind == SolutionExplorerNodeKind.Document ? Node.Path : null)"
+            data-workspace-kind="@(Node.Kind == SolutionExplorerNodeKind.Document ? "file" : null)"
+            @onclick="ClickAsync" @onkeydown="OnKeyDownAsync">
+        <span class="tree-twist" aria-hidden="true">
+            @if (Node.CanExpand)
+            {
+                <ShellIcon Name="@(Expanded.Contains(Node.Id) ? SemanticIcon.ChevronDown : SemanticIcon.ChevronRight)" />
+            }
+        </span>
+        <ShellIcon Name="@Icon(Node.Kind)" CssClass="tree-icon" />
+        <span class="tree-name">@Node.Name</span>
+        @if (Node.Detail is not null)
+        {
+            <span class="tree-detail">@Node.Detail</span>
+        }
+    </button>
+    @if (Node.CanExpand && Expanded.Contains(Node.Id))
+    {
+        <div role="group">
+            @foreach (var child in Node.Children.Take(_visibleChildren))
+            {
+                <SolutionTreeNode @key="child.Id" Node="child" Level="@(Level + 1)"
+                                  Expanded="Expanded" SelectedId="SelectedId"
+                                  OnSelect="OnSelect" OnToggle="OnToggle" OnOpen="OnOpen" />
+            }
+            @if (Node.Children.Count > _visibleChildren)
+            {
+                <button type="button" class="tree-more" style="margin-left: @(24 + Level * 16)px" @onclick="ShowMore">
+                    Show next @Math.Min(250, Node.Children.Count - _visibleChildren) of @(Node.Children.Count - _visibleChildren)
+                </button>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public SolutionExplorerNode Node { get; set; } = null!;
+    [Parameter, EditorRequired] public IReadOnlySet<string> Expanded { get; set; } = null!;
+    [Parameter] public int Level { get; set; }
+    [Parameter] public string? SelectedId { get; set; }
+    [Parameter] public EventCallback<SolutionExplorerNode> OnSelect { get; set; }
+    [Parameter] public EventCallback<string> OnToggle { get; set; }
+    [Parameter] public EventCallback<string> OnOpen { get; set; }
+
+    private int _visibleChildren = 250;
+
+    private void ShowMore() => _visibleChildren += 250;
+
+    private async Task ClickAsync()
+    {
+        await OnSelect.InvokeAsync(Node);
+        if (Node.CanExpand) await OnToggle.InvokeAsync(Node.Id);
+        else if (Node.Kind == SolutionExplorerNodeKind.Document && Node.Path is not null)
+            await OnOpen.InvokeAsync(Node.Path);
+    }
+
+    private async Task OnKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (args.Key is "Enter" or " ") await ClickAsync();
+        else if (args.Key == "ArrowRight" && Node.CanExpand && !Expanded.Contains(Node.Id))
+            await OnToggle.InvokeAsync(Node.Id);
+        else if (args.Key == "ArrowLeft" && Node.CanExpand && Expanded.Contains(Node.Id))
+            await OnToggle.InvokeAsync(Node.Id);
+        else if (args.Key == "ArrowLeft") await JSRuntime.InvokeVoidAsync("NovaWorkspace.focus", Node.Id, "parent");
+        else if (args.Key == "ArrowRight" && Node.CanExpand) await JSRuntime.InvokeVoidAsync("NovaWorkspace.focus", Node.Id, "child");
+        else if (args.Key == "ArrowDown") await JSRuntime.InvokeVoidAsync("NovaWorkspace.focus", Node.Id, "next");
+        else if (args.Key == "ArrowUp") await JSRuntime.InvokeVoidAsync("NovaWorkspace.focus", Node.Id, "previous");
+        else if (args.Key == "Home") await JSRuntime.InvokeVoidAsync("NovaWorkspace.focus", Node.Id, "first");
+        else if (args.Key == "End") await JSRuntime.InvokeVoidAsync("NovaWorkspace.focus", Node.Id, "last");
+    }
+
+    private static SemanticIcon Icon(SolutionExplorerNodeKind kind) => kind switch
+    {
+        SolutionExplorerNodeKind.Solution or SolutionExplorerNodeKind.Project => SemanticIcon.Solution,
+        SolutionExplorerNodeKind.Folder or SolutionExplorerNodeKind.Dependencies => SemanticIcon.Folder,
+        SolutionExplorerNodeKind.Document => SemanticIcon.FileCode,
+        _ => SemanticIcon.File,
+    };
+}

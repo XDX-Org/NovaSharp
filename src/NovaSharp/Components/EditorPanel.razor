@@ -6,6 +6,7 @@
 @using NovaSharp.Editing
 @using NovaSharp.Platform
 @using NovaSharp.Shell
+@using NovaSharp.Solutions
 @using NovaSharp.Text
 @using NovaSharp.Verification
 @using NovaSharp.Workspace
@@ -13,7 +14,7 @@
 @implements IAsyncDisposable
 @inject IJSRuntime JSRuntime
 
-<main class="workbench" @onpointerdown="CloseCommandMenu">
+<main class="workbench">
     <header class="command-bar" role="region" aria-label="Global command bar">
         <div class="brand" aria-label="NovaSharp">
             <img src="workbench-assets/nova-mark.png" alt="" />
@@ -42,7 +43,7 @@
           <section class="editor-panel">
             <div class="editor-groups-root @(_status.IsComparing ? "hidden" : null) @(_draggedViewId is null && _draggedWorkspacePath is null ? null : "dragging")"
                  @ref="_editorGroupsRoot">
-                <EditorGroupPane Node="_groups.Layout" Snapshot="_groups"
+                <EditorGroupPane @key="_groups.Layout.Id" Node="_groups.Layout" Snapshot="_groups"
                                  OnGroupReady="GroupReadyAsync" OnActivate="ActivateTabAsync"
                                  OnPromote="PromoteTabAsync" OnClose="CloseGroupTabAsync"
                                  OnContextMenu="OpenTabContextAsync" OnDragStart="BeginTabDrag"
@@ -110,6 +111,18 @@
             @if (_status.IsReadOnly) { <span class="status-item badge">Read-only</span> }
         }
         @if (_groups.ActiveTab?.IsMissing == true) { <span class="status-item badge">Missing file</span> }
+        @if (_contexts.Count > 1)
+        {
+            <label class="status-context">Project context
+                <select aria-label="Active project context" value="@_contexts.FirstOrDefault(static context => context.IsActive)?.ProjectId.Id"
+                        @onchange="SelectProjectContextAsync">
+                    @foreach (var context in _contexts)
+                    {
+                        <option value="@context.ProjectId.Id">@context.ProjectName @context.TargetFramework</option>
+                    }
+                </select>
+            </label>
+        }
     </footer>
 
     @if (_lineEndingPickerOpen)
@@ -205,6 +218,7 @@
     private LineEndingStyle _pickedLineEnding = LineEndingStyle.Lf;
     private EditorFontPreference _pickedEditorFont = EditorFontPreference.Default;
     private FrozenDictionary<string, bool> _representable = FrozenDictionary<string, bool>.Empty;
+    private IReadOnlyList<RoslynDocumentContext> _contexts = [];
     private DotNetObjectReference<EditorPanel>? _shellBridge;
     private EditorGroupsSnapshot _groups = EmptyGroups();
 
@@ -268,6 +282,7 @@
             Workbench.Documents = documents;
             documents.Changed += OnTabsChanged;
             Workbench.Configuration.Changed += OnConfigurationChanged;
+            Workbench.Solutions.Changed += OnSolutionChanged;
             RegisterCommands();
 
             _shellBridge = DotNetObjectReference.Create(this);
@@ -289,6 +304,7 @@
             await groups.RestoreAsync();
             _groups = groups.Snapshot;
             _status = documents.ActiveDocument?.Status ?? new();
+            RefreshProjectContexts();
         }
         catch (Exception exception) when (exception is JSException or JSDisconnectedException)
         {
@@ -399,6 +415,7 @@
         var wasComparing = _status.IsComparing;
         _tabs = tabs;
         _status = _documents?.ActiveDocument?.Status ?? new();
+        RefreshProjectContexts();
         if (wasComparing && !_status.IsComparing) _diffAttached = false;
         StateHasChanged();
     });
@@ -407,8 +424,30 @@
     {
         _groups = groups;
         _status = _documents?.ActiveDocument?.Status ?? new();
+        RefreshProjectContexts();
         StateHasChanged();
     });
+
+    private void OnSolutionChanged(SolutionWorkspaceSnapshot snapshot) => _ = InvokeAsync(() =>
+    {
+        var previous = _contexts;
+        RefreshProjectContexts();
+        if (_contexts.SequenceEqual(previous)) return;
+        StateHasChanged();
+    });
+
+    private void RefreshProjectContexts() => _contexts = Active?.DocumentUri is { } uri
+        ? Workbench.Solutions.GetDocumentContexts(uri)
+        : [];
+
+    private async Task SelectProjectContextAsync(ChangeEventArgs args)
+    {
+        if (Active?.DocumentUri is not { } uri || args.Value is not string id) return;
+        var context = _contexts.FirstOrDefault(item => item.ProjectId.Id.ToString() == id);
+        if (context is null) return;
+        await Workbench.Solutions.SetActiveContextAsync(uri, context.ProjectId);
+        RefreshProjectContexts();
+    }
 
     private void OnNotificationsChanged(IReadOnlyList<Notification> notifications) => _ = InvokeAsync(() =>
     {
@@ -502,7 +541,8 @@
     {
         if (_groupManager is null) return;
         var viewId = _draggedViewId;
-        var workspacePath = _draggedWorkspacePath;
+        var workspacePath = _draggedWorkspacePath
+            ?? await JSRuntime.InvokeAsync<string?>("NovaEditorGroups.takeDroppedWorkspaceFile", _editorGroupsRoot);
         _draggedViewId = null;
         _draggedWorkspacePath = null;
         if (viewId is not null)
@@ -520,7 +560,8 @@
     {
         if (_groupManager is null) return;
         var viewId = _draggedViewId;
-        var workspacePath = _draggedWorkspacePath;
+        var workspacePath = _draggedWorkspacePath
+            ?? await JSRuntime.InvokeAsync<string?>("NovaEditorGroups.takeDroppedWorkspaceFile", _editorGroupsRoot);
         _draggedViewId = null;
         _draggedWorkspacePath = null;
         if (viewId is not null)
@@ -773,6 +814,7 @@
         if (_documents is not null)
         {
             _documents.Changed -= OnTabsChanged;
+            Workbench.Solutions.Changed -= OnSolutionChanged;
             await _documents.DisposeAsync();
             if (ReferenceEquals(Workbench.Documents, _documents)) Workbench.Documents = null;
             _documents = null;

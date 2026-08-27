@@ -56,6 +56,10 @@ public static class WorkbenchCommands
     public const string RefreshWorkspace = "novasharp.workspace.refresh";
     public const string ToggleExplorer = "novasharp.workspace.toggleExplorer";
     public const string RevealActiveFile = "novasharp.workspace.revealActiveFile";
+    public const string OpenSolution = "novasharp.solution.open";
+    public const string ReloadSolution = "novasharp.solution.reload";
+    public const string CancelSolutionLoad = "novasharp.solution.cancelLoad";
+    public const string CloseSolution = "novasharp.solution.close";
 
     public const string ShowCommandPalette = "novasharp.workbench.showCommandPalette";
     public const string TogglePanel = "novasharp.workbench.togglePanel";
@@ -103,6 +107,10 @@ public static class WorkbenchCommands
         RefreshWorkspace => new CommandDescriptor(RefreshWorkspace, "Refresh Explorer", "Workspace", [], ShowInPalette: true),
         ToggleExplorer => new CommandDescriptor(ToggleExplorer, "Toggle Explorer", "View", ["CtrlCmd+B"], ShowInPalette: true),
         RevealActiveFile => new CommandDescriptor(RevealActiveFile, "Reveal Active File in Explorer", "Workspace", [], ShowInPalette: true),
+        OpenSolution => new CommandDescriptor(OpenSolution, "Open Solution or Project…", "Workspace", [], ShowInPalette: true),
+        ReloadSolution => new CommandDescriptor(ReloadSolution, "Reload Solution", "Workspace", [], ShowInPalette: true),
+        CancelSolutionLoad => new CommandDescriptor(CancelSolutionLoad, "Cancel Solution Load", "Workspace", [], ShowInPalette: true),
+        CloseSolution => new CommandDescriptor(CloseSolution, "Close Solution", "Workspace", [], ShowInPalette: true),
         ShowCommandPalette => new CommandDescriptor(ShowCommandPalette, "Show Command Palette", "View", ["CtrlCmd+Shift+P"], ShowInPalette: true),
         TogglePanel => new CommandDescriptor(TogglePanel, "Toggle Bottom Panel", "View", ["CtrlCmd+J"], ShowInPalette: true),
         ChooseEditorFont => new CommandDescriptor(ChooseEditorFont, "Change Editor Font…", "View", [], ShowInPalette: true),
@@ -125,6 +133,7 @@ public static class WorkbenchCommands
         Open, Save, SaveAs, Reload, Compare, EndCompare, KeepEditorText, ChooseEncoding, ChooseLineEnding,
         Close, CloseOthers, CloseRight, CloseSaved, CloseAll, MoveTabLeft, MoveTabRight, PreviousTab, NextTab, PinTab,
         OpenWorkspace, CloseWorkspace, RefreshWorkspace, ToggleExplorer, RevealActiveFile,
+        OpenSolution, ReloadSolution, CancelSolutionLoad, CloseSolution,
         ShowCommandPalette, TogglePanel, ChooseEditorFont,
         SplitEditorLeft, SplitEditorRight, SplitEditorUp, SplitEditorDown,
         FocusPreviousGroup, FocusNextGroup, MoveEditorToNextGroup, CopyEditorToNextGroup,

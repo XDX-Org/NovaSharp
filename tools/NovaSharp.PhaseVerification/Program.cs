@@ -2,9 +2,10 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using NovaSharp.Async;
-using NovaSharp.Editing;
 using NovaSharp.Diagnostics;
+using NovaSharp.Editing;
 using NovaSharp.Platform;
+using NovaSharp.Solutions;
 using NovaSharp.Text;
 using NovaSharp.Workspace;
 
@@ -51,6 +52,7 @@ finally
 
 var managed = await RunManagedPerformanceAsync(options);
 var workspace = await RunWorkspacePerformanceAsync();
+var solution = await RunSolutionPerformanceAsync(options.SolutionPath, options.SourcePath);
 var failures = new List<string>();
 
 Check(provisioning.Success, "browser profile provisioning", provisioning.Error);
@@ -85,6 +87,26 @@ Check(workspace.WatcherRecoveryMilliseconds <= 2_000,
     "Explorer watcher recovery <= 2,000 ms", $"{workspace.WatcherRecoveryMilliseconds:F2} ms");
 Check(workspace.WatcherCapacity == 1_024,
     "Explorer watcher queue capacity is 1,024", workspace.WatcherCapacity.ToString());
+Check(solution.LoadMilliseconds <= 20_000,
+    "representative solution load <= 20,000 ms", $"{solution.LoadMilliseconds:F2} ms");
+Check(solution.ReloadMilliseconds <= 15_000,
+    "representative solution reload <= 15,000 ms", $"{solution.ReloadMilliseconds:F2} ms");
+Check(solution.ForegroundReplicaMilliseconds <= 500,
+    "foreground Roslyn replica barrier <= 500 ms", $"{solution.ForegroundReplicaMilliseconds:F2} ms");
+Check(solution.FirstSemanticModelMilliseconds <= 5_000,
+    "first semantic model <= 5,000 ms", $"{solution.FirstSemanticModelMilliseconds:F2} ms");
+Check(solution.ManagedMemoryIncreaseBytes <= 384L * 1024 * 1024,
+    "solution workspace managed memory <= 384 MB", $"{solution.ManagedMemoryIncreaseBytes / 1024 / 1024} MB");
+Check(solution.RetainedRoslynSnapshots == 1,
+    "one current Roslyn snapshot retained", solution.RetainedRoslynSnapshots.ToString());
+Check(solution.MutationCapacity == 128 && solution.PendingMutations <= solution.MutationCapacity,
+    "Roslyn mutation queue stays within its 128-item bound", $"{solution.PendingMutations}/{solution.MutationCapacity}");
+Check(solution.ReplicaCapacity == 1_024 && solution.RetainedReplicas <= solution.ReplicaCapacity,
+    "Roslyn replica cache stays within its 1,024-source bound", $"{solution.RetainedReplicas}/{solution.ReplicaCapacity}");
+Check(solution.ProjectContexts >= 6,
+    "representative SDK project contexts loaded", solution.ProjectContexts.ToString());
+Check(solution.LinkedDocumentContexts >= 2,
+    "linked document maps to multiple contexts", solution.LinkedDocumentContexts.ToString());
 
 var record = new VerificationRecord(
     options.FixtureName,
@@ -100,8 +122,9 @@ var record = new VerificationRecord(
     large,
     managed,
     workspace,
+    solution,
     failures);
-var recordPath = Path.Combine(options.OutputDirectory, "phase-01-03-native.json");
+var recordPath = Path.Combine(options.OutputDirectory, "phase-01-06-native.json");
 await File.WriteAllTextAsync(
     recordPath,
     JsonSerializer.Serialize(record, Serialization.JsonOptions),
@@ -134,6 +157,8 @@ static async Task<NativeResult> RunAsync(
     };
     start.ArgumentList.Add("--phase-smoke-source");
     start.ArgumentList.Add(sourcePath ?? options.SourcePath);
+    start.ArgumentList.Add("--phase-smoke-solution");
+    start.ArgumentList.Add(options.SolutionPath);
     start.ArgumentList.Add("--phase-smoke-result");
     start.ArgumentList.Add(resultPath);
     start.ArgumentList.Add("--phase-smoke-profile");
@@ -378,6 +403,73 @@ static async Task<WorkspacePerformanceRecord> RunWorkspacePerformanceAsync()
     }
 }
 
+static async Task<SolutionPerformanceRecord> RunSolutionPerformanceAsync(string solutionPath, string sourcePath)
+{
+    GC.Collect(2, GCCollectionMode.Aggressive, blocking: true, compacting: true);
+    var memoryBefore = GC.GetTotalMemory(forceFullCollection: true);
+    var paths = new WorkspacePaths();
+    var log = new BoundedWorkbenchLog();
+    var notifications = new NotificationService(log);
+    await using var queue = new BoundedWorkQueue(32, 2);
+    await using var service = new SolutionWorkspaceService(
+        paths,
+        new MSBuildSolutionLoader(),
+        queue,
+        new DiagnosticStore(),
+        notifications,
+        log);
+
+    var loadStarted = Stopwatch.GetTimestamp();
+    await service.OpenAsync(solutionPath);
+    var loadMilliseconds = Stopwatch.GetElapsedTime(loadStarted).TotalMilliseconds;
+    if (service.Snapshot.State != SolutionLoadState.Ready)
+    {
+        throw new InvalidOperationException(service.Snapshot.Error ?? "The representative solution did not load.");
+    }
+
+    var sourceUri = paths.ToDocumentUri(sourcePath);
+    var contexts = service.GetDocumentContexts(sourceUri);
+    if (contexts.Count == 0)
+    {
+        throw new InvalidOperationException("The phase source file has no Roslyn context.");
+    }
+    var text = await File.ReadAllTextAsync(sourcePath);
+    var replica = new DocumentReplica(text + "\n", 1, 1);
+    var replicaStarted = Stopwatch.GetTimestamp();
+    service.QueueReplica(new DocumentReplicaChange(sourceUri, sourcePath, replica, 1));
+    await service.WaitForReplicaAsync(sourceUri, 1);
+    var replicaMilliseconds = Stopwatch.GetElapsedTime(replicaStarted).TotalMilliseconds;
+
+    var semanticStarted = Stopwatch.GetTimestamp();
+    var semanticModel = await service.CurrentSolution!.GetDocument(contexts[0].DocumentId)!.GetSemanticModelAsync();
+    if (semanticModel is null)
+    {
+        throw new InvalidOperationException("Roslyn did not produce a semantic model.");
+    }
+    var semanticMilliseconds = Stopwatch.GetElapsedTime(semanticStarted).TotalMilliseconds;
+
+    var reloadStarted = Stopwatch.GetTimestamp();
+    await service.ReloadAsync();
+    var reloadMilliseconds = Stopwatch.GetElapsedTime(reloadStarted).TotalMilliseconds;
+    var memoryAfter = GC.GetTotalMemory(forceFullCollection: true);
+    var linkedPath = Path.Combine(Path.GetDirectoryName(solutionPath)!, "tests", "fixtures", "phase-06", "Shared.cs");
+    var metrics = service.CurrentMetrics;
+
+    return new SolutionPerformanceRecord(
+        service.Snapshot.Projects.Count,
+        service.GetDocumentContexts(paths.ToDocumentUri(linkedPath)).Count,
+        loadMilliseconds,
+        reloadMilliseconds,
+        replicaMilliseconds,
+        semanticMilliseconds,
+        Math.Max(0, memoryAfter - memoryBefore),
+        metrics.RetainedRoslynSnapshots,
+        metrics.MutationQueueCapacity,
+        metrics.PendingMutations,
+        metrics.ReplicaCapacity,
+        metrics.RetainedReplicas);
+}
+
 static string CreateLargeDocument()
 {
     const int length = 10 * 1024 * 1024;
@@ -400,12 +492,13 @@ static string CreateLargeDocument()
 static double Percentile(double[] values, double percentile)
 {
     Array.Sort(values);
-    return values[Math.Min(values.Length - 1, (int)Math.Ceiling(values.Length * percentile) - 1)];
+    return values[Math.Min(values.Length - 1, (int) Math.Ceiling(values.Length * percentile) - 1)];
 }
 
 internal sealed record Options(
     string ApplicationPath,
     string SourcePath,
+    string SolutionPath,
     string OutputDirectory,
     string FixtureName,
     int ColdStartLimitMilliseconds,
@@ -444,6 +537,7 @@ internal sealed record Options(
         return new Options(
             Path.GetFullPath(Required("--application")),
             Path.GetFullPath(Required("--source")),
+            Path.GetFullPath(Required("--solution")),
             Path.GetFullPath(Required("--output")),
             Required("--fixture-name"),
             PositiveInteger("--cold-start-limit", 2_500),
@@ -473,6 +567,8 @@ internal sealed record NativeResult(
     long WorkingSetBytes,
     EditorInfo? Editor,
     int DocumentLength,
+    bool SolutionLoaded,
+    int ProjectContexts,
     string? Error);
 
 internal sealed record VerificationRecord(
@@ -489,6 +585,7 @@ internal sealed record VerificationRecord(
     NativeResult LargeDocument,
     ManagedPerformanceRecord ManagedPerformance,
     WorkspacePerformanceRecord WorkspacePerformance,
+    SolutionPerformanceRecord SolutionPerformance,
     IReadOnlyList<string> Failures);
 
 internal sealed record ManagedPerformanceRecord(
@@ -505,6 +602,20 @@ internal sealed record WorkspacePerformanceRecord(
     long ManagedMemoryIncreaseBytes,
     double WatcherRecoveryMilliseconds,
     int WatcherCapacity);
+
+internal sealed record SolutionPerformanceRecord(
+    int ProjectContexts,
+    int LinkedDocumentContexts,
+    double LoadMilliseconds,
+    double ReloadMilliseconds,
+    double ForegroundReplicaMilliseconds,
+    double FirstSemanticModelMilliseconds,
+    long ManagedMemoryIncreaseBytes,
+    int RetainedRoslynSnapshots,
+    int MutationCapacity,
+    int PendingMutations,
+    int ReplicaCapacity,
+    int RetainedReplicas);
 
 internal sealed class VerificationApplicationPaths(string directory) : IApplicationPaths
 {

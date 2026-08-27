@@ -831,11 +831,11 @@ export function createEditor(container, bridge) {
         },
 
         /** Opens a model once and attaches it to the requested editor view. */
-        async openDocumentStreamInView(viewId, uriString, languageId, textStream, lineEnding, readOnly) {
+        async openDocumentStreamInView(viewId, uriString, languageId, textStream, lineEnding, readOnly, activate = true) {
             const text = new TextDecoder().decode(await textStream.arrayBuffer());
             ensureLive();
             const document = ensureDocument(uriString, languageId, text, lineEnding, readOnly);
-            handle.switchViewDocument(viewId, uriString, null, true);
+            if (activate) handle.switchViewDocument(viewId, uriString, null, true);
             return readSequence(document.model);
         },
 

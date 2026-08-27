@@ -1,3 +1,4 @@
+@using System.Globalization
 @using Microsoft.JSInterop
 @using NovaSharp.Editing
 @using NovaSharp.Shell
@@ -7,8 +8,8 @@
 @if (Node is EditorSplitNodeSnapshot split)
 {
     <div class="editor-split @(split.Orientation == EditorSplitOrientation.Horizontal ? "horizontal" : "vertical")"
-         style="--split-first:@(split.Ratio * 100)%" data-split-id="@split.Id">
-        <EditorGroupPane Node="split.First" Snapshot="Snapshot" OnGroupReady="OnGroupReady"
+         style="--split-first:@((split.Ratio * 100).ToString(CultureInfo.InvariantCulture))%" data-split-id="@split.Id">
+        <EditorGroupPane @key="split.First.Id" Node="split.First" Snapshot="Snapshot" OnGroupReady="OnGroupReady"
                          OnActivate="OnActivate" OnPromote="OnPromote" OnClose="OnClose"
                          OnContextMenu="OnContextMenu" OnDragStart="OnDragStart" OnDrop="OnDrop"
                          OnDragEnd="OnDragEnd"
@@ -17,7 +18,7 @@
              aria-label="Resize editor groups" aria-orientation="@(split.Orientation == EditorSplitOrientation.Horizontal ? "vertical" : "horizontal")"
              aria-valuemin="10" aria-valuemax="90" aria-valuenow="@Math.Round(split.Ratio * 100)"
              @onkeydown="args => ResizeKeyAsync(split, args)"></div>
-        <EditorGroupPane Node="split.Second" Snapshot="Snapshot" OnGroupReady="OnGroupReady"
+        <EditorGroupPane @key="split.Second.Id" Node="split.Second" Snapshot="Snapshot" OnGroupReady="OnGroupReady"
                          OnActivate="OnActivate" OnPromote="OnPromote" OnClose="OnClose"
                          OnContextMenu="OnContextMenu" OnDragStart="OnDragStart" OnDrop="OnDrop"
                          OnDragEnd="OnDragEnd"
