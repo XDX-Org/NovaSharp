@@ -273,6 +273,11 @@ export function createEditor(container, bridge) {
     let workerVerified;
     let registeredCommands = [];
     let registeredCommandDescriptors = [];
+    const languageContexts = new Map();
+    const languageRegistrations = [];
+    let languageRequestSequence = 0;
+    let languageRequestCount = 0;
+    const languageRequestLatencies = [];
     const secondaryViews = new Map();
     let diffEditor = null;
     let diffObserver = null;
@@ -287,6 +292,243 @@ export function createEditor(container, bridge) {
             throw new Error('This editor has been disposed.');
         }
     };
+
+    const semanticLegend = {
+        tokenTypes: ['namespace', 'class', 'struct', 'interface', 'enum', 'typeParameter', 'method', 'property', 'event', 'field', 'parameter', 'variable'],
+        tokenModifiers: ['declaration', 'static', 'readonly'],
+    };
+    const completionKinds = {
+        method: monaco.languages.CompletionItemKind.Method,
+        property: monaco.languages.CompletionItemKind.Property,
+        field: monaco.languages.CompletionItemKind.Field,
+        event: monaco.languages.CompletionItemKind.Event,
+        class: monaco.languages.CompletionItemKind.Class,
+        struct: monaco.languages.CompletionItemKind.Struct,
+        interface: monaco.languages.CompletionItemKind.Interface,
+        enum: monaco.languages.CompletionItemKind.Enum,
+        module: monaco.languages.CompletionItemKind.Module,
+        keyword: monaco.languages.CompletionItemKind.Keyword,
+        snippet: monaco.languages.CompletionItemKind.Snippet,
+        text: monaco.languages.CompletionItemKind.Text,
+    };
+
+    function languageRequest(model, position, options = {}) {
+        const context = languageContexts.get(model.uri.toString());
+        if (!context?.available || model.getLanguageId() !== 'csharp' || (options.suggestion && !context.suggestionsEnabled)) return null;
+        return {
+            requestId: `language-${++languageRequestSequence}`,
+            documentUri: model.uri.toString(),
+            projectContextId: context.projectContextId,
+            sourceVersion: context.sourceVersion,
+            sequence: model.getVersionId(),
+            position: model.getOffsetAt(position),
+            rangeStart: options.range ? model.getOffsetAt(options.range.getStartPosition()) : null,
+            rangeEnd: options.range ? model.getOffsetAt(options.range.getEndPosition()) : null,
+            triggerCharacter: options.triggerCharacter ?? null,
+            isExplicit: options.isExplicit ?? false,
+            priority: options.priority ?? 'foreground',
+            suggestionsEnabled: context.suggestionsEnabled,
+        };
+    }
+
+    function requestStillCurrent(model, request) {
+        const context = languageContexts.get(model.uri.toString());
+        return !disposed
+            && !model.isDisposed()
+            && context?.available
+            && context.projectContextId === request.projectContextId
+            && context.sourceVersion === request.sourceVersion
+            && context.suggestionsEnabled === request.suggestionsEnabled
+            && model.getVersionId() === request.sequence;
+    }
+
+    async function invokeLanguage(model, request, method, payload, cancellationToken) {
+        if (!request || cancellationToken?.isCancellationRequested) return null;
+        const started = performance.now();
+        const cancellation = cancellationToken?.onCancellationRequested(() => {
+            void bridge.invokeMethodAsync('CancelLanguageRequest', request.requestId).catch(() => {});
+        });
+        try {
+            const result = await bridge.invokeMethodAsync(method, payload ?? request);
+            return result
+                && result.requestId === request.requestId
+                && result.sourceVersion === request.sourceVersion
+                && result.sequence === request.sequence
+                && requestStillCurrent(model, request)
+                ? result
+                : null;
+        } catch {
+            return null;
+        } finally {
+            cancellation?.dispose();
+            languageRequestCount += 1;
+            languageRequestLatencies.push(performance.now() - started);
+            if (languageRequestLatencies.length > 256) languageRequestLatencies.shift();
+        }
+    }
+
+    function rangeFromOffsets(model, start, end) {
+        return monaco.Range.fromPositions(model.getPositionAt(start), model.getPositionAt(end));
+    }
+
+    function toTextEdit(model, edit) {
+        return { range: rangeFromOffsets(model, edit.start, edit.end), text: edit.text };
+    }
+
+    languageRegistrations.push(monaco.languages.setLanguageConfiguration('csharp', {
+        comments: { lineComment: '//', blockComment: ['/*', '*/'] },
+        brackets: [['{', '}'], ['[', ']'], ['(', ')']],
+        autoClosingPairs: [
+            { open: '{', close: '}' }, { open: '[', close: ']' }, { open: '(', close: ')' },
+            { open: '"', close: '"', notIn: ['string', 'comment'] },
+            { open: "'", close: "'", notIn: ['string', 'comment'] },
+        ],
+        surroundingPairs: [['{', '}'], ['[', ']'], ['(', ')'], ['"', '"'], ["'", "'"]],
+        indentationRules: {
+            increaseIndentPattern: /(?:\{|\[|\()\s*$/,
+            decreaseIndentPattern: /^\s*(?:\}|\]|\))/,
+        },
+    }));
+
+    languageRegistrations.push(monaco.languages.registerCompletionItemProvider('csharp', {
+        triggerCharacters: ['.', ' ', '(', '[', '<', ':', '#'],
+        async provideCompletionItems(model, position, context, token) {
+            const request = languageRequest(model, position, {
+                suggestion: true,
+                triggerCharacter: context.triggerCharacter,
+                isExplicit: context.triggerKind === monaco.languages.CompletionTriggerKind.Invoke,
+            });
+            const result = await invokeLanguage(model, request, 'GetCompletionsAsync', request, token);
+            if (!result) return { suggestions: [] };
+            const word = model.getWordUntilPosition(position);
+            const range = new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn);
+            return {
+                incomplete: result.isIncomplete,
+                suggestions: result.items.map(item => ({
+                    label: item.label,
+                    kind: completionKinds[item.kind] ?? monaco.languages.CompletionItemKind.Text,
+                    detail: item.detail,
+                    sortText: item.sortText,
+                    filterText: item.filterText,
+                    insertText: item.insertText,
+                    insertTextRules: item.isSnippet ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet : undefined,
+                    commitCharacters: item.commitCharacters,
+                    additionalTextEdits: item.additionalTextEdits.map(edit => toTextEdit(model, edit)),
+                    range,
+                    _nova: item.isSnippet ? null : { request, itemId: item.id },
+                })),
+            };
+        },
+        async resolveCompletionItem(item, token) {
+            if (!item._nova) return item;
+            const model = monaco.editor.getModel(monaco.Uri.parse(item._nova.request.documentUri));
+            if (!model) return item;
+            const details = await invokeLanguage(model, item._nova.request, 'ResolveCompletionAsync', {
+                request: item._nova.request,
+                itemId: item._nova.itemId,
+                commitCharacter: null,
+            }, token);
+            if (!details) return item;
+            item.detail = details.detail ?? item.detail;
+            item.documentation = details.documentation ? { value: details.documentation } : undefined;
+            item.insertText = details.insertText;
+            if (details.textEdit) item.range = rangeFromOffsets(model, details.textEdit.start, details.textEdit.end);
+            item.additionalTextEdits = details.additionalTextEdits.map(edit => toTextEdit(model, edit));
+            return item;
+        },
+    }));
+
+    languageRegistrations.push(monaco.languages.registerSignatureHelpProvider('csharp', {
+        signatureHelpTriggerCharacters: ['(', ','],
+        signatureHelpRetriggerCharacters: [')'],
+        async provideSignatureHelp(model, position, token, context) {
+            const request = languageRequest(model, position, { triggerCharacter: context.triggerCharacter });
+            const result = await invokeLanguage(model, request, 'GetSignatureHelpAsync', request, token);
+            if (!result) return null;
+            return {
+                value: {
+                    signatures: result.signatures.map(signature => ({
+                        label: signature.label,
+                        documentation: signature.documentation,
+                        parameters: signature.parameters,
+                    })),
+                    activeSignature: result.activeSignature,
+                    activeParameter: result.activeParameter,
+                },
+                dispose() {},
+            };
+        },
+    }));
+
+    languageRegistrations.push(monaco.languages.registerHoverProvider('csharp', {
+        async provideHover(model, position, token) {
+            const request = languageRequest(model, position);
+            const result = await invokeLanguage(model, request, 'GetHoverAsync', request, token);
+            return result ? {
+                range: rangeFromOffsets(model, result.start, result.end),
+                contents: [
+                    { value: `\`\`\`csharp\n${result.signature}\n\`\`\`` },
+                    ...(result.documentation ? [{ value: result.documentation }] : []),
+                    ...(result.origin ? [{ value: `_${result.origin}_` }] : []),
+                ],
+            } : null;
+        },
+    }));
+
+    const format = async (model, range, token) => {
+        const request = languageRequest(model, range.getStartPosition(), { range, priority: 'background' });
+        const result = await invokeLanguage(model, request, 'FormatAsync', request, token);
+        return result?.edits.map(edit => toTextEdit(model, edit)) ?? [];
+    };
+    languageRegistrations.push(monaco.languages.registerDocumentFormattingEditProvider('csharp', {
+        provideDocumentFormattingEdits(model, _options, token) {
+            return format(model, model.getFullModelRange(), token);
+        },
+    }));
+    languageRegistrations.push(monaco.languages.registerDocumentRangeFormattingEditProvider('csharp', {
+        provideDocumentRangeFormattingEdits(model, range, _options, token) {
+            return format(model, range, token);
+        },
+    }));
+
+    const semanticTokensForRange = async (model, range, token) => {
+        const request = languageRequest(model, range.getStartPosition(), { range });
+        const result = await invokeLanguage(model, request, 'GetSemanticTokensAsync', request, token);
+        if (!result) return { data: new Uint32Array(), resultId: null };
+        const data = [];
+        let lastLine = 0;
+        let lastCharacter = 0;
+        for (const semantic of [...result.tokens].sort((left, right) => left.start - right.start)) {
+            const position = model.getPositionAt(semantic.start);
+            const line = position.lineNumber - 1;
+            const character = position.column - 1;
+            data.push(
+                line - lastLine,
+                line === lastLine ? character - lastCharacter : character,
+                semantic.length,
+                semanticLegend.tokenTypes.indexOf(semantic.type),
+                semantic.modifiers.reduce((bits, modifier) => {
+                    const index = semanticLegend.tokenModifiers.indexOf(modifier);
+                    return index < 0 ? bits : bits | (1 << index);
+                }, 0));
+            lastLine = line;
+            lastCharacter = character;
+        }
+        return { data: new Uint32Array(data), resultId: result.resultId };
+    };
+    languageRegistrations.push(monaco.languages.registerDocumentSemanticTokensProvider('csharp', {
+        getLegend() { return semanticLegend; },
+        provideDocumentSemanticTokens(model, _lastResultId, token) {
+            return semanticTokensForRange(model, model.getFullModelRange(), token);
+        },
+        releaseDocumentSemanticTokens() {},
+    }));
+    languageRegistrations.push(monaco.languages.registerDocumentRangeSemanticTokensProvider('csharp', {
+        getLegend() { return semanticLegend; },
+        provideDocumentRangeSemanticTokens(model, range, token) {
+            return semanticTokensForRange(model, range, token);
+        },
+    }));
 
     function scheduleResync(document) {
         document.queued = [];
@@ -1101,6 +1343,17 @@ export function createEditor(container, bridge) {
             return null;
         },
 
+        setLanguageContext(uriString, projectContextId, sourceVersion, available, suggestionsEnabled) {
+            ensureLive();
+            languageContexts.set(monaco.Uri.parse(uriString).toString(), {
+                projectContextId: projectContextId ?? null,
+                sourceVersion,
+                available: Boolean(available),
+                suggestionsEnabled: Boolean(suggestionsEnabled),
+            });
+            return null;
+        },
+
         /** Reports what the host observes about itself, so the phase gates can be asserted rather than claimed. */
         async runtimeInfo() {
             ensureLive();
@@ -1117,6 +1370,11 @@ export function createEditor(container, bridge) {
                 replicationQueueDepth: [...documents.values()].reduce((sum, document) => sum + document.queued.length, 0),
                 replicationMaximumQueueDepth: maximumQueueDepth,
                 replicationOverflowCount: overflowCount,
+                languageProviderCount: languageRegistrations.length,
+                languageRequestCount,
+                languageRequestP95Milliseconds: languageRequestLatencies.length === 0
+                    ? 0
+                    : [...languageRequestLatencies].sort((left, right) => left - right)[Math.ceil(languageRequestLatencies.length * 0.95) - 1],
             };
         },
 
@@ -1138,6 +1396,9 @@ export function createEditor(container, bridge) {
 
             registeredCommands = [];
             registeredCommandDescriptors = [];
+            for (const registration of languageRegistrations) registration.dispose();
+            languageRegistrations.length = 0;
+            languageContexts.clear();
             observer.disconnect();
             editor.setModel(null);
             editor.dispose();

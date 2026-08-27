@@ -164,6 +164,7 @@ public sealed class ConfigurationService
                 ReloadUnmodifiedFiles = current?.ReloadUnmodifiedFiles,
                 WorkspaceIgnoredPaths = current?.WorkspaceIgnoredPaths,
                 EditorFont = EditorFonts.Id(font),
+                CSharpSuggestions = current?.CSharpSuggestions,
                 AdditionalProperties = current?.AdditionalProperties,
             };
             await WriteCoreAsync(UserFilePath, updated, token).ConfigureAwait(false);
@@ -253,6 +254,7 @@ public sealed class ConfigurationService
                 ReloadUnmodifiedFiles = document.ReloadUnmodifiedFiles,
                 WorkspaceIgnoredPaths = document.WorkspaceIgnoredPaths,
                 EditorFont = document.EditorFont,
+                CSharpSuggestions = document.CSharpSuggestions,
                 AdditionalProperties = document.AdditionalProperties,
             }
             : document;

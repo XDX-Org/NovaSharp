@@ -111,6 +111,7 @@
             @if (_status.IsReadOnly) { <span class="status-item badge">Read-only</span> }
         }
         @if (_groups.ActiveTab?.IsMissing == true) { <span class="status-item badge">Missing file</span> }
+        @if (CSharpStatus is { } csharpStatus) { <span class="status-item badge">@csharpStatus</span> }
         @if (_contexts.Count > 1)
         {
             <label class="status-context">Project context
@@ -219,10 +220,20 @@
     private EditorFontPreference _pickedEditorFont = EditorFontPreference.Default;
     private FrozenDictionary<string, bool> _representable = FrozenDictionary<string, bool>.Empty;
     private IReadOnlyList<RoslynDocumentContext> _contexts = [];
+    private SolutionLoadState _solutionState;
     private DotNetObjectReference<EditorPanel>? _shellBridge;
     private EditorGroupsSnapshot _groups = EmptyGroups();
 
     private DocumentSession? Active => _documents?.ActiveDocument;
+    private string? CSharpStatus
+    {
+        get
+        {
+            if (_status.Path is not { } path || LanguageIds.FromPath(path) != "csharp") return null;
+            if (Workbench.Solutions.Snapshot.State == SolutionLoadState.Loading) return "C# services loading";
+            return _contexts.Count == 0 ? "C# services unavailable" : null;
+        }
+    }
     private static IEnumerable<TextEncodingProfile> Favorites =>
         TextEncodings.Favorites.Select(TextEncodings.Find).OfType<TextEncodingProfile>();
     private IReadOnlyList<CommandDescriptor> PaletteCommands => Workbench.Commands.Commands;
@@ -264,7 +275,7 @@
             {
                 var session = Workbench.CreateSession(host);
                 await host.InitializeAsync(editorContainer,
-                    new EditorBridge(session.Replicate, session.RequestResync, InvokeAsync), CancellationToken.None);
+                    new EditorBridge(session.Replicate, session.RequestResync, InvokeAsync, Workbench.CSharp), CancellationToken.None);
                 _host = host;
                 _smokeSession = session;
                 _shellBridge = DotNetObjectReference.Create(this);
@@ -276,7 +287,7 @@
 
             var documents = Workbench.CreateDocumentRegistry(host);
             await host.InitializeAsync(editorContainer,
-                new EditorBridge(documents.Replicate, documents.RequestResync, InvokeAsync), CancellationToken.None);
+                new EditorBridge(documents.Replicate, documents.RequestResync, InvokeAsync, Workbench.CSharp), CancellationToken.None);
             _host = host;
             _documents = documents;
             Workbench.Documents = documents;
@@ -416,6 +427,7 @@
         _tabs = tabs;
         _status = _documents?.ActiveDocument?.Status ?? new();
         RefreshProjectContexts();
+        _ = UpdateLanguageContextAsync();
         if (wasComparing && !_status.IsComparing) _diffAttached = false;
         StateHasChanged();
     });
@@ -425,20 +437,40 @@
         _groups = groups;
         _status = _documents?.ActiveDocument?.Status ?? new();
         RefreshProjectContexts();
+        _ = UpdateLanguageContextAsync();
         StateHasChanged();
     });
 
     private void OnSolutionChanged(SolutionWorkspaceSnapshot snapshot) => _ = InvokeAsync(() =>
     {
         var previous = _contexts;
+        var stateChanged = _solutionState != snapshot.State;
+        _solutionState = snapshot.State;
         RefreshProjectContexts();
-        if (_contexts.SequenceEqual(previous)) return;
+        _ = UpdateLanguageContextAsync();
+        if (!stateChanged)
+        {
+            if (_contexts.SequenceEqual(previous)) return;
+        }
         StateHasChanged();
     });
 
     private void RefreshProjectContexts() => _contexts = Active?.DocumentUri is { } uri
         ? Workbench.Solutions.GetDocumentContexts(uri)
         : [];
+
+    private async Task UpdateLanguageContextAsync()
+    {
+        if (_host is null || Active?.DocumentUri is not { } uri) return;
+        var active = _contexts.FirstOrDefault(static context => context.IsActive);
+        await _host.SetLanguageContextAsync(
+            uri,
+            active?.ProjectId.Id.ToString(),
+            Workbench.Solutions.Snapshot.SourceVersion,
+            active is not null,
+            Workbench.Configuration.Current.Settings.CSharpSuggestions,
+            CancellationToken.None);
+    }
 
     private async Task SelectProjectContextAsync(ChangeEventArgs args)
     {
@@ -447,6 +479,7 @@
         if (context is null) return;
         await Workbench.Solutions.SetActiveContextAsync(uri, context.ProjectId);
         RefreshProjectContexts();
+        await UpdateLanguageContextAsync();
     }
 
     private void OnNotificationsChanged(IReadOnlyList<Notification> notifications) => _ = InvokeAsync(() =>
@@ -459,7 +492,10 @@
     {
         _pickedEditorFont = resolution.Settings.EditorFont;
         if (_host is not null)
+        {
             await _host.SetEditorFontAsync(resolution.Settings.EditorFont, CancellationToken.None);
+            await UpdateLanguageContextAsync();
+        }
         StateHasChanged();
     });
 

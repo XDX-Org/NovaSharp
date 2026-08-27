@@ -23,14 +23,15 @@ public sealed record WorkbenchSettings(
     LineEndingStyle DefaultLineEnding,
     bool ReloadUnmodifiedFiles,
     IReadOnlyList<string> WorkspaceIgnoredPaths,
-    EditorFontPreference EditorFont)
+    EditorFontPreference EditorFont,
+    bool CSharpSuggestions)
 {
     /// <summary>The schema version written to, and expected in, a settings file.</summary>
     /// <remarks>
     /// Present from the first release rather than added when it is first needed, because a file written without a
     /// version is a file no later migration can identify.
     /// </remarks>
-    public const int CurrentSchemaVersion = 3;
+    public const int CurrentSchemaVersion = 4;
 
     /// <summary>What NovaSharp uses when nothing has been configured.</summary>
     public static WorkbenchSettings Defaults { get; } = new(
@@ -39,5 +40,6 @@ public sealed record WorkbenchSettings(
         LineEndingStyle.Lf,
         ReloadUnmodifiedFiles: true,
         WorkspaceIgnoredPaths: [],
-        EditorFontPreference.Default);
+        EditorFontPreference.Default,
+        CSharpSuggestions: true);
 }

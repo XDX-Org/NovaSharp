@@ -60,15 +60,17 @@ The core architecture and initial IDE functionality are being implemented. It is
 
 The current workbench can open a workspace, keep multiple files in URI-deduplicated tabs, reuse a single preview tab,
 reorder and close tabs by pointer or keyboard, and restore open files plus cursor, selection, and scroll state after an
-orderly restart. Phases 1–5 are complete and qualified on every supported platform. Groups split in four directions,
+orderly restart. Phases 1–6 are complete and qualified on every supported platform. Groups split in four directions,
 tabs move or copy by command or drag/drop, duplicate editors share one document model and undo history, and layouts
 restore safely.
 Choose the optional Fast Mono font from View → Change Editor Font… or the command palette.
 
-Phase 6 implementation is ready for cross-platform qualification. Open an SDK-style `.sln`, `.slnx`, or `.csproj` from
+Phase 6 is complete and qualified. Open an SDK-style `.sln`, `.slnx`, or `.csproj` from
 the Explorer, Workspace menu, command palette, or solution picker. NovaSharp displays evaluated project contexts, files,
 and references; keeps dirty editor replicas synchronized with Roslyn; reloads project state after relevant file changes;
-and offers a project-context selector for linked or multi-target documents. C# IntelliSense presentation remains phase 7.
+and offers a project-context selector for linked or multi-target documents. Phase 7 adds project-aware C# completion and
+snippets, signature help, hover, formatting, and semantic tokens through Monaco's native provider UI. Its implementation
+is awaiting six-row qualification.
 
 Expect:
 
@@ -200,16 +202,16 @@ produces reconstruct Monaco's text exactly.
 [CI](.github/workflows/ci.yml) runs both, plus bootstrap, RID-specific publish, the published native-host smoke, and
 performance measurements on every runtime identifier from the same commit. Each row retains its application and JSON
 evidence. The native verifier records disposable browser-profile provisioning separately before its repeatable process
-startup measurements and gates the median of three warm launches. [Qualification run 32759088571](https://github.com/XDX-Org/NovaSharp/actions/runs/32759088571)
-passes every gate through Phase 5 on all six supported runtime identifiers.
+startup measurements and gates the median of three warm launches. [Qualification run 33088968049](https://github.com/XDX-Org/NovaSharp/actions/runs/33088968049)
+passes every gate through Phase 6 on all six supported runtime identifiers.
 
 > [!NOTE]
 > Monaco is mounted and is the only editor, and the document lifecycle around it — asynchronous edit replication, dirty
 > state, safe save and reload, encoding and line-ending handling, and external-change resolution — is in place.
 > The Phase 3 workspace Explorer implementation is also present, with lazy folders, bounded watcher recovery, file
 > operations, accessible incremental tree rendering, and versioned state. Phase 4's multi-document tab implementation
-> and Phase 5's editor groups and shared-model split views are complete and qualified. Phase 6's solution/Roslyn implementation is
-> awaiting six-row qualification. Phases 1–5 are complete: their implementation,
+> Phase 5's editor groups and shared-model split views, and Phase 6's solution/Roslyn implementation are complete and
+> qualified. Phases 1–6 are complete: their implementation,
 > foundations, native host, browser behavior, performance, cancellation, disposal, packaging, and retained-evidence
 > gates pass on every supported runtime identifier.
 

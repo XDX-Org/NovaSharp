@@ -25,12 +25,17 @@ or cancelled loads are disposed without publication. Project, restore, and sourc
 existing C# inputs update their mapped Roslyn documents through the same coordinator; they must not reevaluate the project because evaluation can
 itself rewrite generated C# outputs and create a watcher/reload loop.
 
+Live and externally refreshed text is retained as an immutable `Solution` overlay owned by the coordinator. NovaSharp must not publish those
+text changes through `MSBuildWorkspace.TryApplyChanges`: that API is an apply-to-host operation and can write an unsaved editor replica to disk.
+Only the document save path may persist editor text.
+
 Project-load diagnostics are stored by producer, project context, source version, and stable identity. Concise diagnostics are published to the
 workbench; a separately bounded raw MSBuild log remains available for investigation.
 
 ## Consequences
 
-- Remove Roslyn feature packages that are not used until a provider phase; phase 6 restores only its workspace/evaluation dependencies.
+- Phase 7 adds `Microsoft.CodeAnalysis.CSharp.Features` because its completion provider consumes Roslyn's feature service; unused feature
+  packages remain excluded.
 - The active target framework is policy, not a compilation merge. Switching context changes which immutable Roslyn project answers a request.
 - Reload does not close Monaco models or write dirty buffers to disk.
 - Non-SDK and unsupported project types produce structured load diagnostics instead of partial inferred compilations.

@@ -177,6 +177,11 @@ public static class SettingsResolver
             }
         }
 
+        if (document.CSharpSuggestions is { } suggestions)
+        {
+            current = current with { CSharpSuggestions = suggestions };
+        }
+
         return current;
     }
 

@@ -24,4 +24,7 @@ public sealed record EditorRuntimeInfo(
     int ReplicationCapacity = 256,
     int ReplicationQueueDepth = 0,
     int ReplicationMaximumQueueDepth = 0,
-    int ReplicationOverflowCount = 0);
+    int ReplicationOverflowCount = 0,
+    int LanguageProviderCount = 0,
+    int LanguageRequestCount = 0,
+    double LanguageRequestP95Milliseconds = 0);

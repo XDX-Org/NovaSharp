@@ -2,8 +2,8 @@
 
 ## Status
 
-In progress. The implementation and phase-specific local gates are complete; all six supported runtime rows must pass from one commit before this phase can
-be marked complete.
+Complete. [Qualification run 33088968049](https://github.com/XDX-Org/NovaSharp/actions/runs/33088968049) passed every
+required gate on all six supported runtime rows from commit `47b0965`.
 
 ## Goal
 
@@ -99,8 +99,9 @@ from every supported runtime identifier; a local measurement is development evid
 - CI continues to run identical bootstrap, managed/browser tests, explicit-RID publish, packaged native smoke, performance, disposal, and retained
   evidence gates for all six matrix rows.
 
-Local development evidence is not qualification evidence. On the current development host, every phase 6 and packaged-solution gate passes;
-the pre-existing 10 MB editor working-set fixture remains hosted-runner-qualified and can fluctuate around its 60 MB local threshold.
+[Qualification run 33088968049](https://github.com/XDX-Org/NovaSharp/actions/runs/33088968049) is the retained qualification
+evidence. All six jobs passed from commit `47b0965`, including bootstrap, managed and browser tests, explicit-RID publish,
+packaged native smoke, performance, cancellation, disposal, and retained artifact checks.
 
 ## Next phase
 

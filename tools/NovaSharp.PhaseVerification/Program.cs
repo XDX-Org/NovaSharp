@@ -4,6 +4,7 @@ using System.Text.Json;
 using NovaSharp.Async;
 using NovaSharp.Diagnostics;
 using NovaSharp.Editing;
+using NovaSharp.LanguageServices;
 using NovaSharp.Platform;
 using NovaSharp.Solutions;
 using NovaSharp.Text;
@@ -65,6 +66,8 @@ Check(warm.InteractiveEditorMilliseconds <= options.WarmStartLimitMilliseconds,
     $"warm startup median <= {options.WarmStartLimitMilliseconds} ms", $"{warm.InteractiveEditorMilliseconds} ms");
 Check(warm.WorkingSetBytes <= idleMemoryLimitBytes,
     $"idle working set <= {idleMemoryLimitBytes / 1024 / 1024} MB", $"{warm.WorkingSetBytes / 1024 / 1024} MB");
+Check(warm.Editor?.LanguageProviderCount == 8,
+    "eight Monaco C# provider registrations are active", warm.Editor?.LanguageProviderCount.ToString());
 Check(large.Success, "10 MB native smoke", large.Error);
 Check(large.WorkingSetBytes - large.BaselineWorkingSetBytes <= 60L * 1024 * 1024,
     "10 MB document adds <= 60 MB working set",
@@ -107,6 +110,25 @@ Check(solution.ProjectContexts >= 6,
     "representative SDK project contexts loaded", solution.ProjectContexts.ToString());
 Check(solution.LinkedDocumentContexts >= 2,
     "linked document maps to multiple contexts", solution.LinkedDocumentContexts.ToString());
+Check(solution.Language.FirstCompletionMilliseconds <= 750,
+    "first project-aware completion <= 750 ms", $"{solution.Language.FirstCompletionMilliseconds:F2} ms");
+Check(solution.Language.WarmCompletionMilliseconds <= 200,
+    "warm completion <= 200 ms", $"{solution.Language.WarmCompletionMilliseconds:F2} ms");
+Check(solution.Language.SignatureMilliseconds <= 250,
+    "warm signature help <= 250 ms", $"{solution.Language.SignatureMilliseconds:F2} ms");
+Check(solution.Language.HoverMilliseconds <= 250,
+    "warm hover <= 250 ms", $"{solution.Language.HoverMilliseconds:F2} ms");
+Check(solution.Language.FormattingMilliseconds <= 1_000,
+    "format selection <= 1,000 ms", $"{solution.Language.FormattingMilliseconds:F2} ms");
+Check(solution.Language.SemanticTokensMilliseconds <= 1_000,
+    "semantic token refresh <= 1,000 ms", $"{solution.Language.SemanticTokensMilliseconds:F2} ms");
+Check(solution.Language.ExpectedItemFound,
+    "language features use the unsaved Roslyn replica", "expected completion/signature/hover/format/semantic results");
+Check(solution.Language.Capacity == 128
+        && solution.Language.Pending == 0
+        && solution.Language.MaximumPending <= solution.Language.Capacity,
+    "language-service work stays within its explicit bound",
+    $"pending {solution.Language.Pending}, maximum {solution.Language.MaximumPending}, capacity {solution.Language.Capacity}");
 
 var record = new VerificationRecord(
     options.FixtureName,
@@ -124,7 +146,7 @@ var record = new VerificationRecord(
     workspace,
     solution,
     failures);
-var recordPath = Path.Combine(options.OutputDirectory, "phase-01-06-native.json");
+var recordPath = Path.Combine(options.OutputDirectory, "phase-01-07-native.json");
 await File.WriteAllTextAsync(
     recordPath,
     JsonSerializer.Serialize(record, Serialization.JsonOptions),
@@ -418,6 +440,7 @@ static async Task<SolutionPerformanceRecord> RunSolutionPerformanceAsync(string 
         new DiagnosticStore(),
         notifications,
         log);
+    await using var language = new CSharpLanguageService(service);
 
     var loadStarted = Stopwatch.GetTimestamp();
     await service.OpenAsync(solutionPath);
@@ -434,7 +457,9 @@ static async Task<SolutionPerformanceRecord> RunSolutionPerformanceAsync(string 
         throw new InvalidOperationException("The phase source file has no Roslyn context.");
     }
     var text = await File.ReadAllTextAsync(sourcePath);
-    var replica = new DocumentReplica(text + "\n", 1, 1);
+    const string completionProbe = "\ninternal sealed class PhaseSevenProbe{void Probe(){_ = string.Concat(\"a\",\"b\");_ = string.Empt;}}\n";
+    var replicaText = text + completionProbe;
+    var replica = new DocumentReplica(replicaText, 1, 1);
     var replicaStarted = Stopwatch.GetTimestamp();
     service.QueueReplica(new DocumentReplicaChange(sourceUri, sourcePath, replica, 1));
     await service.WaitForReplicaAsync(sourceUri, 1);
@@ -447,6 +472,60 @@ static async Task<SolutionPerformanceRecord> RunSolutionPerformanceAsync(string 
         throw new InvalidOperationException("Roslyn did not produce a semantic model.");
     }
     var semanticMilliseconds = Stopwatch.GetElapsedTime(semanticStarted).TotalMilliseconds;
+
+    var activeContext = service.GetDocumentContexts(sourceUri).Single(context => context.IsActive);
+    var completionPosition = replicaText.LastIndexOf("Empt", StringComparison.Ordinal) + "Empt".Length;
+    LanguageRequest CompletionRequest(string id) => new(
+        id,
+        sourceUri.AbsoluteUri,
+        activeContext.ProjectId.Id.ToString(),
+        service.Snapshot.SourceVersion,
+        1,
+        completionPosition,
+        IsExplicit: true);
+    var firstCompletionStarted = Stopwatch.GetTimestamp();
+    var firstCompletion = await language.GetCompletionsAsync(CompletionRequest("first-completion"));
+    var firstCompletionMilliseconds = Stopwatch.GetElapsedTime(firstCompletionStarted).TotalMilliseconds;
+    var warmCompletionStarted = Stopwatch.GetTimestamp();
+    var warmCompletion = await language.GetCompletionsAsync(CompletionRequest("warm-completion"));
+    var warmCompletionMilliseconds = Stopwatch.GetElapsedTime(warmCompletionStarted).TotalMilliseconds;
+    var signaturePosition = replicaText.LastIndexOf("\",\"", StringComparison.Ordinal) + 2;
+    _ = await language.GetSignatureHelpAsync(CompletionRequest("signature-warmup") with
+    {
+        Position = signaturePosition,
+        TriggerCharacter = ",",
+    });
+    var signatureStarted = Stopwatch.GetTimestamp();
+    var signature = await language.GetSignatureHelpAsync(CompletionRequest("signature-measured") with
+    {
+        Position = signaturePosition,
+        TriggerCharacter = ",",
+    });
+    var signatureMilliseconds = Stopwatch.GetElapsedTime(signatureStarted).TotalMilliseconds;
+    var hoverStarted = Stopwatch.GetTimestamp();
+    var hover = await language.GetHoverAsync(CompletionRequest("hover") with
+    {
+        Position = replicaText.LastIndexOf("Concat", StringComparison.Ordinal) + 1,
+    });
+    var hoverMilliseconds = Stopwatch.GetElapsedTime(hoverStarted).TotalMilliseconds;
+    var probeStart = replicaText.Length - completionProbe.Length;
+    var formattingStarted = Stopwatch.GetTimestamp();
+    var formatting = await language.FormatAsync(CompletionRequest("format") with
+    {
+        Position = probeStart,
+        RangeStart = probeStart,
+        RangeEnd = replicaText.Length,
+    });
+    var formattingMilliseconds = Stopwatch.GetElapsedTime(formattingStarted).TotalMilliseconds;
+    var semanticStartedAt = Stopwatch.GetTimestamp();
+    var semanticTokens = await language.GetSemanticTokensAsync(CompletionRequest("semantic") with
+    {
+        Position = probeStart,
+        RangeStart = probeStart,
+        RangeEnd = replicaText.Length,
+    });
+    var semanticTokensMilliseconds = Stopwatch.GetElapsedTime(semanticStartedAt).TotalMilliseconds;
+    var languageMetrics = language.Metrics;
 
     var reloadStarted = Stopwatch.GetTimestamp();
     await service.ReloadAsync();
@@ -467,7 +546,27 @@ static async Task<SolutionPerformanceRecord> RunSolutionPerformanceAsync(string 
         metrics.MutationQueueCapacity,
         metrics.PendingMutations,
         metrics.ReplicaCapacity,
-        metrics.RetainedReplicas);
+        metrics.RetainedReplicas,
+        new LanguagePerformanceRecord(
+            firstCompletionMilliseconds,
+            warmCompletionMilliseconds,
+            signatureMilliseconds,
+            hoverMilliseconds,
+            formattingMilliseconds,
+            semanticTokensMilliseconds,
+            firstCompletion?.Items.Any(item => item.Label == "Empty") == true
+                && warmCompletion?.Items.Any(item => item.Label == "Empty") == true
+                && signature?.Signatures.Count > 0
+                && hover is not null
+                && formatting?.Edits.Count > 0
+                && semanticTokens?.Tokens.Count > 0,
+            languageMetrics.Capacity,
+            languageMetrics.Pending,
+            languageMetrics.MaximumPending,
+            languageMetrics.LastQueueDelayMilliseconds,
+            languageMetrics.LastReplicaBarrierMilliseconds,
+            languageMetrics.LastRoslynMilliseconds,
+            languageMetrics.LastTotalMilliseconds));
 }
 
 static string CreateLargeDocument()
@@ -555,7 +654,10 @@ internal sealed record EditorInfo(
     int ReplicationCapacity,
     int ReplicationQueueDepth,
     int ReplicationMaximumQueueDepth,
-    int ReplicationOverflowCount);
+    int ReplicationOverflowCount,
+    int LanguageProviderCount,
+    int LanguageRequestCount,
+    double LanguageRequestP95Milliseconds);
 
 internal sealed record NativeResult(
     bool Success,
@@ -615,7 +717,24 @@ internal sealed record SolutionPerformanceRecord(
     int MutationCapacity,
     int PendingMutations,
     int ReplicaCapacity,
-    int RetainedReplicas);
+    int RetainedReplicas,
+    LanguagePerformanceRecord Language);
+
+internal sealed record LanguagePerformanceRecord(
+    double FirstCompletionMilliseconds,
+    double WarmCompletionMilliseconds,
+    double SignatureMilliseconds,
+    double HoverMilliseconds,
+    double FormattingMilliseconds,
+    double SemanticTokensMilliseconds,
+    bool ExpectedItemFound,
+    int Capacity,
+    int Pending,
+    int MaximumPending,
+    double LastQueueDelayMilliseconds,
+    double LastReplicaBarrierMilliseconds,
+    double LastRoslynMilliseconds,
+    double LastTotalMilliseconds);
 
 internal sealed class VerificationApplicationPaths(string directory) : IApplicationPaths
 {

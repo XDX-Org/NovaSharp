@@ -1,4 +1,5 @@
 using Microsoft.JSInterop;
+using NovaSharp.LanguageServices;
 
 namespace NovaSharp.Editing;
 
@@ -15,6 +16,7 @@ public sealed class EditorBridge
     private readonly Func<IReadOnlyList<TextEditBatch>, bool> _replicate;
     private readonly Action<string?> _requestResync;
     private readonly Func<string, Task> _invokeCommand;
+    private readonly ICSharpLanguageService? _language;
 
     /// <param name="replicate">Accepts batches without waiting. Returns whether they were all queued.</param>
     /// <param name="requestResync">Asks for a full resynchronization.</param>
@@ -22,8 +24,9 @@ public sealed class EditorBridge
     public EditorBridge(
         Func<IReadOnlyList<TextEditBatch>, bool> replicate,
         Action requestResync,
-        Func<string, Task> invokeCommand)
-        : this(replicate, _ => requestResync(), invokeCommand)
+        Func<string, Task> invokeCommand,
+        ICSharpLanguageService? language = null)
+        : this(replicate, _ => requestResync(), invokeCommand, language)
     {
         ArgumentNullException.ThrowIfNull(requestResync);
     }
@@ -32,7 +35,8 @@ public sealed class EditorBridge
     public EditorBridge(
         Func<IReadOnlyList<TextEditBatch>, bool> replicate,
         Action<string?> requestResync,
-        Func<string, Task> invokeCommand)
+        Func<string, Task> invokeCommand,
+        ICSharpLanguageService? language = null)
     {
         ArgumentNullException.ThrowIfNull(replicate);
         ArgumentNullException.ThrowIfNull(requestResync);
@@ -41,6 +45,7 @@ public sealed class EditorBridge
         _replicate = replicate;
         _requestResync = requestResync;
         _invokeCommand = invokeCommand;
+        _language = language;
     }
 
     /// <summary>
@@ -74,4 +79,31 @@ public sealed class EditorBridge
         ArgumentException.ThrowIfNullOrWhiteSpace(commandId);
         return _invokeCommand(commandId);
     }
+
+    [JSInvokable]
+    public Task<LanguageCompletionList?> GetCompletionsAsync(LanguageRequest request) =>
+        _language?.GetCompletionsAsync(request) ?? Task.FromResult<LanguageCompletionList?>(null);
+
+    [JSInvokable]
+    public Task<LanguageCompletionDetails?> ResolveCompletionAsync(LanguageCompletionResolveRequest request) =>
+        _language?.ResolveCompletionAsync(request) ?? Task.FromResult<LanguageCompletionDetails?>(null);
+
+    [JSInvokable]
+    public Task<LanguageSignatureHelp?> GetSignatureHelpAsync(LanguageRequest request) =>
+        _language?.GetSignatureHelpAsync(request) ?? Task.FromResult<LanguageSignatureHelp?>(null);
+
+    [JSInvokable]
+    public Task<LanguageHover?> GetHoverAsync(LanguageRequest request) =>
+        _language?.GetHoverAsync(request) ?? Task.FromResult<LanguageHover?>(null);
+
+    [JSInvokable]
+    public Task<LanguageFormatResult?> FormatAsync(LanguageRequest request) =>
+        _language?.FormatAsync(request) ?? Task.FromResult<LanguageFormatResult?>(null);
+
+    [JSInvokable]
+    public Task<LanguageSemanticTokens?> GetSemanticTokensAsync(LanguageRequest request) =>
+        _language?.GetSemanticTokensAsync(request) ?? Task.FromResult<LanguageSemanticTokens?>(null);
+
+    [JSInvokable]
+    public void CancelLanguageRequest(string requestId) => _language?.Cancel(requestId);
 }

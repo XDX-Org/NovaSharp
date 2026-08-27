@@ -36,6 +36,9 @@ public sealed class SettingsDocument
     /// <summary>The stable identifier of the locally packaged source-editor font.</summary>
     public string? EditorFont { get; init; }
 
+    /// <summary>Whether automatic and explicit C# completion suggestions are enabled.</summary>
+    public bool? CSharpSuggestions { get; init; }
+
     /// <summary>Keys owned by a newer component, retained when NovaSharp updates one known setting.</summary>
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? AdditionalProperties { get; init; }

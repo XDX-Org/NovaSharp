@@ -1,5 +1,9 @@
 # Phase 7: C# IntelliSense
 
+## Status
+
+Implementation and phase-specific local verification are complete. Formal phase completion is pending one retained CI qualification run from the same commit on all six supported runtime identifiers.
+
 ## Goal
 
 Provide responsive, project-aware C# editing assistance from Roslyn through Monaco's public language-provider APIs.
@@ -15,6 +19,17 @@ Provide responsive, project-aware C# editing assistance from Roslyn through Mona
 - Capability-based internal language-provider contracts suitable for Razor/HTML/CSS and later extensions without exposing Roslyn types.
 
 AI/inline prediction, Razor projection, and third-party language servers are deferred.
+
+## Delivered architecture
+
+- `CSharpLanguageService` reads exact-version immutable documents from the phase 6 workspace. Its public capability DTOs contain no Roslyn types.
+- A bounded two-lane worker queue prioritizes completion, resolve, signature, hover, and formatting over semantic refresh. A latest-request owner per document/capability cancels superseded work.
+- Requests and responses carry canonical URI, active project ID, solution source version, Monaco model sequence, position/range, trigger, and request ID. Both .NET and JavaScript reject changed stamps.
+- Completion is capped at 500 Roslyn items, keeps at most 512 lazy resolve entries, includes host snippets, and transports commit characters and additional edits. Documentation and final changes resolve only for the focused item.
+- Monaco registers one disposable language configuration plus completion, signature, hover, document/range formatting, and document/range semantic-token providers. Provider disposal is tied to the editor host.
+- The `cSharpSuggestions` user/workspace setting controls completion without disabling hover, signature, formatting, or semantic tokens. The status bar reports loading or unavailable project services.
+
+Settings schema version 4 adds `cSharpSuggestions`; version 3 files migrate by resolving the absent key to `true` and are stamped as version 4 on their next write.
 
 ## Monaco provider boundary
 
@@ -43,6 +58,36 @@ Monaco's C# language definition supplies lexical colorization and language confi
 - Monaco paints baseline and semantic C# colors without a parallel Blazor source/token layer.
 - Fixture tests assert semantic results; interaction tests cover cancellation, out-of-order completion, queue saturation, provider disposal/reregistration, and cross-project concurrency.
 - Cold/warm completion, first result, hover, signature, formatting, semantic refresh, typing latency under analysis load, queue depth, snapshot count, and memory budgets pass on a named medium solution and named hardware.
+
+## Performance budgets
+
+Each CI row records the following in `phase-01-07-native.json`; browser typing/paint, interop, queue, and lifecycle measurements remain in the paired browser record.
+
+| Gate | Budget |
+|---|---:|
+| First project-aware completion | ≤ 750 ms |
+| Warm completion | ≤ 200 ms |
+| Warm signature help | ≤ 250 ms |
+| Warm hover | ≤ 250 ms |
+| Format selection | ≤ 1,000 ms |
+| Semantic token refresh | ≤ 1,000 ms |
+| Language work queue | 128 total queued items; observed pending count returns to zero |
+| Lazy completion cache | 512 items |
+
+The named medium fixture is `tests/fixtures/phase-06/Workspace.slnx`, restored and built before measurement on the hosted-runner fixtures listed in the delivery plan. The verifier adds an unsaved C# probe through the normal replica path, so these results cannot pass by reading stale disk text.
+
+## Verification
+
+- Managed tests cover unsaved project-aware completion and lazy resolution, snippets, signature parameter selection, hover, formatting, semantic classifications, stale-sequence rejection, metrics, and Roslyn-free provider contracts.
+- Browser interaction tests prove public Monaco registration, stamped completion requests, Monaco-owned suggestion UI, deterministic provider disposal/reregistration, typing/paint latency, bounded replication, and 100-cycle heap retention.
+- `tools/NovaSharp.PhaseVerification` executes the feature budgets, exact-replica result checks, solution/snapshot bounds, packaged native smoke, and existing startup/editor/Explorer gates per RID.
+- Verification records separate queue delay, replica barrier, Roslyn execution, total provider latency, and browser interop latency.
+- Qualification remains incomplete until all six matrix rows retain passing records from the same commit. A local result is development evidence only.
+
+## Known limitations
+
+- Project-aware providers require a successfully loaded SDK-style C# project; standalone or failed-project documents keep Monaco lexical editing and show the unavailable status.
+- AI/inline prediction, Razor projection, diagnostics, navigation, rename, and code actions remain assigned to later phases.
 
 ## Next phase
 

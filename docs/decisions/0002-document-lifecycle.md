@@ -84,6 +84,10 @@ Schema version 3 adds the allow-listed `editorFont` preference. The phase-4.5 fo
 discarding other known or extension settings; malformed settings remain untouched and must be repaired before the
 preference can be saved. Workspace scope retains the ordinary key-by-key override rule.
 
+Schema version 4 adds `cSharpSuggestions`. Its absent value migrates to `true`; user and workspace scopes retain the
+same key-by-key override and atomic-write rules. The setting controls Monaco completion registration behavior only and
+does not disable hover, signature help, formatting, or semantic tokens.
+
 JSON is chosen over a binary or registry-shaped store because the workspace scope is a source-controlled file that
 humans diff and merge, and because a format the platform seam does not have to abstract is one fewer place for an
 operating-system branch to appear.

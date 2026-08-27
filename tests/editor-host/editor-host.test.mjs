@@ -52,6 +52,10 @@ const HARNESS_PAGE = `<!DOCTYPE html>
             holdReplication: false,
             releaseReplication: null,
             problems: [],
+            languageCalls: [],
+            failFormatting: false,
+            holdCompletion: false,
+            releaseCompletion: null,
         };
         globalThis.shadow = shadow;
 
@@ -84,8 +88,11 @@ const HARNESS_PAGE = `<!DOCTYPE html>
         globalThis.bridge = {
             async invokeMethodAsync(name, ...args) {
                 const started = performance.now();
-                shadow.concurrentCalls += 1;
-                shadow.maxConcurrentCalls = Math.max(shadow.maxConcurrentCalls, shadow.concurrentCalls);
+                const replication = name === 'ReplicateEdits';
+                if (replication) {
+                    shadow.concurrentCalls += 1;
+                    shadow.maxConcurrentCalls = Math.max(shadow.maxConcurrentCalls, shadow.concurrentCalls);
+                }
                 try {
                     // A deliberate turn of the event loop, so a host that sent without waiting would be caught by the
                     // concurrency counter above rather than passing because interop happened to be instant.
@@ -114,9 +121,45 @@ const HARNESS_PAGE = `<!DOCTYPE html>
                         return null;
                     }
 
+                    if (name === 'GetCompletionsAsync') {
+                        const request = args[0];
+                        shadow.languageCalls.push({ name, request });
+                        if (shadow.holdCompletion) {
+                            await new Promise(resolve => { shadow.releaseCompletion = resolve; });
+                        }
+                        return {
+                            requestId: request.requestId,
+                            sourceVersion: request.sourceVersion,
+                            sequence: request.sequence,
+                            isIncomplete: false,
+                            items: [{
+                                id: 'phase-seven-completion',
+                                label: 'PhaseSevenCompletion',
+                                kind: 'method',
+                                detail: 'project-aware completion',
+                                sortText: '0',
+                                filterText: 'PhaseSevenCompletion',
+                                insertText: 'PhaseSevenCompletion',
+                                commitCharacters: ['.'],
+                                additionalTextEdits: [],
+                            }],
+                        };
+                    }
+
+                    if (name === 'CancelLanguageRequest') {
+                        shadow.languageCalls.push({ name, requestId: args[0] });
+                        return null;
+                    }
+
+                    if (name === 'FormatAsync') {
+                        shadow.languageCalls.push({ name, request: args[0] });
+                        if (shadow.failFormatting) throw new Error('simulated formatter failure');
+                        return { edits: [] };
+                    }
+
                     return null;
                 } finally {
-                    shadow.concurrentCalls -= 1;
+                    if (replication) shadow.concurrentCalls -= 1;
                 }
             },
         };
@@ -249,6 +292,7 @@ try {
     check('the packaged Monaco version is reported', /^\d+\.\d+\.\d+$/.test(info.monacoVersion), info.monacoVersion);
     check('exactly one model is open', info.modelCount === 1, String(info.modelCount));
     check('the page reported no off-origin resource loads', info.externalRequestCount === 0, String(info.externalRequestCount));
+    check('all C# providers are registered through Monaco', info.languageProviderCount === 8, String(info.languageProviderCount));
     check('no request left the application origin', offOriginRequests.length === 0, offOriginRequests.join('; '));
     const inactiveRestore = await page.evaluate(async () => {
         const activeEditor = globalThis.NovaMonaco.editor.getEditors()[0];
@@ -318,6 +362,57 @@ try {
             return true;
         }
     }));
+    await page.evaluate(async () => {
+        globalThis.editor.setLanguageContext('file:///workspace/Widget.cs', 'project-a', 1, true, true);
+        const activeEditor = globalThis.NovaMonaco.editor.getEditors()[0];
+        activeEditor.setPosition({ lineNumber: 3, column: 8 });
+        activeEditor.focus();
+        await activeEditor.getAction('editor.action.triggerSuggest').run();
+    });
+    await page.waitForFunction(() => globalThis.shadow.languageCalls.some(call => call.name === 'GetCompletionsAsync'));
+    check('completion requests carry URI, project, source, and Monaco versions', await page.evaluate(() => {
+        const request = globalThis.shadow.languageCalls.find(call => call.name === 'GetCompletionsAsync').request;
+        return request.documentUri === 'file:///workspace/Widget.cs'
+            && request.projectContextId === 'project-a'
+            && request.sourceVersion === 1
+            && request.sequence === globalThis.NovaMonaco.editor.getModels()[0].getVersionId();
+    }));
+    check('Monaco renders the completion returned by the provider',
+        await page.locator('.suggest-widget').textContent().then(text => text?.includes('PhaseSevenCompletion') === true));
+    check('language-provider interop latency is bounded and observable', await page.evaluate(async () => {
+        const runtime = await globalThis.editor.runtimeInfo();
+        return runtime.languageRequestCount >= 1
+            && runtime.languageRequestP95Milliseconds >= 0
+            && runtime.languageRequestP95Milliseconds < 500;
+    }));
+    const errorsBeforeFormattingFailure = pageErrors.length;
+    await page.evaluate(async () => {
+        globalThis.shadow.failFormatting = true;
+        await globalThis.NovaMonaco.editor.getEditors()[0].getAction('editor.action.formatDocument').run();
+        globalThis.shadow.failFormatting = false;
+    });
+    check('a formatting-provider failure is recoverable without a page error',
+        pageErrors.length === errorsBeforeFormattingFailure
+            && await page.evaluate(() => globalThis.shadow.languageCalls.some(call => call.name === 'FormatAsync')));
+    const languageCallsBeforeCancellation = await page.evaluate(() => globalThis.shadow.languageCalls.length);
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => {
+        globalThis.shadow.holdCompletion = true;
+        globalThis.NovaMonaco.editor.getEditors()[0].trigger('phase-seven-test', 'editor.action.triggerSuggest', {});
+    });
+    await page.waitForFunction(count => globalThis.shadow.languageCalls.length > count, languageCallsBeforeCancellation);
+    await page.evaluate(() => {
+        const activeEditor = globalThis.NovaMonaco.editor.getEditors()[0];
+        globalThis.shadow.holdCompletion = false;
+        activeEditor.executeEdits('phase-seven-test', [{ range: activeEditor.getSelection(), text: 'x' }]);
+        globalThis.editor.setLanguageContext('file:///workspace/Widget.cs', 'project-a', 1, true, false);
+        globalThis.shadow.releaseCompletion?.();
+    });
+    await page.waitForFunction(() => globalThis.shadow.languageCalls.some(call => call.name === 'CancelLanguageRequest'));
+    check('editing cancels an in-flight completion request', true);
+    check('an out-of-order completion never reopens stale suggestions',
+        await page.locator('.suggest-widget').isHidden());
+    await page.evaluate(() => globalThis.editor.setLanguageContext('file:///workspace/Widget.cs', 'project-a', 1, true, true));
     await page.evaluate(() => globalThis.editor.setEditorFont('default'));
 
     // C# lexical colouring comes from the packaged language definition, not from a NovaSharp overlay.

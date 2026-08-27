@@ -283,6 +283,26 @@ public sealed class MonacoEditorHost : IEditorHost
         await InvokeAsync<object?>("setEditorFont", cancellationToken, EditorFonts.Id(font)).ConfigureAwait(false);
 
     /// <inheritdoc />
+    public async ValueTask SetLanguageContextAsync(
+        Uri uri,
+        string? projectContextId,
+        long sourceVersion,
+        bool available,
+        bool suggestionsEnabled,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(uri);
+        await InvokeAsync<object?>(
+            "setLanguageContext",
+            cancellationToken,
+            uri.AbsoluteUri,
+            projectContextId,
+            sourceVersion,
+            available,
+            suggestionsEnabled).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
     public ValueTask<IReadOnlyList<string>> RegisterCommandsAsync(
         IReadOnlyList<CommandDescriptor> descriptors,
         CancellationToken cancellationToken)

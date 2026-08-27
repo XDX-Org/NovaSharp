@@ -131,6 +131,18 @@ public sealed class SettingsResolverTests
         Assert.Equal(EditorFontPreference.Default, invalid.Settings.EditorFont);
         Assert.Contains(invalid.Problems, problem => problem.Message.Contains("editorFont"));
     }
+
+    [Fact]
+    public void Resolve_AllowsWorkspaceToConfigureCSharpSuggestions()
+    {
+        var resolution = SettingsResolver.Resolve(
+            new SettingsDocument { CSharpSuggestions = true },
+            "user.json",
+            new SettingsDocument { CSharpSuggestions = false },
+            "workspace.json");
+
+        Assert.False(resolution.Settings.CSharpSuggestions);
+    }
 }
 
 public sealed class ConfigurationServiceTests : IAsyncDisposable

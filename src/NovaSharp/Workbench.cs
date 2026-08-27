@@ -3,6 +3,7 @@ using NovaSharp.Commands;
 using NovaSharp.Configuration;
 using NovaSharp.Diagnostics;
 using NovaSharp.Editing;
+using NovaSharp.LanguageServices;
 using NovaSharp.Platform;
 using NovaSharp.Solutions;
 using NovaSharp.Workspace;
@@ -52,6 +53,8 @@ internal static class Workbench
     internal static WorkspaceExplorerService Explorer { get; } = CreateExplorer();
 
     internal static SolutionWorkspaceService Solutions { get; } = CreateSolutions();
+
+    internal static CSharpLanguageService CSharp { get; } = new(Solutions);
 
     internal static SolutionDiscovery SolutionDiscovery { get; } = new(Paths, BackgroundWork);
 
@@ -185,11 +188,12 @@ internal static class Workbench
     private static async Task ShutdownAsync(DocumentRegistry? documents)
     {
         await Task.Yield();
-        await Solutions.DisposeAsync().ConfigureAwait(false);
         if (documents is not null)
         {
             await documents.DisposeAsync().ConfigureAwait(false);
         }
+        await CSharp.DisposeAsync().ConfigureAwait(false);
+        await Solutions.DisposeAsync().ConfigureAwait(false);
         await Explorer.DisposeAsync().ConfigureAwait(false);
         await SolutionWork.DisposeAsync().ConfigureAwait(false);
         await BackgroundWork.DisposeAsync().ConfigureAwait(false);

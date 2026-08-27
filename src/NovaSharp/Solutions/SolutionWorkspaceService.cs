@@ -95,6 +95,7 @@ public sealed class SolutionWorkspaceService : IAsyncDisposable
     private Task _reloadTask = Task.CompletedTask;
     private string[] _rawBuildLog = [];
     private long _sourceVersion;
+    private long _replicaVersion;
     private long _lastSuccessfulLoadTimestamp;
     private int _pendingMutations;
     private int _droppedReplicaSignals;
@@ -267,9 +268,12 @@ public sealed class SolutionWorkspaceService : IAsyncDisposable
                     }
                 }
 
-                candidate.Solution = OverlayReplicas(candidate.Workspace, candidate.Solution);
-                previous = _loaded;
-                _loaded = candidate;
+                candidate.Solution = OverlayReplicas(candidate.Solution).Solution;
+                lock (_gate)
+                {
+                    previous = _loaded;
+                    _loaded = candidate;
+                }
                 candidate = null;
                 RebuildMappings(_loaded.Solution);
                 var projects = BuildProjects(_loaded.Solution);
@@ -441,10 +445,10 @@ public sealed class SolutionWorkspaceService : IAsyncDisposable
             LoadedSolutionWorkspace? previous;
             try
             {
-                previous = _loaded;
-                _loaded = null;
                 lock (_gate)
                 {
+                    previous = _loaded;
+                    _loaded = null;
                     _lastReadySnapshot = null;
                     _mappings.Clear();
                     _activeProjectByDocument.Clear();
@@ -495,6 +499,7 @@ public sealed class SolutionWorkspaceService : IAsyncDisposable
             }
             _replicas[change.DocumentUri.AbsoluteUri] = new ReplicaSource(
                 change.DocumentUri, change.Path, change.Replica, change.Sequence);
+            _replicaVersion++;
         }
 
         if (_mutations.Writer.TryWrite(new ReplicaSignal(change.DocumentUri.AbsoluteUri)))
@@ -520,6 +525,7 @@ public sealed class SolutionWorkspaceService : IAsyncDisposable
         lock (_gate)
         {
             removed = _replicas.Remove(documentUri.AbsoluteUri);
+            if (removed) _replicaVersion++;
         }
         if (removed && reloadFromDisk && Snapshot.Path is not null)
         {
@@ -551,6 +557,76 @@ public sealed class SolutionWorkspaceService : IAsyncDisposable
         lock (_gate)
         {
             return _mappings.TryGetValue(documentUri.AbsoluteUri, out var contexts) ? [.. contexts] : [];
+        }
+    }
+
+    internal async Task<RoslynLanguageSnapshot?> GetLanguageSnapshotAsync(
+        Uri documentUri,
+        string? projectContextId,
+        long sourceVersion,
+        long sequence,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(documentUri);
+        await WaitForReplicaAsync(documentUri, sequence, cancellationToken).ConfigureAwait(false);
+        await _writer.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (_loaded is null) return null;
+            var overlay = OverlayReplicas(_loaded.Solution);
+            lock (_gate)
+            {
+                var key = documentUri.AbsoluteUri;
+                if (_loaded is null
+                    || _snapshot.State != SolutionLoadState.Ready
+                    || _sourceVersion != sourceVersion
+                    || _replicaVersion != overlay.ReplicaVersion
+                    || !_replicas.TryGetValue(key, out var replica)
+                    || replica.Sequence != sequence
+                    || !_mappings.TryGetValue(key, out var contexts))
+                {
+                    return null;
+                }
+
+                _loaded.Solution = overlay.Solution;
+
+                var context = contexts.FirstOrDefault(candidate =>
+                    projectContextId is null ? candidate.IsActive : candidate.ProjectId.Id.ToString() == projectContextId);
+                return context is null ? null : new RoslynLanguageSnapshot(
+                    _loaded.Solution,
+                    context.DocumentId,
+                    context.ProjectId,
+                    context.ProjectName,
+                    context.TargetFramework,
+                    key,
+                    sourceVersion,
+                    sequence,
+                    overlay.ReplicaVersion);
+            }
+        }
+        finally
+        {
+            _writer.Release();
+        }
+    }
+
+    internal bool IsLanguageSnapshotCurrent(RoslynLanguageSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        lock (_gate)
+        {
+            if (_loaded is null
+                || !ReferenceEquals(_loaded.Solution, snapshot.Solution)
+                || _sourceVersion != snapshot.SourceVersion
+                || _replicaVersion != snapshot.ReplicaVersion
+                || !_replicas.TryGetValue(snapshot.DocumentUri, out var replica)
+                || replica.Sequence != snapshot.Sequence
+                || !_mappings.TryGetValue(snapshot.DocumentUri, out var contexts))
+            {
+                return false;
+            }
+
+            return contexts.Any(context => context.DocumentId == snapshot.DocumentId && context.IsActive);
         }
     }
 
@@ -751,11 +827,11 @@ public sealed class SolutionWorkspaceService : IAsyncDisposable
                     solution = solution.WithDocumentText(document.Id, replacement, PreservationMode.PreserveIdentity);
                 }
                 if (ReferenceEquals(solution, loaded.Solution)) return;
-                if (!loaded.Workspace.TryApplyChanges(solution))
+                lock (_gate)
                 {
-                    throw new InvalidOperationException("Roslyn rejected an external source-file update.");
+                    if (!ReferenceEquals(_loaded, loaded) || sourceVersion != _sourceVersion) return;
+                    loaded.Solution = solution;
                 }
-                loaded.Solution = loaded.Workspace.CurrentSolution;
             }
             finally
             {
@@ -808,11 +884,11 @@ public sealed class SolutionWorkspaceService : IAsyncDisposable
                 return;
             }
 
-            if (!_loaded.Workspace.TryApplyChanges(updated))
+            lock (_gate)
             {
-                throw new InvalidOperationException("Roslyn rejected an open-document update.");
+                if (_loaded is null) return;
+                _loaded.Solution = updated;
             }
-            _loaded.Solution = _loaded.Workspace.CurrentSolution;
             RebuildMappings(_loaded.Solution);
         }
         catch (InvalidOperationException exception)
@@ -827,23 +903,21 @@ public sealed class SolutionWorkspaceService : IAsyncDisposable
         }
     }
 
-    private Solution OverlayReplicas(Microsoft.CodeAnalysis.Workspace workspace, Solution solution)
+    private (Solution Solution, long ReplicaVersion) OverlayReplicas(Solution solution)
     {
         ReplicaSource[] replicas;
+        long replicaVersion;
         lock (_gate)
         {
             replicas = [.. _replicas.Values];
+            replicaVersion = _replicaVersion;
         }
 
         foreach (var source in replicas)
         {
             solution = ApplyReplica(solution, source.Uri.AbsoluteUri, source.Replica.Snapshot());
         }
-        if (!ReferenceEquals(solution, workspace.CurrentSolution) && !workspace.TryApplyChanges(solution))
-        {
-            throw new InvalidOperationException("Roslyn rejected dirty document overlays during reload.");
-        }
-        return workspace.CurrentSolution;
+        return (solution, replicaVersion);
     }
 
     private Solution ApplyReplica(Solution solution, string documentUri, DocumentSnapshot snapshot)
@@ -862,6 +936,8 @@ public sealed class SolutionWorkspaceService : IAsyncDisposable
         var text = SourceText.From(snapshot.Text, Encoding.UTF8);
         foreach (var id in ids)
         {
+            if (solution.GetDocument(id)?.TryGetText(out var current) == true && current.ContentEquals(text))
+                continue;
             solution = solution.WithDocumentText(id, text, PreservationMode.PreserveIdentity);
         }
         return solution;

@@ -134,6 +134,15 @@ public interface IEditorHost : IAsyncDisposable
     /// <summary>Updates every editor view to the selected locally packaged font.</summary>
     ValueTask SetEditorFontAsync(EditorFontPreference font, CancellationToken cancellationToken);
 
+    /// <summary>Updates the active Roslyn project stamp used by Monaco's C# providers.</summary>
+    ValueTask SetLanguageContextAsync(
+        Uri uri,
+        string? projectContextId,
+        long sourceVersion,
+        bool available,
+        bool suggestionsEnabled,
+        CancellationToken cancellationToken) => ValueTask.CompletedTask;
+
     /// <summary>
     /// Replaces the editor's actions with the ones <paramref name="descriptors"/> describe.
     /// </summary>
