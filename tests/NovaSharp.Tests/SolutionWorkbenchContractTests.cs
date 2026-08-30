@@ -40,6 +40,8 @@ public sealed class SolutionWorkbenchContractTests
         var tree = Read("SolutionTree.razor");
 
         Assert.Contains("aria-label=\"Cancel solution loading\"", tree, StringComparison.Ordinal);
+        Assert.Contains("Restoring cached solution…", tree, StringComparison.Ordinal);
+        Assert.Contains("NativeSmokeTest.IsEnabled", explorer, StringComparison.Ordinal);
         Assert.Contains("CancelLoad.InvokeAsync", tree, StringComparison.Ordinal);
         Assert.Contains("CancelLoad=\"CancelSolutionLoadAsync\"", explorer, StringComparison.Ordinal);
         Assert.Contains(WorkbenchCommands.CancelSolutionLoad, WorkbenchCommands.All);

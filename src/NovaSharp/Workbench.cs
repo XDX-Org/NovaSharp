@@ -6,6 +6,7 @@ using NovaSharp.Editing;
 using NovaSharp.LanguageServices;
 using NovaSharp.Platform;
 using NovaSharp.Solutions;
+using NovaSharp.Verification;
 using NovaSharp.Workspace;
 
 namespace NovaSharp;
@@ -28,6 +29,7 @@ internal static class Workbench
     private static readonly BoundedWorkQueue SolutionWork = new(capacity: 4, workerCount: 1);
     private static readonly IDocumentFileStore Files = new DocumentFileStore();
     private static readonly DocumentTextCodec Codec = new();
+    private static readonly IApplicationPaths ApplicationPaths = new ApplicationPaths();
 
     /// <summary>Where NovaSharp records what it did. Bounded, and redacted by the callers that write to it.</summary>
     internal static IWorkbenchLog Log { get; } = new BoundedWorkbenchLog();
@@ -45,10 +47,13 @@ internal static class Workbench
 
     /// <summary>Settings in their user and workspace scopes.</summary>
     internal static ConfigurationService Configuration { get; } =
-        new(new ApplicationPaths(), Files, BackgroundWork);
+        new(ApplicationPaths, Files, BackgroundWork);
 
     internal static WorkspacePersistenceService WorkspacePersistence { get; } =
-        new(new ApplicationPaths(), Files, BackgroundWork);
+        new(ApplicationPaths, Files, BackgroundWork);
+
+    private static SolutionWarmCache SolutionWarmCache { get; } =
+        new(ApplicationPaths, Paths, Files, BackgroundWork);
 
     internal static WorkspaceExplorerService Explorer { get; } = CreateExplorer();
 
@@ -112,7 +117,9 @@ internal static class Workbench
             SolutionWork,
             Diagnostics,
             Notifications,
-            Log);
+            Log,
+            warmCache: NativeSmokeTest.IsEnabled ? null : SolutionWarmCache,
+            workspaceRoot: static () => Explorer.Snapshot.RootPath);
         Explorer.FilesChanged += service.ObserveWorkspaceChanges;
         return service;
     }

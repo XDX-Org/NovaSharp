@@ -2,8 +2,9 @@
 
 ## Status
 
-Complete. [Qualification run 33088968049](https://github.com/XDX-Org/NovaSharp/actions/runs/33088968049) passed every
-required gate on all six supported runtime rows from commit `47b0965`.
+In progress. The original phase passed [qualification run 33088968049](https://github.com/XDX-Org/NovaSharp/actions/runs/33088968049)
+on all six supported runtime rows from commit `47b0965`. The warm-reopen implementation and local gates are present; completion now
+requires one qualification run of the current commit passing the cached-display and live-validation gates on all six rows.
 
 ## Goal
 
@@ -66,6 +67,15 @@ Build execution and IntelliSense presentation are deferred; this phase establish
   evaluation outputs from feeding a watcher/reload loop. Reload reports added and removed contexts while open Monaco models remain alive.
 - `DiagnosticStore` keys bounded structured results by producer, context, source version, and stable identity. Concise failures reach notifications;
   the separately bounded raw MSBuild log remains available for investigation.
+- The last successful solution tree is stored as one bounded, atomic, schema-versioned warm display cache. A later process restores workspace-relative
+  project/document paths and the exact solution identity before live evaluation completes, while keeping `CurrentSolution` null and language services
+  unavailable until a fresh `MSBuildWorkspace` publishes. A solution outside the restored workspace is never cached for that workspace. Changed
+  solution/project/restore/analyzer and conventional imported inputs reject the cache; every cache hit is still validated by live evaluation. Startup
+  overlaps cache restoration and solution discovery with configuration loading.
+- Native-smoke mode neither restores the user's workspace nor reads or writes its warm cache, so local qualification fixtures cannot replace the
+  next solution that the interactive application will reopen.
+- Default MSBuild capture uses normal verbosity rather than paying detailed-event costs on every launch; the bounded raw log and structured workspace
+  diagnostics remain available.
 - The representative fixture contains console, library, Web/Razor, multi-project, multi-target, linked-file, project-reference, defines, nullable,
   language-version, framework/package assembly, and analyzer inputs. Real `MSBuildWorkspace` integration tests use the selected repository SDK.
 
@@ -77,6 +87,8 @@ Each CI matrix row records these against its named hosted-runner/RID fixture in 
 |---|---:|
 | Representative solution cold load | ≤ 20,000 ms |
 | Representative solution reload with dirty overlay | ≤ 15,000 ms |
+| Warm cached solution-tree display from a fresh service | ≤ 500 ms |
+| Warm live validation from a fresh service | ≤ 15,000 ms |
 | Foreground replica-to-Roslyn barrier | ≤ 500 ms |
 | First semantic model | ≤ 5,000 ms |
 | First phase 7 completion result | ≤ 750 ms |
@@ -95,13 +107,13 @@ from every supported runtime identifier; a local measurement is development evid
   dirty synchronization, explicit context selection, edit-during-reload, removed contexts, stale progress, user cancellation, shutdown cleanup, diagnostic redaction,
   discovery, bounded saturation, and accessible project-tree contracts.
 - `tools/NovaSharp.PhaseVerification` records load/reload, dirty barrier, first semantic model, memory, mapping, queue, and snapshot gates alongside
-  the existing native/editor/Explorer budgets on every CI row.
+  the existing native/editor/Explorer budgets on every CI row. It also creates a cache, constructs a fresh solution service over that persisted file,
+  gates cached-tree display and live validation separately, and asserts that the cached state has no Roslyn authority.
 - CI continues to run identical bootstrap, managed/browser tests, explicit-RID publish, packaged native smoke, performance, disposal, and retained
   evidence gates for all six matrix rows.
 
-[Qualification run 33088968049](https://github.com/XDX-Org/NovaSharp/actions/runs/33088968049) is the retained qualification
-evidence. All six jobs passed from commit `47b0965`, including bootstrap, managed and browser tests, explicit-RID publish,
-packaged native smoke, performance, cancellation, disposal, and retained artifact checks.
+[Qualification run 33088968049](https://github.com/XDX-Org/NovaSharp/actions/runs/33088968049) remains the retained evidence for the
+original phase contract. All six jobs passed from commit `47b0965`, but that run predates the warm-reopen gates and cannot qualify this revision.
 
 ## Next phase
 

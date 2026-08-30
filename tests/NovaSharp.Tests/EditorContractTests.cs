@@ -41,6 +41,7 @@ public sealed class EditorContractTests
         Assert.Contains("@key=\"split.Second.Id\"", pane, StringComparison.Ordinal);
         Assert.Contains("CultureInfo.InvariantCulture", pane, StringComparison.Ordinal);
         Assert.Contains("DismissCommandMenusAsync", shell, StringComparison.Ordinal);
+        Assert.Contains("command-menu-scrim", panel, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -125,6 +126,10 @@ public sealed class EditorContractTests
         var module = ReadContract("monaco-editor-host.js");
 
         Assert.Contains("wordBasedSuggestions: 'off'", module, StringComparison.Ordinal);
+        Assert.Contains("variable: monaco.languages.CompletionItemKind.Variable", module, StringComparison.Ordinal);
+        Assert.Contains("constant: monaco.languages.CompletionItemKind.Constant", module, StringComparison.Ordinal);
+        Assert.Contains("enumMember: monaco.languages.CompletionItemKind.EnumMember", module, StringComparison.Ordinal);
+        Assert.Contains("preselect: item.preselect", module, StringComparison.Ordinal);
     }
 
     [Fact]

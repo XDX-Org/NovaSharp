@@ -16,7 +16,7 @@ Source control UI, remote development, collaboration, notebooks, AI completion, 
 | 4. Documents and movable tabs | Complete | [Qualification run 32585228606](https://github.com/XDX-Org/NovaSharp/actions/runs/32585228606) passed the document registry, tab lifecycle, browser performance, bounded scheduling, RID publish, packaged native smoke, disposal, and retained-evidence gates on all six matrix rows from commit `3ce0da3` |
 | 4.5. Workbench shell and visual system | Complete | [Qualification run 32752027806](https://github.com/XDX-Org/NovaSharp/actions/runs/32752027806) passed bootstrap, shell/browser gates, RID publish, packaged native smoke, performance, disposal, and retained-evidence gates on all six matrix rows from commit `306e8db` |
 | 5. Editor groups and split views | Complete | [Qualification run 32759088571](https://github.com/XDX-Org/NovaSharp/actions/runs/32759088571) passed shared-model split views, bounded layout management, drag/drop, accessible resizing, schema-3 persistence, 270 managed tests, 196 browser gates, RID publish, packaged native smoke, performance, disposal, and retained-evidence gates on all six matrix rows from commit `c8186e9` |
-| 6. Solution model and Roslyn | Complete | [Qualification run 33088968049](https://github.com/XDX-Org/NovaSharp/actions/runs/33088968049) passed solution loading, synchronized Roslyn documents, bounded mutation and snapshot gates, RID publish, packaged native smoke, performance, disposal, and retained-evidence gates on all six matrix rows from commit `47b0965` |
+| 6. Solution model and Roslyn | In progress | The original phase passed [qualification run 33088968049](https://github.com/XDX-Org/NovaSharp/actions/runs/33088968049); the warm-reopen cache, fresh-service display/validation budgets, and current commit still require one qualification run on all six supported RID rows |
 | 7. C# IntelliSense | In progress | Implementation and local gates are present; completion requires one qualification run passing the same commit on all six supported RID rows |
 | 8–17 | Planned | Completion criteria not yet met |
 
@@ -142,6 +142,8 @@ browser-thread, replication, queue, and 100-cycle heap measurements. CI names th
 records with their fixture-specific limits; a missing record or a budget failure fails that RID's job.
 CI retries a failed complete native or browser fixture at most twice and retains every attempt, preventing transient
 hosted-runner contention from either erasing the failed measurement or silently widening the product budget.
+The solution fixture additionally persists a bounded display snapshot, constructs a fresh solution service, and separately gates cached-tree display
+and live `MSBuildWorkspace` validation; cached metadata is never counted as semantic readiness.
 
 ## Delivery records
 

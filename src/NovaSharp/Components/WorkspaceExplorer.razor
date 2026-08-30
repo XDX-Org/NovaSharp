@@ -3,6 +3,7 @@
 @using NovaSharp.Platform
 @using NovaSharp.Shell
 @using NovaSharp.Solutions
+@using NovaSharp.Verification
 @using NovaSharp.Workspace
 @implements IAsyncDisposable
 @inject IJSRuntime JSRuntime
@@ -140,14 +141,16 @@
         _selfReference = DotNetObjectReference.Create(this);
         await JSRuntime.InvokeVoidAsync("NovaWorkspace.attachDragSurface", _explorer);
         await JSRuntime.InvokeVoidAsync("NovaWorkspace.attachResizer", _resizer, _selfReference);
+        if (NativeSmokeTest.IsEnabled) return;
         Workbench.Explorer.SetIgnoredPaths(Workbench.Configuration.Current.Settings.WorkspaceIgnoredPaths);
         await Workbench.Explorer.RestoreAsync();
         if (Workbench.Explorer.Snapshot.RootPath is { } root)
         {
             Workbench.Configuration.SetWorkspaceRoot(root);
+            var solutionRestore = RestoreOrDiscoverSolutionAsync(root);
             await Workbench.LoadConfigurationAsync();
             Workbench.Explorer.SetIgnoredPaths(Workbench.Configuration.Current.Settings.WorkspaceIgnoredPaths);
-            await DiscoverSolutionAsync(root);
+            await solutionRestore;
         }
     }
 
@@ -176,9 +179,10 @@
         if (folders is not [var root]) return;
         await Workbench.Explorer.OpenAsync(root);
         Workbench.Configuration.SetWorkspaceRoot(root);
+        var solutionRestore = RestoreOrDiscoverSolutionAsync(root);
         await Workbench.LoadConfigurationAsync();
         Workbench.Explorer.SetIgnoredPaths(Workbench.Configuration.Current.Settings.WorkspaceIgnoredPaths);
-        await DiscoverSolutionAsync(root);
+        await solutionRestore;
     }
 
     private async Task OpenSolutionAsync()
@@ -190,10 +194,11 @@
         if (files is [var path]) await Workbench.Solutions.OpenAsync(path);
     }
 
-    private async Task DiscoverSolutionAsync(string root)
+    private async Task RestoreOrDiscoverSolutionAsync(string root)
     {
-        if (await Workbench.SolutionDiscovery.DiscoverAsync(root) is { } path)
-            await Workbench.Solutions.OpenAsync(path);
+        var discovery = Workbench.SolutionDiscovery.DiscoverAsync(root);
+        if (await Workbench.Solutions.RestoreAsync(root)) return;
+        if (await discovery is { } path) await Workbench.Solutions.OpenAsync(path);
     }
 
     private async Task CloseFolderAsync(CancellationToken cancellationToken)

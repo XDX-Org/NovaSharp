@@ -67,6 +67,69 @@ public sealed class CSharpLanguageServiceTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task ExtensionMethodCompletion_IsClassifiedAsAMethod()
+    {
+        const string source = "static class Extensions { public static void Extend(this int[] values) { } } "
+            + "internal sealed class Shared { void M() { int[] values = []; values. } }";
+        await OpenWithReplicaAsync(source, 9);
+
+        var completion = await _language.GetCompletionsAsync(
+            Request("extension-kind", 9, source.IndexOf("values.", StringComparison.Ordinal) + "values.".Length, trigger: "."),
+            TestContext.Current.CancellationToken);
+
+        var extension = Assert.Single(completion!.Items, item => item.Label == "Extend");
+        Assert.Equal("method", extension.Kind);
+    }
+
+    [Fact]
+    public async Task LocalCompletion_IsClassifiedAsAVariable()
+    {
+        const string source = "internal sealed class Shared { void M() { var localValue = 1; localV } }";
+        await OpenWithReplicaAsync(source, 10);
+
+        var localCompletion = await _language.GetCompletionsAsync(
+            Request("local-kind", 10, source.IndexOf("localV }", StringComparison.Ordinal) + "localV".Length, isExplicit: true),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("variable", Assert.Single(localCompletion!.Items, item => item.Label == "localValue").Kind);
+    }
+
+    [Fact]
+    public async Task TypedPrefix_IsRankedBeforeCompletionListIsCapped()
+    {
+        var declarations = string.Concat(Enumerable.Range(0, 600).Select(index => $"sealed class AType{index:000} {{ }} "));
+        var source = $"{declarations} internal sealed class Shared {{ void M() {{ var }} }}";
+        await OpenWithReplicaAsync(source, 14);
+        var position = source.LastIndexOf("var", StringComparison.Ordinal) + "var".Length;
+
+        var completion = await _language.GetCompletionsAsync(
+            Request("ranked-var", 14, position, isExplicit: true), TestContext.Current.CancellationToken);
+
+        Assert.Contains(completion!.Items, item => item.Label == "var" && item.Kind == "keyword");
+        Assert.False(completion.IsIncomplete);
+        Assert.DoesNotContain(completion.Items, item => item.Label == "AType599");
+    }
+
+    [Fact]
+    public async Task ExactVersionCompletion_IsReusedWithFreshRequestIdentity()
+    {
+        const string source = "internal sealed class Shared { void M() { string.Empt } }";
+        await OpenWithReplicaAsync(source, 13);
+        var position = source.IndexOf("Empt", StringComparison.Ordinal) + "Empt".Length;
+
+        var first = await _language.GetCompletionsAsync(
+            Request("cache-first", 13, position, isExplicit: true), TestContext.Current.CancellationToken);
+        var second = await _language.GetCompletionsAsync(
+            Request("cache-second", 13, position, isExplicit: true), TestContext.Current.CancellationToken);
+
+        Assert.Equal("cache-second", second!.RequestId);
+        Assert.Contains(second.Items, item => item.Label == "Empty" && item.Id.StartsWith("cache-second:", StringComparison.Ordinal));
+        Assert.Equal(1, _language.Metrics.CompletionListCacheHits);
+        Assert.Equal(1, _language.Metrics.CompletionListCacheEntries);
+        Assert.NotEqual(first!.Items.First(item => item.Label == "Empty").Id, second.Items.First(item => item.Label == "Empty").Id);
+    }
+
+    [Fact]
     public async Task SignatureHoverFormattingAndSemanticTokens_UseExactReplica()
     {
         const string source = "/// <summary>A shared value.</summary>\ninternal sealed class Shared{void M(){string.Concat(\"a\",\"b\");}}";

@@ -43,6 +43,58 @@ public sealed class SolutionWorkspaceServiceTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task RestoreAsync_PublishesCachedTreeBeforeLiveRoslynValidation()
+    {
+        var loader = new GatedInitialLoader();
+        var path = ProjectPath("Workspace.slnx");
+        var project = new ProjectContextSnapshot(
+            "cached-project",
+            "Cached",
+            ProjectPath("Cached.csproj"),
+            "net10.0",
+            true,
+            [],
+            [],
+            [],
+            "13.0",
+            "Enable");
+        var cache = new RecordingWarmCache(new SolutionWarmCacheEntry(
+            path,
+            "Workspace.slnx",
+            [project],
+            TimeSpan.FromMilliseconds(12)));
+        _service = new SolutionWorkspaceService(
+            _paths,
+            loader,
+            _background,
+            new DiagnosticStore(),
+            _notifications,
+            _log,
+            warmCache: cache,
+            workspaceRoot: () => Path.GetDirectoryName(path));
+
+        var restore = _service.RestoreAsync(Path.GetDirectoryName(path)!, TestContext.Current.CancellationToken);
+        await loader.Started.Task.WaitAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(SolutionLoadState.Loading, _service.Snapshot.State);
+        Assert.True(_service.Snapshot.RestoredFromWarmCache);
+        Assert.Single(_service.Snapshot.Projects, candidate => candidate.Name == "Cached");
+        Assert.Null(_service.CurrentSolution);
+
+        loader.Release.TrySetResult();
+        Assert.True(await restore);
+
+        Assert.Equal(SolutionLoadState.Ready, _service.Snapshot.State);
+        Assert.False(_service.Snapshot.RestoredFromWarmCache);
+        Assert.True(_service.CurrentMetrics.WarmCacheHit);
+        Assert.Equal(TimeSpan.FromMilliseconds(12), _service.CurrentMetrics.WarmCacheRestoreDuration);
+        Assert.Equal(1, cache.SaveCount);
+
+        await _service.CloseAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(1, cache.ClearCount);
+    }
+
+    [Fact]
     public async Task DirtyReplica_UpdatesEveryLinkedRoslynDocumentWithoutDiskIO()
     {
         _service = Create(new AdhocSolutionLoader());
@@ -676,5 +728,38 @@ internal sealed class FailingSolutionLoader : ISolutionLoader
         CancellationToken cancellationToken)
     {
         return Task.FromException<LoadedSolutionWorkspace>(new InvalidOperationException("evaluation failed"));
+    }
+}
+
+internal sealed class RecordingWarmCache(SolutionWarmCacheEntry? entry) : ISolutionWarmCache
+{
+    public int SaveCount => Volatile.Read(ref _saveCount);
+    public int ClearCount => Volatile.Read(ref _clearCount);
+    private int _saveCount;
+    private int _clearCount;
+
+    public Task<SolutionWarmCacheEntry?> LoadAsync(
+        string workspaceRoot,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(entry);
+    }
+
+    public Task SaveAsync(
+        string workspaceRoot,
+        SolutionWorkspaceSnapshot snapshot,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Interlocked.Increment(ref _saveCount);
+        return Task.CompletedTask;
+    }
+
+    public Task ClearAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Interlocked.Increment(ref _clearCount);
+        return Task.CompletedTask;
     }
 }

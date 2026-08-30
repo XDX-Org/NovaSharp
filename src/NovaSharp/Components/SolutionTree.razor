@@ -8,7 +8,7 @@
         @if (Snapshot.State == SolutionLoadState.Loading)
         {
             <div class="solution-status">
-                <span role="status">Loading…</span>
+                <span role="status">@(Snapshot.RestoredFromWarmCache ? "Restoring cached solution…" : "Loading…")</span>
                 <button type="button" class="tab-close" aria-label="Cancel solution loading"
                         @onclick="() => CancelLoad.InvokeAsync()">
                     <ShellIcon Name="SemanticIcon.Close" />

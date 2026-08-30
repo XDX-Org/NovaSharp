@@ -142,7 +142,7 @@ internal sealed class BoundedMSBuildLogger : ILogger
     private readonly Queue<string> _entries = new();
     private IEventSource? _source;
 
-    public LoggerVerbosity Verbosity { get; set; } = LoggerVerbosity.Detailed;
+    public LoggerVerbosity Verbosity { get; set; } = LoggerVerbosity.Normal;
     public string? Parameters { get; set; }
 
     public IReadOnlyList<string> Entries

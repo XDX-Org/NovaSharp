@@ -94,6 +94,12 @@ Check(solution.LoadMilliseconds <= 20_000,
     "representative solution load <= 20,000 ms", $"{solution.LoadMilliseconds:F2} ms");
 Check(solution.ReloadMilliseconds <= 15_000,
     "representative solution reload <= 15,000 ms", $"{solution.ReloadMilliseconds:F2} ms");
+Check(solution.WarmCacheDisplayMilliseconds <= 500,
+    "warm solution tree display <= 500 ms", $"{solution.WarmCacheDisplayMilliseconds:F2} ms");
+Check(solution.WarmValidatedLoadMilliseconds <= 15_000,
+    "warm validated solution load <= 15,000 ms", $"{solution.WarmValidatedLoadMilliseconds:F2} ms");
+Check(solution.WarmCacheExcludedRoslyn,
+    "warm display cache is excluded from Roslyn authority", solution.WarmCacheExcludedRoslyn.ToString());
 Check(solution.ForegroundReplicaMilliseconds <= 500,
     "foreground Roslyn replica barrier <= 500 ms", $"{solution.ForegroundReplicaMilliseconds:F2} ms");
 Check(solution.FirstSemanticModelMilliseconds <= 5_000,
@@ -112,8 +118,15 @@ Check(solution.LinkedDocumentContexts >= 2,
     "linked document maps to multiple contexts", solution.LinkedDocumentContexts.ToString());
 Check(solution.Language.FirstCompletionMilliseconds <= 750,
     "first project-aware completion <= 750 ms", $"{solution.Language.FirstCompletionMilliseconds:F2} ms");
+Check(solution.Language.CompletionWarmupMilliseconds <= 1_500,
+    "active-document completion warm-up <= 1,500 ms", $"{solution.Language.CompletionWarmupMilliseconds:F2} ms");
 Check(solution.Language.WarmCompletionMilliseconds <= 200,
     "warm completion <= 200 ms", $"{solution.Language.WarmCompletionMilliseconds:F2} ms");
+Check(solution.Language.CompletionListCacheHits >= 1 && solution.Language.CompletionListCacheEntries is > 0 and <= 16,
+    "exact-version completion cache is used and bounded",
+    $"{solution.Language.CompletionListCacheHits} hits, {solution.Language.CompletionListCacheEntries}/16 entries");
+Check(solution.Language.CompletionWarmupFailures == 0,
+    "background completion warm-up is recoverable", $"{solution.Language.CompletionWarmupFailures} failures");
 Check(solution.Language.SignatureMilliseconds <= 250,
     "warm signature help <= 250 ms", $"{solution.Language.SignatureMilliseconds:F2} ms");
 Check(solution.Language.HoverMilliseconds <= 250,
@@ -474,6 +487,13 @@ static async Task<SolutionPerformanceRecord> RunSolutionPerformanceAsync(string 
     var semanticMilliseconds = Stopwatch.GetElapsedTime(semanticStarted).TotalMilliseconds;
 
     var activeContext = service.GetDocumentContexts(sourceUri).Single(context => context.IsActive);
+    var completionWarmupStarted = Stopwatch.GetTimestamp();
+    await language.WarmCompletionAsync(
+        sourceUri,
+        activeContext.ProjectId.Id.ToString(),
+        service.Snapshot.SourceVersion,
+        1);
+    var completionWarmupMilliseconds = Stopwatch.GetElapsedTime(completionWarmupStarted).TotalMilliseconds;
     var completionPosition = replicaText.LastIndexOf("Empt", StringComparison.Ordinal) + "Empt".Length;
     LanguageRequest CompletionRequest(string id) => new(
         id,
@@ -534,11 +554,60 @@ static async Task<SolutionPerformanceRecord> RunSolutionPerformanceAsync(string 
     var linkedPath = Path.Combine(Path.GetDirectoryName(solutionPath)!, "tests", "fixtures", "phase-06", "Shared.cs");
     var metrics = service.CurrentMetrics;
 
+    double warmCacheDisplayMilliseconds;
+    double warmValidatedLoadMilliseconds;
+    bool warmCacheExcludedRoslyn;
+    var warmState = Directory.CreateTempSubdirectory("novasharp-solution-warm-").FullName;
+    try
+    {
+        var workspaceRoot = Path.GetDirectoryName(solutionPath)!;
+        var warmCache = new SolutionWarmCache(
+            new VerificationApplicationPaths(warmState),
+            paths,
+            new DocumentFileStore(),
+            queue);
+        await warmCache.SaveAsync(workspaceRoot, service.Snapshot);
+        await using var warmService = new SolutionWorkspaceService(
+            paths,
+            new MSBuildSolutionLoader(),
+            queue,
+            new DiagnosticStore(),
+            notifications,
+            log,
+            warmCache: warmCache,
+            workspaceRoot: () => workspaceRoot);
+        var cacheDisplayed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var warmStarted = Stopwatch.GetTimestamp();
+        warmService.Changed += snapshot =>
+        {
+            if (snapshot.RestoredFromWarmCache)
+            {
+                cacheDisplayed.TrySetResult();
+            }
+        };
+        var restore = warmService.RestoreAsync(workspaceRoot);
+        await cacheDisplayed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        warmCacheDisplayMilliseconds = Stopwatch.GetElapsedTime(warmStarted).TotalMilliseconds;
+        warmCacheExcludedRoslyn = warmService.CurrentSolution is null;
+        if (!await restore || warmService.Snapshot.State != SolutionLoadState.Ready)
+        {
+            throw new InvalidOperationException("The warm solution cache did not complete live validation.");
+        }
+        warmValidatedLoadMilliseconds = Stopwatch.GetElapsedTime(warmStarted).TotalMilliseconds;
+    }
+    finally
+    {
+        await DeleteDirectoryAsync(warmState);
+    }
+
     return new SolutionPerformanceRecord(
         service.Snapshot.Projects.Count,
         service.GetDocumentContexts(paths.ToDocumentUri(linkedPath)).Count,
         loadMilliseconds,
         reloadMilliseconds,
+        warmCacheDisplayMilliseconds,
+        warmValidatedLoadMilliseconds,
+        warmCacheExcludedRoslyn,
         replicaMilliseconds,
         semanticMilliseconds,
         Math.Max(0, memoryAfter - memoryBefore),
@@ -548,6 +617,7 @@ static async Task<SolutionPerformanceRecord> RunSolutionPerformanceAsync(string 
         metrics.ReplicaCapacity,
         metrics.RetainedReplicas,
         new LanguagePerformanceRecord(
+            completionWarmupMilliseconds,
             firstCompletionMilliseconds,
             warmCompletionMilliseconds,
             signatureMilliseconds,
@@ -566,7 +636,10 @@ static async Task<SolutionPerformanceRecord> RunSolutionPerformanceAsync(string 
             languageMetrics.LastQueueDelayMilliseconds,
             languageMetrics.LastReplicaBarrierMilliseconds,
             languageMetrics.LastRoslynMilliseconds,
-            languageMetrics.LastTotalMilliseconds));
+            languageMetrics.LastTotalMilliseconds,
+            languageMetrics.CompletionListCacheHits,
+            languageMetrics.CompletionListCacheEntries,
+            languageMetrics.CompletionWarmupFailures));
 }
 
 static string CreateLargeDocument()
@@ -710,6 +783,9 @@ internal sealed record SolutionPerformanceRecord(
     int LinkedDocumentContexts,
     double LoadMilliseconds,
     double ReloadMilliseconds,
+    double WarmCacheDisplayMilliseconds,
+    double WarmValidatedLoadMilliseconds,
+    bool WarmCacheExcludedRoslyn,
     double ForegroundReplicaMilliseconds,
     double FirstSemanticModelMilliseconds,
     long ManagedMemoryIncreaseBytes,
@@ -721,6 +797,7 @@ internal sealed record SolutionPerformanceRecord(
     LanguagePerformanceRecord Language);
 
 internal sealed record LanguagePerformanceRecord(
+    double CompletionWarmupMilliseconds,
     double FirstCompletionMilliseconds,
     double WarmCompletionMilliseconds,
     double SignatureMilliseconds,
@@ -734,7 +811,10 @@ internal sealed record LanguagePerformanceRecord(
     double LastQueueDelayMilliseconds,
     double LastReplicaBarrierMilliseconds,
     double LastRoslynMilliseconds,
-    double LastTotalMilliseconds);
+    double LastTotalMilliseconds,
+    long CompletionListCacheHits,
+    int CompletionListCacheEntries,
+    long CompletionWarmupFailures);
 
 internal sealed class VerificationApplicationPaths(string directory) : IApplicationPaths
 {

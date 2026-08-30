@@ -26,7 +26,8 @@ public sealed record LanguageCompletionItem(
     string InsertText,
     IReadOnlyList<string> CommitCharacters,
     IReadOnlyList<LanguageTextEdit> AdditionalTextEdits,
-    bool IsSnippet = false);
+    bool IsSnippet = false,
+    bool Preselect = false);
 
 public sealed record LanguageCompletionList(
     string RequestId,
@@ -99,4 +100,7 @@ public sealed record LanguageServiceMetrics(
     double LastQueueDelayMilliseconds,
     double LastReplicaBarrierMilliseconds,
     double LastRoslynMilliseconds,
-    double LastTotalMilliseconds);
+    double LastTotalMilliseconds,
+    long CompletionListCacheHits,
+    int CompletionListCacheEntries,
+    long CompletionWarmupFailures);

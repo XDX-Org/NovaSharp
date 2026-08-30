@@ -508,7 +508,7 @@ public sealed class DocumentSession : IAsyncDisposable
                 _watcher.Watch(result.Record.Path);
                 _notifications.Dismiss(Scoped(NotificationIds.SaveFailed));
                 _notifications.Dismiss(Scoped(NotificationIds.ExternalChange));
-                await PublishAsync(BuildStatus()).ConfigureAwait(false);
+                await PublishAsync(BuildStatus() with { IsBusy = false }).ConfigureAwait(false);
                 if (relocatedAlternativeSequence is not null)
                 {
                     lock (_gate)
@@ -525,14 +525,14 @@ public sealed class DocumentSession : IAsyncDisposable
                         ? NotificationSeverity.Warning
                         : NotificationSeverity.Error,
                     result.Message ?? $"{record.DisplayName} was not saved.");
-                await PublishAsync(BuildStatus()).ConfigureAwait(false);
+                await PublishAsync(BuildStatus() with { IsBusy = false }).ConfigureAwait(false);
             }
 
             return result;
         }
         catch (OperationCanceledException)
         {
-            await PublishAsync(BuildStatus()).ConfigureAwait(false);
+            await PublishAsync(BuildStatus() with { IsBusy = false }).ConfigureAwait(false);
             return null;
         }
         catch (Exception exception) when (IsFileFailure(exception))

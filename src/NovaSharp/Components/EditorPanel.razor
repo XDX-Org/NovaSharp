@@ -38,6 +38,12 @@
             <CommandButton CommandId="WorkbenchCommands.Save" Icon="SemanticIcon.Save" OnInvoke="InvokeAsync" />
         </div>
     </header>
+    @if (_openCommandMenu is not null)
+    {
+        <div class="command-menu-scrim" aria-hidden="true"
+             @onclick="CloseCommandMenu"
+             @oncontextmenu="CloseCommandMenu" @oncontextmenu:preventDefault></div>
+    }
     <div class="workbench-body">
         <div class="editor-workspace">
           <section class="editor-panel">
@@ -464,13 +470,18 @@
     {
         if (_host is null || Active?.DocumentUri is not { } uri) return;
         var active = _contexts.FirstOrDefault(static context => context.IsActive);
+        var sourceVersion = Workbench.Solutions.Snapshot.SourceVersion;
+        var suggestionsEnabled = Workbench.Configuration.Current.Settings.CSharpSuggestions;
         await _host.SetLanguageContextAsync(
             uri,
             active?.ProjectId.Id.ToString(),
-            Workbench.Solutions.Snapshot.SourceVersion,
+            sourceVersion,
             active is not null,
-            Workbench.Configuration.Current.Settings.CSharpSuggestions,
+            suggestionsEnabled,
             CancellationToken.None);
+        if (active is not null && suggestionsEnabled && Active?.Replica is { } replica)
+            _ = Workbench.CSharp.WarmCompletionAsync(
+                uri, active.ProjectId.Id.ToString(), sourceVersion, replica.Sequence);
     }
 
     private async Task SelectProjectContextAsync(ChangeEventArgs args)

@@ -54,7 +54,9 @@ public sealed record SolutionWorkspaceMetrics(
     int DroppedReplicaSources = 0,
     int CanceledLoads = 0,
     int RetainedRoslynSnapshots = 0,
-    TimeSpan LastLoadDuration = default);
+    TimeSpan LastLoadDuration = default,
+    bool WarmCacheHit = false,
+    TimeSpan WarmCacheRestoreDuration = default);
 
 public sealed record SolutionWorkspaceSnapshot(
     SolutionLoadState State = SolutionLoadState.Closed,
@@ -65,6 +67,7 @@ public sealed record SolutionWorkspaceSnapshot(
     IReadOnlyList<ProjectContextChange>? ContextChanges = null,
     IReadOnlyList<string>? LoadDiagnostics = null,
     string? Error = null,
+    bool RestoredFromWarmCache = false,
     long SourceVersion = 0,
     long Version = 0,
     SolutionWorkspaceMetrics? Metrics = null)

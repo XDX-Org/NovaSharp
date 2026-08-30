@@ -555,7 +555,13 @@ try {
     // A line-ending change rewrites every line at once and no range edit describes it, so it must ask for a
     // resynchronization rather than send offsets into text the shadow does not have.
     const resyncsBefore = (await shadow()).resyncs;
-    await page.evaluate(() => globalThis.NovaMonaco.editor.getModels()[0].setEOL(globalThis.NovaMonaco.editor.EndOfLineSequence.CRLF));
+    await page.evaluate(() => {
+        const model = globalThis.NovaMonaco.editor.getModels()[0];
+        const nextEol = model.getEOL() === '\r\n'
+            ? globalThis.NovaMonaco.editor.EndOfLineSequence.LF
+            : globalThis.NovaMonaco.editor.EndOfLineSequence.CRLF;
+        model.setEOL(nextEol);
+    });
     await settle();
     replicated = await shadow();
     check('a line-ending change asks for a resynchronization', replicated.resyncs > resyncsBefore, String(replicated.resyncs));

@@ -25,6 +25,13 @@ or cancelled loads are disposed without publication. Project, restore, and sourc
 existing C# inputs update their mapped Roslyn documents through the same coordinator; they must not reevaluate the project because evaluation can
 itself rewrite generated C# outputs and create a watcher/reload loop.
 
+A successful load may persist one bounded, schema-versioned display snapshot for the most recently opened workspace. On a later process launch,
+that snapshot may populate the solution tree while a fresh `MSBuildWorkspace` evaluates concurrently. Cached project IDs, paths, references, and
+document membership are provisional presentation metadata only: they do not create a Roslyn workspace, answer a language request, publish a
+diagnostic, or satisfy a readiness check. Live evaluation atomically replaces them before semantic services become available. The cache uses
+workspace-relative paths where possible, restores only a solution contained by the matching workspace root, validates recorded solution, project,
+restore, analyzer, and conventional evaluation inputs, and is discardable on any schema, identity, size, or input mismatch.
+
 Live and externally refreshed text is retained as an immutable `Solution` overlay owned by the coordinator. NovaSharp must not publish those
 text changes through `MSBuildWorkspace.TryApplyChanges`: that API is an apply-to-host operation and can write an unsaved editor replica to disk.
 Only the document save path may persist editor text.
@@ -38,5 +45,6 @@ workbench; a separately bounded raw MSBuild log remains available for investigat
   packages remain excluded.
 - The active target framework is policy, not a compilation merge. Switching context changes which immutable Roslyn project answers a request.
 - Reload does not close Monaco models or write dirty buffers to disk.
+- Warm restoration can make the prior solution tree visible immediately, but C# services continue to report loading until live evaluation wins.
 - Non-SDK and unsupported project types produce structured load diagnostics instead of partial inferred compilations.
 - Every supported runtime uses the same loader and coordinator. SDK discovery differences stay inside `MSBuildLocator` and the selected SDK.

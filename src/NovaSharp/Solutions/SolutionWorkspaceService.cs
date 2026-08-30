@@ -75,6 +75,8 @@ public sealed class SolutionWorkspaceService : IAsyncDisposable
     private readonly DiagnosticStore _diagnostics;
     private readonly INotificationService _notifications;
     private readonly IWorkbenchLog _log;
+    private readonly ISolutionWarmCache _warmCache;
+    private readonly Func<string?> _workspaceRoot;
     private readonly Channel<MutationSignal> _mutations;
     private readonly CancellationTokenSource _shutdown = new();
     private readonly SemaphoreSlim _writer = new(1, 1);
@@ -104,6 +106,8 @@ public sealed class SolutionWorkspaceService : IAsyncDisposable
     private int _rescanReplicas;
     private int _disposed;
     private bool _closing;
+    private bool _warmCacheHit;
+    private TimeSpan _warmCacheRestoreDuration;
 
     public SolutionWorkspaceService(
         IWorkspacePaths paths,
@@ -113,7 +117,9 @@ public sealed class SolutionWorkspaceService : IAsyncDisposable
         INotificationService notifications,
         IWorkbenchLog log,
         int mutationCapacity = 128,
-        int replicaCapacity = 1_024)
+        int replicaCapacity = 1_024,
+        ISolutionWarmCache? warmCache = null,
+        Func<string?>? workspaceRoot = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(loader);
@@ -130,6 +136,8 @@ public sealed class SolutionWorkspaceService : IAsyncDisposable
         _diagnostics = diagnostics;
         _notifications = notifications;
         _log = log;
+        _warmCache = warmCache ?? NullSolutionWarmCache.Instance;
+        _workspaceRoot = workspaceRoot ?? (() => null);
         _mutations = Channel.CreateBounded<MutationSignal>(new BoundedChannelOptions(mutationCapacity)
         {
             FullMode = BoundedChannelFullMode.Wait,
@@ -200,7 +208,33 @@ public sealed class SolutionWorkspaceService : IAsyncDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
 
-        var load = OpenCoreAsync(path, cancellationToken);
+        return TrackLoad(OpenCoreAsync(path, warm: null, cancellationToken));
+    }
+
+    public Task<bool> RestoreAsync(string workspaceRoot, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+
+        var restore = RestoreCoreAsync(workspaceRoot, cancellationToken);
+        TrackLoad(restore);
+        return restore;
+    }
+
+    private async Task<bool> RestoreCoreAsync(string workspaceRoot, CancellationToken cancellationToken)
+    {
+        var warm = await _warmCache.LoadAsync(workspaceRoot, cancellationToken).ConfigureAwait(false);
+        if (warm is null)
+        {
+            return false;
+        }
+
+        await OpenCoreAsync(warm.Path, warm, cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
+    private Task TrackLoad(Task load)
+    {
         lock (_gate)
         {
             _loads.Add(load);
@@ -214,7 +248,10 @@ public sealed class SolutionWorkspaceService : IAsyncDisposable
         return load;
     }
 
-    private async Task OpenCoreAsync(string path, CancellationToken cancellationToken)
+    private async Task OpenCoreAsync(
+        string path,
+        SolutionWarmCacheEntry? warm,
+        CancellationToken cancellationToken)
     {
         lock (_gate)
         {
@@ -236,6 +273,8 @@ public sealed class SolutionWorkspaceService : IAsyncDisposable
             _activeEvaluation = evaluation.Completion;
             sourceVersion = ++_sourceVersion;
             _progress.Clear();
+            _warmCacheHit = warm is not null;
+            _warmCacheRestoreDuration = warm?.RestoreDuration ?? TimeSpan.Zero;
         }
 
         Publish(current => current with
@@ -243,12 +282,16 @@ public sealed class SolutionWorkspaceService : IAsyncDisposable
             State = SolutionLoadState.Loading,
             Path = canonical,
             Name = Path.GetFileName(canonical),
+            Projects = warm?.Projects
+                ?? (current.Path is not null && _paths.IsSamePath(current.Path, canonical) ? current.Projects : []),
             Progress = [],
             Error = null,
+            RestoredFromWarmCache = warm is not null,
             SourceVersion = sourceVersion,
         });
 
         LoadedSolutionWorkspace? candidate = null;
+        SolutionWorkspaceSnapshot? cacheSnapshot = null;
         try
         {
             var progress = new CallbackProgress<ProjectLoadStatusSnapshot>(item => ReportProgress(sourceVersion, item));
@@ -295,12 +338,14 @@ public sealed class SolutionWorkspaceService : IAsyncDisposable
                     ContextChanges = changes,
                     LoadDiagnostics = _loaded.Diagnostics,
                     Error = null,
+                    RestoredFromWarmCache = false,
                     SourceVersion = sourceVersion,
                     Metrics = CreateMetrics(watch.Elapsed, retainedSnapshots: 1),
                 });
                 lock (_gate)
                 {
                     _lastReadySnapshot = _snapshot;
+                    cacheSnapshot = _snapshot;
                 }
                 PublishDiagnostics(canonical, sourceVersion, _loaded.Diagnostics);
                 _notifications.Dismiss(NotificationIds.SolutionLoadFailed);
@@ -312,6 +357,18 @@ public sealed class SolutionWorkspaceService : IAsyncDisposable
                 if (previous is not null)
                 {
                     await previous.DisposeAsync().ConfigureAwait(false);
+                }
+            }
+
+            if (cacheSnapshot is not null && _workspaceRoot() is { } workspaceRoot)
+            {
+                try
+                {
+                    await _warmCache.SaveAsync(workspaceRoot, cacheSnapshot, load.Token).ConfigureAwait(false);
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    _log.Write(LogLevel.Warning, "solution", "The warm solution cache could not be saved.", exception);
                 }
             }
         }
@@ -463,6 +520,15 @@ public sealed class SolutionWorkspaceService : IAsyncDisposable
             if (previous is not null)
             {
                 await previous.DisposeAsync().ConfigureAwait(false);
+            }
+
+            try
+            {
+                await _warmCache.ClearAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                _log.Write(LogLevel.Warning, "solution", "The warm solution cache could not be cleared.", exception);
             }
         }
         finally
@@ -1168,9 +1234,13 @@ public sealed class SolutionWorkspaceService : IAsyncDisposable
     private SolutionWorkspaceMetrics CreateMetrics(TimeSpan elapsed, int retainedSnapshots)
     {
         int retainedReplicas;
+        bool warmCacheHit;
+        TimeSpan warmCacheRestoreDuration;
         lock (_gate)
         {
             retainedReplicas = _replicas.Count;
+            warmCacheHit = _warmCacheHit;
+            warmCacheRestoreDuration = _warmCacheRestoreDuration;
         }
         return new(
             MutationCapacity,
@@ -1181,7 +1251,9 @@ public sealed class SolutionWorkspaceService : IAsyncDisposable
             Volatile.Read(ref _droppedReplicaSources),
             Volatile.Read(ref _canceledLoads),
             retainedSnapshots,
-            elapsed);
+            elapsed,
+            warmCacheHit,
+            warmCacheRestoreDuration);
     }
 
     private void Publish(Func<SolutionWorkspaceSnapshot, SolutionWorkspaceSnapshot> update)

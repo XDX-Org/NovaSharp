@@ -59,6 +59,7 @@ kbd { color: var(--text-muted); font: inherit; font-size: 11px; white-space: now
 .command-menu-trigger, .command-button { display: inline-flex; height: var(--control-height); align-items: center; justify-content: center; gap: 6px; padding: 0 var(--space-2); border: 1px solid transparent; border-radius: var(--radius-small); background: transparent; cursor: pointer; }
 .command-menu-trigger:hover, .command-button:hover:not(:disabled) { background: var(--surface-hover); }
 .command-bar-actions { display: flex; flex: 0 0 auto; margin-left: auto; }
+.command-menu-scrim { position: fixed; inset: 0; z-index: 19; }
 .command-menu-popup { position: absolute; top: calc(100% + var(--space-1)); left: 0; z-index: 40; display: grid; width: max-content; min-width: 230px; max-width: min(360px, calc(100vw - var(--space-4))); padding: var(--space-1); border: 1px solid var(--border-strong); border-radius: var(--radius-medium); background: var(--surface-raised); box-shadow: var(--shadow-raised); }
 .command-menu-popup button { display: flex; min-height: var(--control-height); align-items: center; gap: var(--space-3); padding: var(--space-1) var(--space-2); border: 0; border-radius: var(--radius-small); background: transparent; text-align: left; }
 .command-menu-popup button:not(:disabled):hover { background: var(--surface-hover); }

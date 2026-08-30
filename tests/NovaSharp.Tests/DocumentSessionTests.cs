@@ -143,6 +143,16 @@ public sealed class DocumentSessionTests : IAsyncDisposable
         Assert.Equal(DocumentSaveStatus.Saved, result?.Status);
         Assert.Equal("class Widget;\nclass Gadget;\n", await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken));
         Assert.False(_session.Status.IsDirty);
+        Assert.False(_session.Status.IsBusy);
+
+        _host.Type("class SecondSave;\n");
+        await WaitForAsync(() => _session.Status.IsDirty);
+
+        result = await _session.SaveAsync(cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(DocumentSaveStatus.Saved, result?.Status);
+        Assert.Equal("class Widget;\nclass Gadget;\nclass SecondSave;\n", await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken));
+        Assert.False(_session.Status.IsBusy);
     }
 
     [Fact]
