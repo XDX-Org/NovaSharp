@@ -2,7 +2,8 @@
 
 ## Status
 
-Implementation and phase-specific local verification are complete. Formal phase completion is pending one retained CI qualification run from the same commit on all six supported runtime identifiers.
+Complete. [Qualification run 33404085465](https://github.com/XDX-Org/NovaSharp/actions/runs/33404085465) passed the full
+phase contract on all six supported runtime identifiers from commit `fa06699`.
 
 ## Goal
 
@@ -88,7 +89,8 @@ The warm-up primes the exact active-caret list consumed by the first request, so
 - Browser interaction tests prove public Monaco registration, platform-shaped canonical URIs across replication/resynchronization/language requests, stamped completion requests, Monaco-owned suggestion UI, deterministic provider disposal/reregistration, typing/paint latency, bounded replication, and 100-cycle heap retention.
 - `tools/NovaSharp.PhaseVerification` executes the feature budgets, exact-replica result checks, solution/snapshot bounds, packaged native smoke, and existing startup/editor/Explorer gates per RID.
 - Verification records separate queue delay, replica barrier, Roslyn execution, total provider latency, and browser interop latency.
-- Qualification remains incomplete until all six matrix rows retain passing records from the same commit. A local result is development evidence only.
+- [Qualification run 33404085465](https://github.com/XDX-Org/NovaSharp/actions/runs/33404085465) retained passing native and browser
+  records from commit `fa06699` for all six matrix rows.
 
 ## Known limitations
 
