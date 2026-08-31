@@ -394,12 +394,15 @@ try {
             check(`${engine} double Shift opens the command palette`, await page.locator('.palette-scrim').isVisible());
             check(`${engine} command palette receives focus`, await page.locator('.command-palette input').evaluate(element => element === document.activeElement));
             const paletteResults = page.locator('.command-palette-results');
-            const paletteOverflow = await paletteResults.evaluate(element => element.scrollHeight > element.clientHeight);
+            await page.waitForFunction(() => {
+                const element = document.querySelector('.command-palette-results');
+                return element && element.scrollHeight > element.clientHeight;
+            });
             await paletteResults.hover();
             await page.mouse.wheel(0, 480);
-            await page.waitForTimeout(50);
+            await page.waitForFunction(() => document.querySelector('.command-palette-results')?.scrollTop > 0);
             check(`${engine} command palette results scroll after double Shift`,
-                paletteOverflow && await paletteResults.evaluate(element => element.scrollTop > 0));
+                await paletteResults.evaluate(element => element.scrollTop > 0));
             await compare(`${engine}-palette`, await page.screenshot({ animations: 'disabled' }));
             await page.evaluate(() => {
                 document.querySelector('.palette-scrim').hidden = true;
