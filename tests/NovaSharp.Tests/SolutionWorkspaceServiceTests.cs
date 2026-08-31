@@ -405,7 +405,8 @@ public sealed class SolutionWorkspaceServiceTests : IAsyncDisposable
                 ProjectPath("Shared.cs"),
                 ProjectPath("Previous.cs"),
                 Stopwatch.GetTimestamp())]));
-        await WaitUntilAsync(() => Task.FromResult(loader.LoadCount == 2));
+        await WaitUntilAsync(() => Task.FromResult(
+            loader.LoadCount == 2 && _service.Snapshot.State == SolutionLoadState.Ready));
 
         Assert.Equal(SolutionLoadState.Ready, _service.Snapshot.State);
     }
