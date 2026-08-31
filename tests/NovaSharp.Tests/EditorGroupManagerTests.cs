@@ -102,6 +102,36 @@ public sealed class EditorGroupManagerTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task FocusingAnEditorGroupMakesItsDocumentTheCommandTarget()
+    {
+        await OpenAsync("left.cs");
+        var groups = await CreateGroupsAsync();
+        var leftGroup = groups.Snapshot.ActiveGroupId;
+        var leftDocument = groups.Snapshot.ActiveTab!.DocumentId;
+        await groups.SplitAsync(EditorSplitDirection.Right, TestContext.Current.CancellationToken);
+        var rightGroup = groups.Snapshot.ActiveGroupId;
+        await groups.RegisterGroupAsync(rightGroup, default, TestContext.Current.CancellationToken);
+        var rightPath = Path.Combine(_root, "right.cs");
+        await File.WriteAllTextAsync(rightPath, "public sealed class Right;\n", TestContext.Current.CancellationToken);
+        await groups.OpenPinnedAsync(rightPath, TestContext.Current.CancellationToken);
+
+        await groups.FocusAsync(leftGroup, TestContext.Current.CancellationToken);
+
+        Assert.Equal(leftGroup, groups.Snapshot.ActiveGroupId);
+        Assert.Equal(leftDocument, groups.Snapshot.ActiveTab!.DocumentId);
+        Assert.Equal(leftDocument, _documents.Snapshot.ActiveId);
+
+        _host.Type("// saved from left\n");
+        var result = await _documents.ActiveDocument!.SaveAsync(cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(DocumentSaveStatus.Saved, result?.Status);
+        Assert.Contains("saved from left", await File.ReadAllTextAsync(Path.Combine(_root, "left.cs"),
+            TestContext.Current.CancellationToken), StringComparison.Ordinal);
+        Assert.DoesNotContain("saved from left", await File.ReadAllTextAsync(rightPath,
+            TestContext.Current.CancellationToken), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task ExplorerDropOpensTheFileAtTheRequestedGroupAndTabPosition()
     {
         await OpenAsync("first.cs");

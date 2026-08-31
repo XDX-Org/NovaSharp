@@ -334,6 +334,77 @@ public sealed class SolutionWorkspaceServiceTests : IAsyncDisposable
         Assert.Equal(1, loader.LoadCount);
     }
 
+    [Theory]
+    [InlineData(NovaSharp.Workspace.WorkspaceChangeKind.Created)]
+    [InlineData(NovaSharp.Workspace.WorkspaceChangeKind.Renamed)]
+    public async Task AtomicReplacementOfKnownSource_DoesNotReloadTheSolution(
+        NovaSharp.Workspace.WorkspaceChangeKind kind)
+    {
+        var loader = new CountingSolutionLoader();
+        _service = Create(loader);
+        await _service.OpenAsync(ProjectPath("Workspace.slnx"), TestContext.Current.CancellationToken);
+        var path = ProjectPath("Shared.cs");
+        var oldPath = kind == NovaSharp.Workspace.WorkspaceChangeKind.Renamed
+            ? ProjectPath(".Shared.cs.novasharp-00000000000000000000000000000000.tmp")
+            : null;
+
+        _service.ObserveWorkspaceChanges(new WorkspaceChangeBatch(
+            [new WorkspaceChange(kind, path, oldPath, Stopwatch.GetTimestamp())]));
+        await Task.Delay(TimeSpan.FromMilliseconds(300), TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, loader.LoadCount);
+        Assert.Equal(SolutionLoadState.Ready, _service.Snapshot.State);
+    }
+
+    [Fact]
+    public async Task AtomicDocumentSaveThroughWorkspaceWatcher_DoesNotReloadTheSolution()
+    {
+        var loader = new CountingSolutionLoader();
+        _service = Create(loader);
+        await _service.OpenAsync(ProjectPath("Workspace.slnx"), TestContext.Current.CancellationToken);
+        var path = ProjectPath("Shared.cs");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        await File.WriteAllTextAsync(path, "internal sealed class Shared { }", TestContext.Current.CancellationToken);
+        await using var watcher = new FileSystemWorkspaceWatcher(_paths, capacity: 16);
+        var observed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        watcher.Changed += batch =>
+        {
+            _service.ObserveWorkspaceChanges(batch);
+            observed.TrySetResult();
+            return Task.CompletedTask;
+        };
+        watcher.Watch(Path.GetDirectoryName(path));
+        await Task.Delay(100, TestContext.Current.CancellationToken);
+
+        await new DocumentFileStore().WriteAllBytesAsync(
+            path,
+            "internal sealed class Shared { public int Value => 7; }"u8.ToArray(),
+            TestContext.Current.CancellationToken);
+        await observed.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        await Task.Delay(TimeSpan.FromMilliseconds(300), TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, loader.LoadCount);
+        Assert.Equal(SolutionLoadState.Ready, _service.Snapshot.State);
+    }
+
+    [Fact]
+    public async Task GenuineSourceRenameStillReloadsTheSolution()
+    {
+        var loader = new CountingSolutionLoader();
+        _service = Create(loader);
+        await _service.OpenAsync(ProjectPath("Workspace.slnx"), TestContext.Current.CancellationToken);
+
+        _service.ObserveWorkspaceChanges(new WorkspaceChangeBatch(
+            [new WorkspaceChange(
+                NovaSharp.Workspace.WorkspaceChangeKind.Renamed,
+                ProjectPath("Shared.cs"),
+                ProjectPath("Previous.cs"),
+                Stopwatch.GetTimestamp())]));
+        await WaitUntilAsync(() => Task.FromResult(loader.LoadCount == 2));
+
+        Assert.Equal(SolutionLoadState.Ready, _service.Snapshot.State);
+    }
+
     [Fact]
     public async Task LateWatcherNotificationForLoadedSource_DoesNotStartAnotherEvaluation()
     {

@@ -50,7 +50,7 @@
             <div class="editor-groups-root @(_status.IsComparing ? "hidden" : null) @(_draggedViewId is null && _draggedWorkspacePath is null ? null : "dragging")"
                  @ref="_editorGroupsRoot">
                 <EditorGroupPane @key="_groups.Layout.Id" Node="_groups.Layout" Snapshot="_groups"
-                                 OnGroupReady="GroupReadyAsync" OnActivate="ActivateTabAsync"
+                                 OnGroupReady="GroupReadyAsync" OnFocus="FocusGroupAsync" OnActivate="ActivateTabAsync"
                                  OnPromote="PromoteTabAsync" OnClose="CloseGroupTabAsync"
                                  OnContextMenu="OpenTabContextAsync" OnDragStart="BeginTabDrag"
                                  OnDragEnd="EndTabDrag"
@@ -551,6 +551,9 @@
             _status = _documents.ActiveDocument?.Status ?? new();
         }
     }
+
+    private Task FocusGroupAsync(string groupId) =>
+        _groupManager?.FocusAsync(groupId) ?? Task.CompletedTask;
 
     private Task PromoteTabAsync(EditorGroupTabEvent tab)
     {

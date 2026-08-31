@@ -316,6 +316,31 @@ public sealed class EditorGroupManager : IAsyncDisposable
         finally { _mutations.Release(); }
     }
 
+    public async Task FocusAsync(string groupId, CancellationToken cancellationToken = default)
+    {
+        await _mutations.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            GroupState? group;
+            ViewState? view;
+            lock (_gate)
+            {
+                group = _groups.GetValueOrDefault(groupId);
+                view = group is null ? null : ActiveView(group);
+            }
+            if (group is null || view is null || !group.IsMounted) return;
+
+            lock (_gate) _activeGroupId = group.Id;
+            await _host.SetActiveViewAsync(group.Id, cancellationToken).ConfigureAwait(false);
+            if (_documents.Snapshot.ActiveId != view.DocumentId)
+                await _documents.ActivateAsync(view.DocumentId, cancellationToken).ConfigureAwait(false);
+            await AttachGroupAsync(group, focus: false, cancellationToken).ConfigureAwait(false);
+            Publish();
+            QueuePersist();
+        }
+        finally { _mutations.Release(); }
+    }
+
     public async Task SplitAsync(EditorSplitDirection direction, CancellationToken cancellationToken = default)
     {
         await _mutations.WaitAsync(cancellationToken).ConfigureAwait(false);

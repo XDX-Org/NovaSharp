@@ -292,6 +292,8 @@ public sealed class EditorContractTests
         Assert.Contains("@onmouseup", markup, StringComparison.Ordinal);
         Assert.DoesNotContain("tabs-overflow", markup, StringComparison.Ordinal);
         Assert.DoesNotContain("Open editor list", markup, StringComparison.Ordinal);
+        Assert.Contains("@onfocusin", markup, StringComparison.Ordinal);
+        Assert.Contains("OnFocus=\"FocusGroupAsync\"", markup, StringComparison.Ordinal);
     }
 
     [Fact]

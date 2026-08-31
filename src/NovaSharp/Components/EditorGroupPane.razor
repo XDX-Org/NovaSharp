@@ -10,7 +10,7 @@
     <div class="editor-split @(split.Orientation == EditorSplitOrientation.Horizontal ? "horizontal" : "vertical")"
          style="--split-first:@((split.Ratio * 100).ToString(CultureInfo.InvariantCulture))%" data-split-id="@split.Id">
         <EditorGroupPane @key="split.First.Id" Node="split.First" Snapshot="Snapshot" OnGroupReady="OnGroupReady"
-                         OnActivate="OnActivate" OnPromote="OnPromote" OnClose="OnClose"
+                         OnFocus="OnFocus" OnActivate="OnActivate" OnPromote="OnPromote" OnClose="OnClose"
                          OnContextMenu="OnContextMenu" OnDragStart="OnDragStart" OnDrop="OnDrop"
                          OnDragEnd="OnDragEnd"
                          OnEdgeDrop="OnEdgeDrop" OnResize="OnResize" />
@@ -19,7 +19,7 @@
              aria-valuemin="10" aria-valuemax="90" aria-valuenow="@Math.Round(split.Ratio * 100)"
              @onkeydown="args => ResizeKeyAsync(split, args)"></div>
         <EditorGroupPane @key="split.Second.Id" Node="split.Second" Snapshot="Snapshot" OnGroupReady="OnGroupReady"
-                         OnActivate="OnActivate" OnPromote="OnPromote" OnClose="OnClose"
+                         OnFocus="OnFocus" OnActivate="OnActivate" OnPromote="OnPromote" OnClose="OnClose"
                          OnContextMenu="OnContextMenu" OnDragStart="OnDragStart" OnDrop="OnDrop"
                          OnDragEnd="OnDragEnd"
                          OnEdgeDrop="OnEdgeDrop" OnResize="OnResize" />
@@ -27,7 +27,8 @@
 }
 else if (Node is EditorGroupNodeSnapshot leaf && Snapshot.Groups.TryGetValue(leaf.GroupId, out var group))
 {
-    <section class="editor-group @(group.IsActive ? "active" : null)" aria-label="Editor group" data-group-id="@group.Id">
+    <section class="editor-group @(group.IsActive ? "active" : null)" aria-label="Editor group" data-group-id="@group.Id"
+             @onfocusin="() => FocusAsync(group)">
         <div class="tabs-bar">
             <div class="tabs-strip" role="tablist" aria-label="Open editors in group"
                  @ondragover:preventDefault @ondrop="args => DropAsync(group.Id, group.Tabs.Count, args)">
@@ -79,6 +80,7 @@ else if (Node is EditorGroupNodeSnapshot leaf && Snapshot.Groups.TryGetValue(lea
     [Parameter, EditorRequired] public EditorLayoutNodeSnapshot Node { get; set; } = null!;
     [Parameter, EditorRequired] public EditorGroupsSnapshot Snapshot { get; set; } = null!;
     [Parameter] public EventCallback<(string GroupId, ElementReference Container)> OnGroupReady { get; set; }
+    [Parameter] public EventCallback<string> OnFocus { get; set; }
     [Parameter] public EventCallback<EditorGroupTabEvent> OnActivate { get; set; }
     [Parameter] public EventCallback<EditorGroupTabEvent> OnPromote { get; set; }
     [Parameter] public EventCallback<EditorGroupTabEvent> OnClose { get; set; }
@@ -129,6 +131,9 @@ else if (Node is EditorGroupNodeSnapshot leaf && Snapshot.Groups.TryGetValue(lea
 
     private Task DropAsync(string groupId, int index, DragEventArgs args) =>
         OnDrop.InvokeAsync(new(groupId, index, args.CtrlKey || args.AltKey));
+
+    private Task FocusAsync(EditorGroupSnapshot group) =>
+        group.IsActive ? Task.CompletedTask : OnFocus.InvokeAsync(group.Id);
 
     private Task EdgeDropAsync(string groupId, EditorSplitDirection direction, DragEventArgs args) =>
         OnEdgeDrop.InvokeAsync(new(groupId, direction, args.CtrlKey || args.AltKey));

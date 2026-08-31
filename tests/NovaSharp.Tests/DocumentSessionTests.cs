@@ -68,6 +68,7 @@ public sealed class DocumentSessionTests : IAsyncDisposable
         await OpenAsync("widget.cs", "class Widget;\n");
         var status = _session.Status;
         Assert.True(status.IsOpen);
+        Assert.False(status.IsBusy);
         Assert.False(status.IsDirty);
         Assert.Equal("widget.cs", status.DisplayName);
         Assert.Equal(LineEndingStyle.Lf, status.LineEnding);
@@ -318,6 +319,7 @@ public sealed class DocumentSessionTests : IAsyncDisposable
         Assert.Equal("from disk\n", _host.Text);
         Assert.Equal("from disk\n", _session.Replica?.Snapshot().Text);
         Assert.False(_session.Status.IsDirty);
+        Assert.False(_session.Status.IsBusy);
         Assert.Equal(snapshotsBefore, _host.SnapshotCount);
         Assert.Equal("from disk\n", changed?.Replica.Snapshot().Text);
     }

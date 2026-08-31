@@ -748,6 +748,7 @@ public sealed class SolutionWorkspaceService : IAsyncDisposable
                     .ToArray(),
             };
         if (!current.Overflowed && current.Changes.Count == 0) return;
+        current = NormalizeKnownSourceReplacements(current);
 
         if (RequiresFullReload(current))
         {
@@ -770,6 +771,38 @@ public sealed class SolutionWorkspaceService : IAsyncDisposable
                 ScheduleReload();
                 return;
             }
+        }
+    }
+
+    private WorkspaceChangeBatch NormalizeKnownSourceReplacements(WorkspaceChangeBatch batch)
+    {
+        if (batch.Overflowed) return batch;
+
+        return batch with
+        {
+            Changes = batch.Changes.Select(change =>
+            {
+                if (!IsKnownSource(change.Path)) return change;
+
+                var replacesKnownSource = change.Kind == NovaSharp.Workspace.WorkspaceChangeKind.Created
+                    || change is
+                    {
+                        Kind: NovaSharp.Workspace.WorkspaceChangeKind.Renamed,
+                        OldPath: { } oldPath,
+                    } && Path.GetExtension(oldPath).Equals(".tmp", StringComparison.OrdinalIgnoreCase);
+                return replacesKnownSource
+                    ? change with { Kind = NovaSharp.Workspace.WorkspaceChangeKind.Changed, OldPath = null }
+                    : change;
+            }).ToArray(),
+        };
+    }
+
+    private bool IsKnownSource(string path)
+    {
+        var uri = _paths.ToDocumentUri(path).AbsoluteUri;
+        lock (_gate)
+        {
+            return _replicas.ContainsKey(uri) || _mappings.ContainsKey(uri);
         }
     }
 

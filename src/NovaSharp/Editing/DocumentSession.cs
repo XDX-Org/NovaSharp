@@ -293,7 +293,7 @@ public sealed class DocumentSession : IAsyncDisposable
                 DateTimeOffset.UtcNow));
         }
 
-        await PublishAsync(BuildStatus()).ConfigureAwait(false);
+        await PublishAsync(BuildStatus() with { IsBusy = false }).ConfigureAwait(false);
         ReplicaChanged?.Invoke(new DocumentReplicaChange(opened.Record.Uri, opened.Record.Path, replica, replica.Sequence));
     }
 
@@ -612,10 +612,11 @@ public sealed class DocumentSession : IAsyncDisposable
             _notifications.Dismiss(Scoped(NotificationIds.ReloadFailed));
 
             await _host.SetReadOnlyAsync(record.Uri, opened.Record.IsReadOnly, cancellationToken).ConfigureAwait(false);
-            await PublishAsync(BuildStatus()).ConfigureAwait(false);
+            await PublishAsync(BuildStatus() with { IsBusy = false }).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
+            await PublishAsync(BuildStatus() with { IsBusy = false }).ConfigureAwait(false);
         }
         catch (Exception exception) when (IsFileFailure(exception))
         {
