@@ -2,9 +2,8 @@
 
 ## Status
 
-In progress. The original phase passed [qualification run 33088968049](https://github.com/XDX-Org/NovaSharp/actions/runs/33088968049)
-on all six supported runtime rows from commit `47b0965`. The warm-reopen implementation and local gates are present; completion now
-requires one qualification run of the current commit passing the cached-display and live-validation gates on all six rows.
+Complete. [Qualification run 33404085465](https://github.com/XDX-Org/NovaSharp/actions/runs/33404085465) passed the full
+phase contract, including warm cached display and fresh-service live validation, on all six supported runtime rows from commit `fa06699`.
 
 ## Goal
 
@@ -112,8 +111,8 @@ from every supported runtime identifier; a local measurement is development evid
 - CI continues to run identical bootstrap, managed/browser tests, explicit-RID publish, packaged native smoke, performance, disposal, and retained
   evidence gates for all six matrix rows.
 
-[Qualification run 33088968049](https://github.com/XDX-Org/NovaSharp/actions/runs/33088968049) remains the retained evidence for the
-original phase contract. All six jobs passed from commit `47b0965`, but that run predates the warm-reopen gates and cannot qualify this revision.
+[Qualification run 33404085465](https://github.com/XDX-Org/NovaSharp/actions/runs/33404085465) is the retained completion evidence.
+All six jobs passed from commit `fa06699`, including the cached-display and live-validation gates added by the warm-reopen revision.
 
 ## Next phase
 
