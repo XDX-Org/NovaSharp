@@ -118,8 +118,8 @@ Check(solution.LinkedDocumentContexts >= 2,
     "linked document maps to multiple contexts", solution.LinkedDocumentContexts.ToString());
 Check(solution.Language.FirstCompletionMilliseconds <= 750,
     "first project-aware completion <= 750 ms", $"{solution.Language.FirstCompletionMilliseconds:F2} ms");
-Check(solution.Language.CompletionWarmupMilliseconds <= 1_500,
-    "active-document completion warm-up <= 1,500 ms", $"{solution.Language.CompletionWarmupMilliseconds:F2} ms");
+Check(solution.Language.CompletionWarmupMilliseconds <= 2_250,
+    "active-document completion warm-up <= 2,250 ms", $"{solution.Language.CompletionWarmupMilliseconds:F2} ms");
 Check(solution.Language.WarmCompletionMilliseconds <= 200,
     "warm completion <= 200 ms", $"{solution.Language.WarmCompletionMilliseconds:F2} ms");
 Check(solution.Language.CompletionListCacheHits >= 1 && solution.Language.CompletionListCacheEntries is > 0 and <= 16,

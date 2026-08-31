@@ -344,6 +344,11 @@ public sealed class SolutionWorkspaceServiceTests : IAsyncDisposable
         _service = Create(loader);
         await _service.OpenAsync(ProjectPath("Workspace.slnx"), TestContext.Current.CancellationToken);
         var path = ProjectPath("Shared.cs");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        await File.WriteAllTextAsync(
+            path,
+            "internal sealed class Shared { public int Value => 7; }",
+            TestContext.Current.CancellationToken);
         var oldPath = kind == NovaSharp.Workspace.WorkspaceChangeKind.Renamed
             ? ProjectPath(".Shared.cs.novasharp-00000000000000000000000000000000.tmp")
             : null;

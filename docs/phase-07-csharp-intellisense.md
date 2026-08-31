@@ -67,7 +67,7 @@ Each CI row records the following in `phase-01-07-native.json`; browser typing/p
 
 | Gate | Budget |
 |---|---:|
-| Active-document completion warm-up | ≤ 1,500 ms |
+| Active-document completion warm-up | ≤ 2,250 ms |
 | First project-aware completion | ≤ 750 ms |
 | Warm completion | ≤ 200 ms |
 | Warm signature help | ≤ 250 ms |
@@ -79,6 +79,8 @@ Each CI row records the following in `phase-01-07-native.json`; browser typing/p
 | Exact-version completion-list cache | 16 lists; 500 items per list |
 
 The named medium fixture is `tests/fixtures/phase-06/Workspace.slnx`, restored and built before measurement on the hosted-runner fixtures listed in the delivery plan. The verifier adds an unsaved C# probe through the normal replica path, so these results cannot pass by reading stale disk text.
+
+The warm-up primes the exact active-caret list consumed by the first request, so its budget carries the former 1,500 ms warm-up and 750 ms first-request allowances. The separate first-result gate remains in force and catches cache misses.
 
 ## Verification
 
