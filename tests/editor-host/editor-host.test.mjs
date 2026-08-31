@@ -381,6 +381,11 @@ try {
     }));
     check('Monaco renders the completion returned by the provider',
         await page.locator('.suggest-widget').textContent().then(text => text?.includes('PhaseSevenCompletion') === true));
+    check('the active caret offset is read without copying model text', await page.evaluate(() => {
+        const activeEditor = globalThis.NovaMonaco.editor.getEditors()[0];
+        return globalThis.editor.positionOffsetForView('main', 'file:///workspace/Widget.cs')
+            === activeEditor.getModel().getOffsetAt(activeEditor.getPosition());
+    }));
     const canonicalUriCases = [
         { platform: 'Linux', uri: 'file:///home/developer/NovaSharp/LinuxAlias.cs' },
         { platform: 'macOS', uri: 'file:///Users/Developer/NovaSharp/MacAlias.cs' },

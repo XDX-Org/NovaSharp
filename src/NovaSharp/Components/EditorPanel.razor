@@ -480,8 +480,12 @@
             suggestionsEnabled,
             CancellationToken.None);
         if (active is not null && suggestionsEnabled && Active?.Replica is { } replica)
+        {
+            var position = await _host.GetPositionOffsetAsync(
+                _groups.ActiveGroupId, uri, CancellationToken.None) ?? replica.Length;
             _ = Workbench.CSharp.WarmCompletionAsync(
-                uri, active.ProjectId.Id.ToString(), sourceVersion, replica.Sequence);
+                uri, active.ProjectId.Id.ToString(), sourceVersion, replica.Sequence, position);
+        }
     }
 
     private async Task SelectProjectContextAsync(ChangeEventArgs args)

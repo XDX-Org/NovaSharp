@@ -130,6 +130,28 @@ public sealed class CSharpLanguageServiceTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task ExactCaretWarmup_IsReusedByTheFirstCompletionRequest()
+    {
+        const string source = "internal sealed class Shared { void M() { string.Empt } }";
+        await OpenWithReplicaAsync(source, 15);
+        var position = source.IndexOf("Empt", StringComparison.Ordinal) + "Empt".Length;
+        var context = _solutions.GetDocumentContexts(_uri).Single(candidate => candidate.IsActive);
+
+        await _language.WarmCompletionAsync(
+            _uri,
+            context.ProjectId.Id.ToString(),
+            _solutions.Snapshot.SourceVersion,
+            15,
+            position,
+            TestContext.Current.CancellationToken);
+        var completion = await _language.GetCompletionsAsync(
+            Request("warm-first", 15, position, isExplicit: true), TestContext.Current.CancellationToken);
+
+        Assert.Contains(completion!.Items, item => item.Label == "Empty");
+        Assert.Equal(1, _language.Metrics.CompletionListCacheHits);
+    }
+
+    [Fact]
     public async Task SignatureHoverFormattingAndSemanticTokens_UseExactReplica()
     {
         const string source = "/// <summary>A shared value.</summary>\ninternal sealed class Shared{void M(){string.Concat(\"a\",\"b\");}}";
@@ -164,6 +186,15 @@ public sealed class CSharpLanguageServiceTests : IAsyncDisposable
         const string currentSource = "internal sealed class Shared { void M() { string.Empty.ToString(); } }";
         _solutions.QueueReplica(new(_uri, _path, new DocumentReplica(currentSource, 4, 4), 4));
         await _solutions.WaitForReplicaAsync(_uri, 4, TestContext.Current.CancellationToken);
+        var context = _solutions.GetDocumentContexts(_uri).Single(candidate => candidate.IsActive);
+
+        await _language.WarmCompletionAsync(
+            _uri,
+            context.ProjectId.Id.ToString(),
+            _solutions.Snapshot.SourceVersion,
+            3,
+            oldSource.IndexOf("Str", StringComparison.Ordinal) + 3,
+            TestContext.Current.CancellationToken);
 
         var result = await _language.GetCompletionsAsync(
             Request("stale", 3, oldSource.IndexOf("Str", StringComparison.Ordinal) + 3, isExplicit: true),
@@ -171,6 +202,7 @@ public sealed class CSharpLanguageServiceTests : IAsyncDisposable
 
         Assert.Null(result);
         Assert.Equal(1, _language.Metrics.RejectedStale);
+        Assert.Equal(0, _language.Metrics.CompletionListCacheEntries);
     }
 
     [Fact]

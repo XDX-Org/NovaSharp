@@ -40,7 +40,8 @@ public sealed class CSharpLanguageService : ICSharpLanguageService, IAsyncDispos
         string DocumentUri,
         string ProjectContextId,
         long SourceVersion,
-        long Sequence);
+        long Sequence,
+        int Position);
 
     private const int CompletionCacheCapacity = 512;
     private const int CompletionListCacheCapacity = 16;
@@ -403,12 +404,13 @@ public sealed class CSharpLanguageService : ICSharpLanguageService, IAsyncDispos
         string projectContextId,
         long sourceVersion,
         long sequence,
+        int position,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(documentUri);
         ArgumentException.ThrowIfNullOrWhiteSpace(projectContextId);
         if (Volatile.Read(ref _disposed) != 0) return Task.CompletedTask;
-        var key = new CompletionWarmupKey(documentUri.AbsoluteUri, projectContextId, sourceVersion, sequence);
+        var key = new CompletionWarmupKey(documentUri.AbsoluteUri, projectContextId, sourceVersion, sequence, position);
         lock (_gate)
         {
             if (_completionWarmups.TryGetValue(key, out var existing)) return existing;
@@ -429,14 +431,23 @@ public sealed class CSharpLanguageService : ICSharpLanguageService, IAsyncDispos
             {
                 var snapshot = await _solutions.GetLanguageSnapshotAsync(
                     new Uri(key.DocumentUri), key.ProjectContextId, key.SourceVersion, key.Sequence, token).ConfigureAwait(false);
-                var document = snapshot?.Solution.GetDocument(snapshot.DocumentId);
+                if (snapshot is null) return false;
+                var document = snapshot.Solution.GetDocument(snapshot.DocumentId);
                 if (document is null || CompletionService.GetService(document) is not { } service) return false;
                 var text = await document.GetTextAsync(token).ConfigureAwait(false);
-                _ = await service.GetCompletionsAsync(
+                var position = ClampPosition(key.Position, text);
+                var list = await service.GetCompletionsAsync(
                     document,
-                    text.Length,
+                    position,
                     trigger: CompletionTrigger.Invoke,
                     cancellationToken: token).ConfigureAwait(false);
+                if (list is null) return false;
+                var (items, isIncomplete) = RankCompletionItems(service, document, list, text, position);
+                if (!_solutions.IsLanguageSnapshotCurrent(snapshot)) return false;
+                CacheCompletionList(
+                    new(key.DocumentUri, key.ProjectContextId, key.SourceVersion, key.Sequence,
+                        position, TriggerCharacter: null, IsExplicit: true),
+                    new(Stamp(snapshot), items, isIncomplete));
                 return true;
             }, cancellationToken).ConfigureAwait(false);
         }

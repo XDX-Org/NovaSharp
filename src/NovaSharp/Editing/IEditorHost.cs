@@ -68,6 +68,12 @@ public interface IEditorHost : IAsyncDisposable
         Uri uri,
         CancellationToken cancellationToken) => GetViewStateAsync(uri, cancellationToken);
 
+    /// <summary>Reads the active caret as a UTF-16 model offset without copying model text.</summary>
+    ValueTask<int?> GetPositionOffsetAsync(
+        string viewId,
+        Uri uri,
+        CancellationToken cancellationToken) => ValueTask.FromResult<int?>(null);
+
     /// <summary>Releases one editor instance while leaving its shared document models open.</summary>
     ValueTask RemoveViewAsync(string viewId, CancellationToken cancellationToken) => ValueTask.CompletedTask;
 

@@ -109,6 +109,17 @@ public sealed class MonacoEditorHost : IEditorHost
     }
 
     /// <inheritdoc />
+    public ValueTask<int?> GetPositionOffsetAsync(
+        string viewId,
+        Uri uri,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(viewId);
+        ArgumentNullException.ThrowIfNull(uri);
+        return InvokeAsync<int?>("positionOffsetForView", cancellationToken, viewId, uri.AbsoluteUri);
+    }
+
+    /// <inheritdoc />
     public async ValueTask RemoveViewAsync(string viewId, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(viewId);

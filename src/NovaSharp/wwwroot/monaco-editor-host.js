@@ -947,6 +947,20 @@ export function createEditor(container, bridge) {
             return view.portableStates.get(key) ?? null;
         },
 
+        /** Reads one view's caret as a model offset without copying document text. */
+        positionOffsetForView(viewId, uriString) {
+            ensureLive();
+            const key = monaco.Uri.parse(uriString).toString();
+            const target = viewId === 'main'
+                ? { editor, document: currentDocument }
+                : secondaryViews.has(viewId)
+                    ? { editor: secondaryViews.get(viewId).editor, document: secondaryViews.get(viewId).currentDocument }
+                    : null;
+            if (!target || target.document?.model.uri.toString() !== key) return null;
+            const position = target.editor.getPosition();
+            return position ? target.document.model.getOffsetAt(position) : null;
+        },
+
         /** Releases one secondary editor instance while retaining all document models. */
         removeView(viewId) {
             ensureLive();

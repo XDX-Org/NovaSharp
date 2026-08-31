@@ -487,14 +487,15 @@ static async Task<SolutionPerformanceRecord> RunSolutionPerformanceAsync(string 
     var semanticMilliseconds = Stopwatch.GetElapsedTime(semanticStarted).TotalMilliseconds;
 
     var activeContext = service.GetDocumentContexts(sourceUri).Single(context => context.IsActive);
+    var completionPosition = replicaText.LastIndexOf("Empt", StringComparison.Ordinal) + "Empt".Length;
     var completionWarmupStarted = Stopwatch.GetTimestamp();
     await language.WarmCompletionAsync(
         sourceUri,
         activeContext.ProjectId.Id.ToString(),
         service.Snapshot.SourceVersion,
-        1);
+        1,
+        completionPosition);
     var completionWarmupMilliseconds = Stopwatch.GetElapsedTime(completionWarmupStarted).TotalMilliseconds;
-    var completionPosition = replicaText.LastIndexOf("Empt", StringComparison.Ordinal) + "Empt".Length;
     LanguageRequest CompletionRequest(string id) => new(
         id,
         sourceUri.AbsoluteUri,
